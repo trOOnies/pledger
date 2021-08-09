@@ -1,0 +1,8 @@
+pkl_folder: info/pickle/
+ref_csv_folder: info/ref_csv/
+csv_folder: info/csv/
+
+accounts_pkl: accounts.pkl
+movement_types_pkl: movement_types.pkl
+
+raw_data_csv: raw_data.csv
