@@ -1,6 +1,6 @@
 import re
 import pandas as pd
-from utils import tail_print
+from utils import print_sep_text, tail_return
 from utils import acct_format
 
 class Option():
@@ -52,8 +52,8 @@ def see(ans, cfg):
     csv_path = cfg['csv_folder'] + cfg['raw_data_csv']
 
     if ans == 'see':
-        tail_print(csv_path, 10, index_col='mov_id')
-    elif re.match("see (last )*[0-9]", ans):
+        df = tail_return(csv_path, 10, index_col='mov_id')
+    elif re.match("see (last )*[0-9]+$", ans):
         pieces = ans.split(' ')
         if len(pieces) == 3:
             del pieces[1]
@@ -61,48 +61,80 @@ def see(ans, cfg):
         del pieces
 
         if nrows > 0:
-            tail_print(csv_path, nrows, index_col='mov_id')
+            df = tail_return(csv_path, nrows, index_col='mov_id')
         else:
             print('INPUT ERROR: nrows must be positive')
-    elif re.match("see first [0-9]", ans):
+    elif re.match("see first [0-9]+$", ans):
         nrows = int(ans[ans.rfind(' ') + 1:])
 
         if nrows > 0:
-            print(pd.read_csv(csv_path, nrows=nrows, index_col='mov_id'))
+            df = pd.read_csv(csv_path, nrows=nrows, index_col='mov_id')
         else:
             print('INPUT ERROR: nrows must be positive')
     elif ans == 'see all':
-        print(pd.read_csv(csv_path))
+        df = pd.read_csv(csv_path)
     elif ans == 'see --help':
         print('- see: Quick tail N of ledger.')
         print('- see (last )[N]: Tail N of ledger.')
         print('- see first [N]: Head N of ledger.')
         print('- see all: Prints all movements. Not recommended for big ledgers.')
+        return True
     else:
         print('INPUT ERROR. Use see --help if needed.')
-    
+        return True
+
+    # Joins
+    df['mov_type'] = df['mov_type_id'].map(cfg['df_movement_types'].name)
+    df['deb'] = df['deb_id'].map(cfg['df_accounts'].name)
+    df['cred'] = df['cred_id'].map(cfg['df_accounts'].name)
+    print(df[[col for col in df.columns if not col.endswith('_id') and col != 'amount'] + ['amount']])
     return True
 
 
 def info(ans, cfg):
-    if ans == 'info acc':
-        print('Id', 'Acc', 'Balance')
-        for acc in cfg['accounts'].values():
-            print(acc.id, acc.name, acct_format(0))
-    elif ans == 'info mt':
-        print('Id', 'MT', 'Total')
-        for acc in cfg['movement_types'].values():
-            print(acc.id, acc.description, acct_format(0))
-    elif ans == 'info --help':
-        print('- info acc: Accounts.')
-        print('- info mt: Movement types.')
+    if ans == 'info --help':
+        print('- info: Quick high level info of Accounts and Movement Types.')
+        print('- info acc[=D]: Print Accounts high level info. You can also access a certain Account acc_id = D.')
+        print('- info mt[=D]: Print Movement types high level info. You can also access a certain Movement Type mt_id = D.')
+        return True
+    if ans.startswith('info acc='):
+        try:
+            acc = cfg['accounts'].get(int(ans[ans.find('=')+1:]))
+            assert acc is not None
+            print(acc.__str__())
+        except:
+            print('ERROR: acc_id no reconocido.')
+        return True
+    if ans.startswith('info mt='):
+        try:
+            mt = cfg['movement_types'].get(int(ans[ans.find('=')+1:]))
+            assert mt is not None
+            print(mt.__str__())
+        except:
+            print('ERROR: acc_id no reconocido.')
+        return True
+
+    valid_input = False
+    if ans == 'info' or ans == 'info acc':
+        print_sep_text('', 50)
+        print('ACCOUNTS')
+        print(cfg['df_accounts'])
+        valid_input = True
+    if ans == 'info' or ans == 'info mt':
+        print_sep_text('', 50)
+        print('MOVEMENT TYPES')
+        print(cfg['df_movement_types'][[col for col in cfg['df_movement_types'].columns if not col.endswith('_id')]])
+        valid_input = True
+    if valid_input:
+        print_sep_text('', 50)
     else:
         print('INPUT ERROR. Use info --help if needed.')
-    
     return True
 
-
-def close(ans, cfg):
+def close(
+    ans=None,
+    cfg=None,
+):
     print('Closing Pledger...')
     return False
 

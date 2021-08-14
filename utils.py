@@ -17,7 +17,7 @@ def print_sep_text(
     half_slack = int(slack / 2)
     print(half_slack * sep + s + ((len(s) + 1) % 2) * sep + half_slack * sep)
 
-def tail_print(
+def tail_return(
     csv_path: str,
     nrows: int,
     index_col=None,
@@ -26,4 +26,4 @@ def tail_print(
         reader = csv.reader(f)
         header = next(reader)
         q = deque(f, nrows)
-    print(pd.read_csv(StringIO(''.join(q)), names=header, index_col=index_col))
+    return pd.read_csv(StringIO(''.join(q)), names=header, index_col=index_col)

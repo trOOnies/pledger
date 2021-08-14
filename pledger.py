@@ -1,3 +1,4 @@
+from numpy import isnan
 from pandas._config.config import options
 from utils import acct_format
 
@@ -27,51 +28,62 @@ class Account:
         self.full_name = full_name
         assert acc_type in acc_type_dict.keys()
         self.acc_type = acc_type
-        self.description=description
+        description = str(description)
+        if description == 'nan':
+            self.description = None
+        else:
+            self.description = description
     
     def __str__(self):
-        s = f"{self.full_name} ({self.name})\n"
-        s += f"Acc. ID: {self.id}\n"
-        s += f"Account type: {acc_type_dict[self.acc_type]}\n"
-        s += self.description
+        s = f"{self.name} [ID={self.id}]"
+        s += f"\nFull name: {self.full_name}"
+        s += f"\nAccount type: {acc_type_dict[self.acc_type]}"
+        if self.description is not None:
+            s += '\n' + self.description
         return s
+    
+    def __repr__(self):
+        return f"Account('{self.name}')"
 
 
 class MovementType:
     def __init__(
         self,
         id,
-        description,
-        result_type,
+        name,
+        result_type: str,
+        eq_acc: int,
         deb=None,
         cred=None,
     ) -> None:
-        self.id = id
-        self.description = description
         assert result_type in result_type_dict.keys()
+        assert (deb is None or eq_acc.id != deb.id) and (cred is None or eq_acc.id != cred.id)
+
+        self.id = id
+        self.name = name
         self.result_type = result_type
         self.deb = deb
         self.cred = cred
+
+        # Equity is empty
         if result_type == 'G':
-            assert self.cred is not None and self.cred.acc_type == 'E'
+            assert cred is None
+            self.cred = eq_acc
         elif result_type == 'L':
-            assert self.deb is not None and self.deb.acc_type == 'E'
-        if result_type in ['G', 'T'] and self.deb is not None:
-            assert self.deb.acc_type != 'E'
-        if result_type in ['L', 'T'] and self.cred is not None:
-            assert self.cred.acc_type != 'E'
+            assert deb is None
+            self.deb = eq_acc
 
     def __str__(self):
-        s = f"{self.id} ({result_type_dict[self.result_type]})\n"
+        s = f"{self.name} [ID={self.id}]"
+        s += f"\nResult Type: {result_type_dict[self.result_type]}"
+        s += '\n'
         for i, aux in enumerate([self.deb, self.cred]):
             if aux is None:
                 s += 'FREE'
             else:
-                s += f"{aux.id} ({acc_type_dict[aux.acc_type]})"
+                s += f"{aux.name} ({acc_type_dict[aux.acc_type]})"
             if i == 0:
                 s += ' | '
-        s += '\n'
-        s += self.description
         return s
 
 

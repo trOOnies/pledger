@@ -6,3 +6,5 @@ accounts_pkl: accounts.pkl
 movement_types_pkl: movement_types.pkl
 
 raw_data_csv: raw_data.csv
+
+eq_acc_id: 0
