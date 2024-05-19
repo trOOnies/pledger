@@ -1,36 +1,38 @@
 import re
 import pandas as pd
-from utils import print_sep_text, tail_return
-from utils import acct_format
+from typing import List, Callable
+from utils import print_sep_text, tail_return, acct_format
 
-class Option():
+
+class Option:
     """Question option"""
     def __init__(
         self,
         name: str,
         desc: str,
-        action,
+        action: Callable,
     ) -> None:
         self.name = name
         self.desc = desc
         self.action = action
-    
+
     def do_action(self, ans, cfg):
         return self.action(ans, cfg)
+
 
 class InputQuestion:
     """Questions iterable"""
     def __init__(
         self,
         question: str,
-        options: list,
+        options: List[Option],
         cfg: dict,
     ) -> None:
         self.question = question
         self.options = options
         self.cfg = cfg
 
-    def ask(self):
+    def ask(self) -> None:
         go_on = True
         while go_on:
             print(self.question)
@@ -44,11 +46,13 @@ class InputQuestion:
                     break
         print('CODE STOPPED SUCCESSFULLY.')
 
+
 # ---------------------------------------------------------------------------------------------------
 
 # COMMMANDS
 
-def see(ans, cfg):
+
+def see(ans: str, cfg: dict) -> bool:
     csv_path = cfg['csv_folder'] + cfg['raw_data_csv']
 
     if ans == 'see':
@@ -87,11 +91,15 @@ def see(ans, cfg):
     df['mov_type'] = df['mov_type_id'].map(cfg['df_movement_types'].name)
     df['deb'] = df['deb_id'].map(cfg['df_accounts'].name)
     df['cred'] = df['cred_id'].map(cfg['df_accounts'].name)
-    print(df[[col for col in df.columns if not col.endswith('_id') and col != 'amount'] + ['amount']])
+    print(
+        df[
+            [col for col in df.columns if not col.endswith('_id') and col != 'amount'] + ['amount']
+        ]
+    )
     return True
 
 
-def info(ans, cfg):
+def info(ans: str, cfg: dict) -> bool:
     if ans == 'info --help':
         print('- info: Quick high level info of Accounts and Movement Types.')
         print('- info acc[=D]: Print Accounts high level info. You can also access a certain Account acc_id = D.')
@@ -102,7 +110,7 @@ def info(ans, cfg):
             acc = cfg['accounts'].get(int(ans[ans.find('=')+1:]))
             assert acc is not None
             print(acc.__str__())
-        except:
+        except Exception:
             print('ERROR: acc_id no reconocido.')
         return True
     if ans.startswith('info mt='):
@@ -110,7 +118,7 @@ def info(ans, cfg):
             mt = cfg['movement_types'].get(int(ans[ans.find('=')+1:]))
             assert mt is not None
             print(mt.__str__())
-        except:
+        except Exception:
             print('ERROR: acc_id no reconocido.')
         return True
 
@@ -123,7 +131,11 @@ def info(ans, cfg):
     if ans == 'info' or ans == 'info mt':
         print_sep_text('', 50)
         print('MOVEMENT TYPES')
-        print(cfg['df_movement_types'][[col for col in cfg['df_movement_types'].columns if not col.endswith('_id')]])
+        print(
+            cfg['df_movement_types'][
+                [col for col in cfg['df_movement_types'].columns if not col.endswith('_id')]
+            ]
+        )
         valid_input = True
     if valid_input:
         print_sep_text('', 50)
@@ -131,12 +143,7 @@ def info(ans, cfg):
         print('INPUT ERROR. Use info --help if needed.')
     return True
 
-def close(
-    ans=None,
-    cfg=None,
-):
+
+def close(ans=None, cfg=None) -> bool:
     print('Closing Pledger...')
     return False
-
-
-# ---------------------------------------------------------------------------------------------------

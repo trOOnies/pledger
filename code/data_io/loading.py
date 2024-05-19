@@ -2,12 +2,11 @@ import pandas as pd
 import pickle
 from pledger import Account, MovementType
 
-def load_accounts(
-    cfg: dict,
-):
+
+def load_accounts(cfg: dict) -> None:
     try:
         cfg['accounts'] = pickle.load(cfg['pkl_folder'] + cfg['accounts_pkl'])
-    except:
+    except Exception:
         cfg['accounts'] = {}
         for _, row in pd.read_csv(cfg['ref_csv_folder'] + 'ref_accounts.csv').iterrows():
             cfg['accounts'][row['acc_id']] = Account(
@@ -28,12 +27,14 @@ def load_accounts(
 def load_movement_types(
     cfg: dict,
     eq_acc: Account,
-):
+) -> None:
     try:
         cfg['movement_types'] = pickle.load(cfg['pkl_folder'] + cfg['movement_types_pkl'])
-    except:
+    except Exception:
+        path = cfg['ref_csv_folder'] + 'ref_movement_types.csv'
+
         cfg['movement_types'] = {}
-        for _, row in pd.read_csv(cfg['ref_csv_folder'] + 'ref_movement_types.csv').iterrows():
+        for _, row in pd.read_csv(path).iterrows():
             cfg['movement_types'][row['mov_type_id']] = MovementType(
                 id=row['mov_type_id'],
                 name=row['name'],
@@ -42,17 +43,16 @@ def load_movement_types(
                 deb=cfg['accounts'].get(row['deb_id']),
                 cred=cfg['accounts'].get(row['cred_id']),
             )
-        cfg['df_movement_types'] = pd.read_csv(
-            cfg['ref_csv_folder'] + 'ref_movement_types.csv',
-            index_col='mov_type_id',
-        )
+        cfg['df_movement_types'] = pd.read_csv(path, index_col='mov_type_id')
+
         def fill_eq(row, col, result_type):
             if row['result_type'] == result_type:
                 return cfg['eq_acc_id']
             else:
                 return row[col]
-        cfg['df_movement_types']['cred_id'] = cfg['df_movement_types'].apply(fill_eq, args=('cred_id','G',), axis=1)
-        cfg['df_movement_types']['deb_id'] = cfg['df_movement_types'].apply(fill_eq, args=('deb_id','L',), axis=1)
+
+        cfg['df_movement_types']['cred_id'] = cfg['df_movement_types'].apply(fill_eq, args=('cred_id', 'G',), axis=1)
+        cfg['df_movement_types']['deb_id'] = cfg['df_movement_types'].apply(fill_eq, args=('deb_id', 'L',), axis=1)
 
         # Joins
         cfg['df_movement_types']['deb'] = cfg['df_movement_types']['deb_id'].map(cfg['df_accounts'].name)

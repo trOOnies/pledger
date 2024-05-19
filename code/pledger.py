@@ -1,13 +1,19 @@
 from numpy import isnan
 from pandas._config.config import options
+from typing import TYPE_CHECKING
 from utils import acct_format
+if TYPE_CHECKING:
+    from classes import (
+        AccountType, ResultType,
+        AccountTypeDict, ResultTypeDict
+    )
 
-acc_type_dict = {
+ACC_TYPES: "AccountTypeDict" = {
     'A': 'Asset',
     'L': 'Liability',
     'E': 'Equity',
 }
-result_type_dict = {
+RESULT_TYPES: "ResultTypeDict" = {
     'G': 'Gain',
     'L': 'Loss',
     'T': 'Transactional',
@@ -20,28 +26,29 @@ class Account:
         id,
         name,
         full_name,
-        acc_type,
-        description,
+        acc_type: "AccountType",
+        description
     ) -> None:
+        assert acc_type in ACC_TYPES.keys()
+
         self.id = id
         self.name = name
         self.full_name = full_name
-        assert acc_type in acc_type_dict.keys()
         self.acc_type = acc_type
         description = str(description)
         if description == 'nan':
             self.description = None
         else:
             self.description = description
-    
+
     def __str__(self):
         s = f"{self.name} [ID={self.id}]"
         s += f"\nFull name: {self.full_name}"
-        s += f"\nAccount type: {acc_type_dict[self.acc_type]}"
+        s += f"\nAccount type: {ACC_TYPES[self.acc_type]}"
         if self.description is not None:
             s += '\n' + self.description
         return s
-    
+
     def __repr__(self):
         return f"Account('{self.name}')"
 
@@ -51,12 +58,12 @@ class MovementType:
         self,
         id,
         name,
-        result_type: str,
+        result_type: "ResultType",
         eq_acc: int,
         deb=None,
         cred=None,
     ) -> None:
-        assert result_type in result_type_dict.keys()
+        assert result_type in RESULT_TYPES.keys()
         assert (deb is None or eq_acc.id != deb.id) and (cred is None or eq_acc.id != cred.id)
 
         self.id = id
@@ -73,15 +80,15 @@ class MovementType:
             assert deb is None
             self.deb = eq_acc
 
-    def __str__(self):
+    def __str__(self) -> str:
         s = f"{self.name} [ID={self.id}]"
-        s += f"\nResult Type: {result_type_dict[self.result_type]}"
+        s += f"\nResult Type: {RESULT_TYPES[self.result_type]}"
         s += '\n'
         for i, aux in enumerate([self.deb, self.cred]):
             if aux is None:
                 s += 'FREE'
             else:
-                s += f"{aux.name} ({acc_type_dict[aux.acc_type]})"
+                s += f"{aux.name} ({ACC_TYPES[aux.acc_type]})"
             if i == 0:
                 s += ' | '
         return s
@@ -103,17 +110,18 @@ class Movement:
             assert cred is not None and cred.acc_type != 'E'
         self.deb = deb
         self.cred = cred
-    
+
     def __str__(self):
         s = 'D\tAm\tC\n'
         s += f"{self.deb}\t{acct_format(self.am)}\t{self.cred}"
         return s
 
+
 class Ledger:
     def __init__(self) -> None:
         self.movements = []
 
-    def add_mov(self, mov: Movement):
+    def add_mov(self, mov: Movement) -> None:
         self.movements.append(mov)
 
 
