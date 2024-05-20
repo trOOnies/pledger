@@ -1,7 +1,9 @@
 import re
 import pandas as pd
-from typing import List, Callable
+from typing import TYPE_CHECKING, List
 from utils import print_sep_text, tail_return, acct_format
+if TYPE_CHECKING:
+    from classes import OptionAction
 
 
 class Option:
@@ -10,13 +12,13 @@ class Option:
         self,
         name: str,
         desc: str,
-        action: Callable,
+        action: "OptionAction",
     ) -> None:
         self.name = name
         self.desc = desc
         self.action = action
 
-    def do_action(self, ans, cfg):
+    def do_action(self, ans: str, cfg: dict) -> bool:
         return self.action(ans, cfg)
 
 
@@ -38,12 +40,14 @@ class InputQuestion:
             print(self.question)
             for o in self.options:
                 print(f"- {o.name}: {o.desc}")
-            ans = input()
+            ans = input("> ")
             for o in self.options:
                 if ans.startswith(o.name):
                     go_on = o.do_action(ans, self.cfg)
                     print()
                     break
+            else:
+                print("[ERROR] No valid option detected.", end="\n\n")
         print('CODE STOPPED SUCCESSFULLY.')
 
 
@@ -53,7 +57,7 @@ class InputQuestion:
 
 
 def see(ans: str, cfg: dict) -> bool:
-    csv_path = cfg['csv_folder'] + cfg['raw_data_csv']
+    csv_path = cfg["folders"]["csv"] + cfg['raw_data_csv']
 
     if ans == 'see':
         df = tail_return(csv_path, 10, index_col='mov_id')
@@ -88,9 +92,9 @@ def see(ans: str, cfg: dict) -> bool:
         return True
 
     # Joins
-    df['mov_type'] = df['mov_type_id'].map(cfg['df_movement_types'].name)
-    df['deb'] = df['deb_id'].map(cfg['df_accounts'].name)
-    df['cred'] = df['cred_id'].map(cfg['df_accounts'].name)
+    df['mov_type'] = df['mov_type_id'].map(cfg["dfs"]["mov_types"].name)
+    df['deb'] = df['deb_id'].map(cfg["dfs"]["acc"].name)
+    df['cred'] = df['cred_id'].map(cfg["dfs"]["acc"].name)
     print(
         df[
             [col for col in df.columns if not col.endswith('_id') and col != 'amount'] + ['amount']
@@ -107,7 +111,7 @@ def info(ans: str, cfg: dict) -> bool:
         return True
     if ans.startswith('info acc='):
         try:
-            acc = cfg['accounts'].get(int(ans[ans.find('=')+1:]))
+            acc = cfg["acc"].get(int(ans[ans.find('=')+1:]))
             assert acc is not None
             print(acc.__str__())
         except Exception:
@@ -115,7 +119,7 @@ def info(ans: str, cfg: dict) -> bool:
         return True
     if ans.startswith('info mt='):
         try:
-            mt = cfg['movement_types'].get(int(ans[ans.find('=')+1:]))
+            mt = cfg["mov_types"].get(int(ans[ans.find('=')+1:]))
             assert mt is not None
             print(mt.__str__())
         except Exception:
@@ -126,14 +130,14 @@ def info(ans: str, cfg: dict) -> bool:
     if ans == 'info' or ans == 'info acc':
         print_sep_text('', 50)
         print('ACCOUNTS')
-        print(cfg['df_accounts'])
+        print(cfg["dfs"]["acc"])
         valid_input = True
     if ans == 'info' or ans == 'info mt':
         print_sep_text('', 50)
         print('MOVEMENT TYPES')
         print(
-            cfg['df_movement_types'][
-                [col for col in cfg['df_movement_types'].columns if not col.endswith('_id')]
+            cfg["dfs"]["mov_types"][
+                [col for col in cfg["dfs"]["mov_types"].columns if not col.endswith('_id')]
             ]
         )
         valid_input = True

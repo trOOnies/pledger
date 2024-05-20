@@ -1,5 +1,8 @@
 # Sensitive information
-info/
+info/csv/*.csv
+info/pickle/*.pkl
+info/pickle/*.pickle
+info/ref_csv/*.csv
 
 # ----------------------------------------
 
@@ -132,6 +135,3 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
-
-# Project: Pledger
-data/*.csv

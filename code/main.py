@@ -1,7 +1,8 @@
 import os
 import yaml
+import pandas as pd
 from main_utils import (
-    check_data, check_asserts, prompt_new_ledger, process_accounts
+    check_data, check_asserts, process_accounts
 )
 from data_io.loading import load_accounts, load_movement_types
 from commands import Option, InputQuestion, see, info, close
@@ -17,22 +18,26 @@ def main() -> None:
             raise
 
     load_accounts(cfg)
-    eq_acc = cfg['accounts'][cfg['eq_acc_id']]
-    print(cfg['accounts'])
-    print('Accounts loaded.')
+    eq_acc = cfg["acc"][cfg['eq_acc_id']]
+    print(cfg["acc"])
+    print('- Accounts loaded.')
 
     load_movement_types(cfg, eq_acc)
-    print('Movement Types loaded.')
+    print('- Movement Types loaded.')
 
-    # Data
-    path = cfg['csv_folder'] + cfg['raw_data_csv']
+    # Accounts
+    path = cfg["folders"]["csv"] + cfg["acc_init"]
+    if os.path.exists(path):
+        df = pd.read_csv(path)
+    else:
+        df = process_accounts(cfg, path)
+
+    # Ledger
+    path = cfg["folders"]["csv"] + cfg['raw_data_csv']
     if os.path.exists(path):
         check_data(path)
     else:
-        prompt_new_ledger(cfg)
         check_asserts(cfg)
-
-        df = process_accounts(cfg)
         df.to_csv(path, index=False)
         print(f"DataFrame saved in {cfg['raw_data_csv']}.")
 
@@ -40,7 +45,7 @@ def main() -> None:
 
     see_opt = Option('see', 'See ledger options.', see)
     info_opt = Option('info', 'Get info on all Pledger objects.', info)
-    save_opt = Option('save', 'Save ledger to raw CSV.', lambda x: 1)  # TODO
+    save_opt = Option('save', 'Save ledger to raw CSV.', lambda x, y: True)  # TODO
     close_opt = Option('close', 'Close program.', close)
 
     print_sep_text('PLEDGER v0.0.0')
