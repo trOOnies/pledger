@@ -4,6 +4,9 @@ info/pickle/*.pkl
 info/pickle/*.pickle
 info/ref_csv/*.csv
 
+# Local project files
+local/
+
 # ----------------------------------------
 
 # Byte-compiled / optimized / DLL files
