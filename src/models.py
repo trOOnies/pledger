@@ -6,11 +6,12 @@ import datetime as dt
 from dataclasses import dataclass
 
 from pandas import read_csv
+from yaml import safe_load
 
 from enums import AccountType, MovementType
 
 
-@dataclass(slots=True)
+@dataclass
 class Account:
     """Ledger account."""
     name: str
@@ -36,29 +37,173 @@ class Account:
         self.total += sum(values)
         self._check_positivity(self.total)
 
+    @classmethod
+    def load_yaml(cls, path: str) -> dict[str, Account]:
+        """Load Accounts from YAML path."""
+        assert path.endswith(".yaml")
+        with open(path, "r", encoding="utf-8") as f:
+            data = safe_load(f)
+        return {
+            name: Account(
+                name=name,
+                description=acc_d["description"],
+                acc_type=acc_type,
+            )
+            for acc_type, at_accounts in data.items()
+            for name, acc_d in at_accounts.items()
+        }
 
-@dataclass(slots=True)
+
+@dataclass
+class MovementBase:
+    """Ledger money movement base."""
+    name: str
+    description: str
+    acc_debit: Account | None
+    acc_credit: Account | None
+
+    def __post_init__(self):
+        self.move_type = MovementType.from_accounts(
+            acc_debit=self.acc_debit,
+            acc_credit=self.acc_credit,
+        )
+        self.debit_fixed = self.acc_debit is not None
+        self.credit_fixed = self.acc_credit is not None
+
+    @classmethod
+    def load_yaml(
+        cls,
+        path: str,
+        accounts: dict[str, Account],
+    ) -> dict[str, MovementBase]:
+        """Load MovementBases from YAML path."""
+        assert path.endswith(".yaml")
+        with open(path, "r", encoding="utf-8") as f:
+            data = safe_load(f)
+        return {
+            name: MovementBase(
+                name=name,
+                description=base_move_d["description"],
+                acc_debit=(
+                    accounts["Eq"]
+                    if move_type == MovementType.LOSS
+                    else accounts[base_move_d["debit"]]
+                    if "debit" in base_move_d
+                    else None
+                ),
+                acc_credit=(
+                    accounts["Eq"]
+                    if move_type == MovementType.GAIN
+                    else accounts[base_move_d["credit"]]
+                    if "credit" in base_move_d
+                    else None
+                ),
+            )
+            for move_type, mt_base_moves in data.items()
+            for name, base_move_d in mt_base_moves.items()
+        }
+
+
+@dataclass
 class Movement:
     """Ledger money movement."""
     move_date: dt.date
-    acc_debit: Account
-    acc_credit: Account
+    move_base: MovementBase
+    input_acc_debit: Account
+    input_acc_credit: Account
     amount: float  # ? in local currency
 
-    def __post_init__():
-        move_type: MovementType = ...  # TODO
+    def __post_init__(self):
+        self.move_type = self.move_base.move_type
+
+        c_gain = self.input_acc_credit.acc_type == AccountType.EQUITY
+        c_loss = self.input_acc_debit.acc_type == AccountType.EQUITY
+
+        if self.move_type == MovementType.GAIN:
+            assert c_gain and not c_loss, "Movement type must match"
+            if self.move_base.debit_fixed:
+                assert self.input_acc_debit == self.move_base.acc_debit, (
+                    "Debit account must match"
+                )
+        elif self.move_type == MovementType.LOSS:
+            assert c_loss and not c_gain, "Movement type must match"
+            if self.move_base.credit_fixed:
+                assert self.input_acc_credit == self.move_base.acc_credit, (
+                    "Credit account must match"
+                )
+        elif self.move_type == MovementType.TRANSFER:
+            assert not c_loss and not c_gain, "Movement type must match"
+            if self.move_base.debit_fixed:
+                assert self.input_acc_debit == self.move_base.acc_debit, (
+                    "Debit account must match"
+                )
+            if self.move_base.credit_fixed:
+                assert self.input_acc_credit == self.move_base.acc_credit, (
+                    "Credit account must match"
+                )
+        else:
+            raise ValueError(f"Unknown movement type: {self.move_type}")
+
+        self.acc_debit = self.input_acc_debit
+        self.acc_credit = self.input_acc_credit
+
+    def print_data(self) -> None:
+        print(
+            self.move_date
+            + "\t" + self.acc_debit.name
+            + "\t" + str(self.amount)
+            + "\t" + self.acc_credit.name
+        )
 
 
-@dataclass(slots=True)
+@dataclass
 class Ledger:
+    """Ledger of money movements."""
     movements: list[Movement]
 
-    def __post_init__():
+    def __post_init__(self):
         pass
 
+    def print_data(self) -> None:
+        """Print data in CLI."""
+        print(
+            "Move Date"
+            + "\t" + "Debit"
+            + "\t" + "Amount"
+            + "\t" + "Credit"
+        )
+        for move in self.movements:
+            move.print_data()
+
     @classmethod
-    def from_csv(cls, path: str) -> Ledger:
+    def from_csv(
+        cls,
+        path: str,
+        accounts: dict[str, Account],
+        base_movements: dict[str, MovementBase],
+    ) -> Ledger:
+        """
+        Creates a Ledger from a CSV file.
+        NOTE: Must use semicolons (';').
+        """
+        assert path.endswith(".csv")
         df = read_csv(
             path,
-            names=["move_date", "acc_debit", "acc_credit", "amount"],
+            usecols=[
+                "move_date", "base_movement",
+                "acc_debit", "acc_credit", "amount",
+            ],
+            sep=";",
+        )
+        return cls(
+            movements=[
+                Movement(
+                    move_date=row.move_date,
+                    move_base=base_movements[row.base_movement],
+                    input_acc_debit=accounts[row.acc_debit],
+                    input_acc_credit=accounts[row.acc_credit],
+                    amount=row.amount,
+                )
+                for row in df.itertuples()
+            ]
         )

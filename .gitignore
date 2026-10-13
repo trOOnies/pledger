@@ -1,11 +1,10 @@
 # Sensitive information
-info/csv/*.csv
-info/pickle/*.pkl
-info/pickle/*.pickle
-info/ref_csv/*.csv
+info/*.csv
+info/*.yaml
 
 # Local project files
 local/
+.vscode/
 
 # ----------------------------------------
 

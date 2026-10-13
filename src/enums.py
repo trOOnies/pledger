@@ -3,16 +3,17 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Any
 
 
-class AccountType(Enum, str):
+class AccountType(str, Enum):
     """Type of account based on equity side."""
     ASSET = "asset"
     LIABILITY = "liability"
     EQUITY = "equity"
 
 
-class MovementType(Enum, str):
+class MovementType(str, Enum):
     """Type of movement based on equity side."""
     GAIN = "gain"
     LOSS = "loss"
@@ -21,13 +22,14 @@ class MovementType(Enum, str):
     @classmethod
     def from_accounts(
         cls,
-        acc_debit: AccountType,
-        acc_credit: AccountType,
+        acc_debit: Any | None,
+        acc_credit: Any | None,
     ) -> MovementType:
-        c1 = acc_debit == AccountType.EQUITY
-        c2 = acc_debit == AccountType.EQUITY
+        """Get MovementType from debit and credit Accounts"""
+        c_loss = (acc_debit is not None) and (acc_debit.acc_type == AccountType.EQUITY)
+        c_gain = (acc_credit is not None) and (acc_credit.acc_type == AccountType.EQUITY)
 
-        if not c1 and not c2:
-            ...
+        if not c_loss and not c_gain:
+            return cls.TRANSFER
 
-        return ...
+        return cls.GAIN if c_gain else cls.LOSS
