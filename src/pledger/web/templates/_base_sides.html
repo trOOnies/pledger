@@ -1,0 +1,18 @@
+{% macro side(name, label, fixed) %}
+<label>{{ label }}
+  {% if fixed %}
+  <input value="{{ fixed }}" readonly tabindex="-1" class="fixed">
+  {% else %}
+  <select name="{{ name }}">
+    <option value="">Any</option>
+    {% for acc in sides.free %}
+    <option {% if acc == values[name] %}selected{% endif %}>{{ acc }}</option>
+    {% endfor %}
+  </select>
+  {% endif %}
+</label>
+{% endmacro %}
+<div class="pair">
+  {{ side("debit", "Debit", sides.debit_fixed) }}
+  {{ side("credit", "Credit", sides.credit_fixed) }}
+</div>

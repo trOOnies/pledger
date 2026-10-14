@@ -6,13 +6,15 @@ import csv
 import datetime as dt
 import io
 import os
+import re
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+import yaml
 from pandas import DataFrame, read_csv
 
-from pledger.enums import AccountType
+from pledger.enums import AccountType, MovementType
 from pledger.ledger import Ledger
 from pledger.models import Account, Movement, MovementBase
 
@@ -29,11 +31,12 @@ class StaleRowError(Exception):
 
 @dataclass(frozen=True)
 class Settings:
-    """Paths to the ledger files."""
+    """Paths to the ledger files and display options."""
 
     accounts_path: Path
     base_movements_path: Path
     ledger_path: Path
+    currency: str = "$"
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -44,6 +47,7 @@ class Settings:
                 os.environ.get("PLEDGER_BASE_MOVEMENTS", "info/base_movements.yaml")
             ),
             ledger_path=Path(os.environ.get("PLEDGER_LEDGER", "info/ledger.csv")),
+            currency=os.environ.get("PLEDGER_CURRENCY", "$"),
         )
 
 
@@ -149,6 +153,69 @@ class LedgerStore:
         csv_file.lines.append(buf.getvalue())
         self._write_file(csv_file)
 
+    def add_account(self, name: str, acc_type: str, description: str = "") -> None:
+        """Validate a new account and add it to the accounts YAML."""
+        snapshot = self.load()
+        name = _check_name(name, snapshot.accounts, "account")
+        try:
+            acc_type = AccountType(acc_type)
+        except ValueError:
+            raise ValueError(f"Invalid account type: {acc_type!r}") from None
+        self._add_yaml_entry(
+            self.settings.accounts_path, acc_type.value, name,
+            {"description": description.strip()},
+        )
+
+    def add_base_movement(
+        self,
+        name: str,
+        move_type: str,
+        description: str = "",
+        debit: str = "",
+        credit: str = "",
+    ) -> None:
+        """Validate a new base movement and add it to the base movements YAML."""
+        snapshot = self.load()
+        name = _check_name(name, snapshot.base_movements, "base movement")
+        try:
+            move_type = MovementType(move_type)
+        except ValueError:
+            raise ValueError(f"Invalid movement type: {move_type!r}") from None
+        # Gains always credit equity and losses always debit it.
+        if move_type == MovementType.GAIN:
+            credit = ""
+        elif move_type == MovementType.LOSS:
+            debit = ""
+        free = {a.name for a in snapshot.free_accounts()}
+        for acc in (debit, credit):
+            if acc and acc not in free:
+                raise ValueError(f"Unknown or non-selectable account: {acc!r}")
+        if debit and debit == credit:
+            raise ValueError("Debit and credit accounts must be different")
+
+        fields = {"description": description.strip()}
+        if debit:
+            fields["debit"] = debit
+        if credit:
+            fields["credit"] = credit
+        self._add_yaml_entry(
+            self.settings.base_movements_path, move_type.value, name, fields
+        )
+
+    def _add_yaml_entry(self, path: Path, section: str, name: str, fields: dict) -> None:
+        """
+        Insert `name: fields` at the end of a top-level section, as text, so the
+        rest of the file (comments, extra keys, ordering) is left as is. Rolls
+        back if the files no longer load.
+        """
+        before = path.read_bytes().decode("utf-8")
+        _atomic_write(path, _insert_yaml_entry(before, section, name, fields))
+        try:
+            self.load()
+        except LedgerDataError as e:
+            _atomic_write(path, before)
+            raise ValueError(f"Could not add {name!r}: {e}") from None
+
     def delete(self, index: int, fingerprint: str | None = None) -> None:
         """Delete a row by position, optionally checking it is the expected one."""
         rows = self.load().rows
@@ -182,23 +249,73 @@ class LedgerStore:
         return _CsvFile(lines, row_lines, newline, bom, trailing)
 
     def _write_file(self, csv_file: _CsvFile) -> None:
-        """Atomically replace the CSV, keeping its permissions."""
-        path = self.settings.ledger_path
+        """Atomically replace the CSV."""
         text = csv_file.newline.join(csv_file.lines)
         if csv_file.trailing:
             text += csv_file.newline
         if csv_file.bom:
             text = BOM + text
+        _atomic_write(self.settings.ledger_path, text)
 
-        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
-                f.write(text)
-            os.chmod(tmp, path.stat().st_mode & 0o777)
-            os.replace(tmp, path)
-        except BaseException:
-            Path(tmp).unlink(missing_ok=True)
-            raise
+
+def _atomic_write(path: Path, text: str) -> None:
+    """Atomically replace a file, keeping its permissions."""
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
+            f.write(text)
+        os.chmod(tmp, path.stat().st_mode & 0o777)
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
+def _check_name(name: str, existing: dict, what: str) -> str:
+    name = name.strip()
+    if not name:
+        raise ValueError(f"The {what} name is required")
+    if any(c in name for c in ";\r\n"):
+        raise ValueError(f"The {what} name cannot contain ';' or line breaks")
+    if name in existing:
+        raise ValueError(f"{what.capitalize()} {name!r} already exists")
+    return name
+
+
+def _insert_yaml_entry(text: str, section: str, name: str, fields: dict) -> str:
+    """Return `text` with `name: fields` appended to the top-level `section`."""
+    newline = "\r\n" if "\r\n" in text else "\n"
+    lines = text.split(newline)
+    header = re.compile(rf"^{re.escape(section)}:\s*(#.*)?$")
+    start = next((i for i, line in enumerate(lines) if header.match(line)), None)
+
+    if start is None:
+        if any(line.startswith(f"{section}:") for line in lines):
+            raise ValueError(f"Cannot add to the {section!r} section; edit the file by hand")
+        while lines and not lines[-1].strip():
+            lines.pop()
+        return newline.join([*lines, f"{section}:", *_yaml_entry(name, fields, 2), ""])
+
+    # The section ends at the next top-level key; insert after its last indented line.
+    last, indent = start, None
+    for i in range(start + 1, len(lines)):
+        line = lines[i]
+        if line.strip() and line[0] not in " \t#":
+            break
+        if line.strip() and line[0] in " \t" and not line.lstrip().startswith("#"):
+            last = i
+            if indent is None:
+                indent = len(line) - len(line.lstrip())
+    lines[last + 1:last + 1] = _yaml_entry(name, fields, indent or 2)
+    return newline.join(lines)
+
+
+def _yaml_entry(name: str, fields: dict, indent: int) -> list[str]:
+    dumped = yaml.safe_dump(
+        {name: fields}, sort_keys=False, allow_unicode=True,
+        default_flow_style=False, indent=indent, width=10**9,
+    )
+    return [" " * indent + line for line in dumped.splitlines()]
 
 
 @dataclass

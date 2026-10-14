@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
 from pledger.web.dependencies import StoreDep
+from pledger.web.schemas import BaseMovementIn
 
 router = APIRouter(prefix="/api/base-movements", tags=["base-movements"])
 
@@ -21,3 +22,14 @@ def list_base_movements(store: StoreDep):
         }
         for b in store.load().base_movements.values()
     ]
+
+
+@router.post("", status_code=201)
+def create_base_movement(store: StoreDep, base: BaseMovementIn):
+    try:
+        store.add_base_movement(
+            base.name, base.type.value, base.description, base.debit or "", base.credit or ""
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
+    return {"ok": True}

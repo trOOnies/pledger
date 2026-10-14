@@ -120,6 +120,20 @@ input, select, button {
 }
 .filters select { width: auto; }
 input.fixed { background: var(--bg); color: var(--muted); }
+
+.money-input { display: flex; align-items: stretch; }
+.money-input .prefix {
+  display: flex; align-items: center; padding: 0 .5rem;
+  border: 1px solid var(--border); border-right: none; border-radius: 6px 0 0 6px;
+  background: var(--bg); color: var(--muted); font-size: 14px;
+}
+.money-input input { border-radius: 0 6px 6px 0; text-align: right; font-variant-numeric: tabular-nums; }
+
+details.add { margin-bottom: .5rem; }
+details.add summary { cursor: pointer; color: var(--accent); font-weight: 600; margin-bottom: .75rem; }
+details.add summary::before { content: "+ "; }
+details.add form { padding-bottom: .5rem; border-bottom: 1px solid var(--border); }
+section.panel > .msg { margin-bottom: .75rem; }
 input:focus, select:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 button[type="submit"] {

@@ -28,6 +28,15 @@
       flash.hidden = false;
       setTimeout(() => { flash.hidden = true; }, 6000);
     });
+    // Money inputs always show two decimals, e.g. 1234.5 -> 1,234.50.
+    document.addEventListener("change", (e) => {
+      const input = e.target;
+      if (!input.matches("input[data-money]") || !input.value.trim()) return;
+      const value = Number(input.value.replace(/,/g, ""));
+      if (Number.isFinite(value)) {
+        input.value = value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      }
+    });
   </script>
 </body>
 </html>

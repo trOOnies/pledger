@@ -7,20 +7,30 @@ from pathlib import Path
 
 from fastapi import Request
 from fastapi.templating import Jinja2Templates
+from jinja2 import pass_context
 
 from pledger.enums import MovementType
 from pledger.web.store import Snapshot
-from pledger.web.views import account_fields
+from pledger.web.views import base_fields
 
 HERE = Path(__file__).parent
 
 
-def money(value: float) -> str:
-    return f"{value:,.2f}"
+def money(value: float, currency: str = "$") -> str:
+    """Format an amount as currency with cents, e.g. -$1,234.50 or ARS 1,234.50."""
+    value = round(value, 2)
+    sign = "-" if value < 0 else ""
+    sep = " " if currency[-1:].isalpha() else ""
+    return f"{sign}{currency}{sep}{abs(value):,.2f}"
+
+
+@pass_context
+def money_filter(context, value: float) -> str:
+    return money(value, context["request"].app.state.store.settings.currency)
 
 
 templates = Jinja2Templates(directory=HERE / "templates")
-templates.env.filters["money"] = money
+templates.env.filters["money"] = money_filter
 
 
 def is_partial(request: Request) -> bool:
@@ -31,19 +41,18 @@ def is_partial(request: Request) -> bool:
 
 
 def render_form(request: Request, snapshot: Snapshot, values: dict, **extra):
-    base_names = sorted(snapshot.base_movements)
-    values.setdefault("base_movement", base_names[0] if base_names else "")
     values.setdefault("move_date", dt.date.today().isoformat())
+    base = base_fields(snapshot, values.get("move_type", ""), values.get("base_movement", ""))
+    values["move_type"] = base["move_type"]
+    values["base_movement"] = base["base_movement"]
     return templates.TemplateResponse(
         request,
         "_form.html",
         {
-            "bases_by_type": {
-                t.value: [b for b in base_names if snapshot.base_movements[b].move_type == t]
-                for t in MovementType
-            },
+            "move_types": [t.value for t in MovementType],
+            "currency": request.app.state.store.settings.currency,
             "values": values,
-            "fields": account_fields(snapshot, values["base_movement"]),
+            **base,
             **extra,
         },
     )

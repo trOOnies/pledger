@@ -1,0 +1,76 @@
+<div class="layout setup">
+  <section class="panel">
+    <h2>Accounts</h2>
+    {% if account_success %}<p class="msg success">{{ account_success }}</p>{% endif %}
+    <details class="add" {% if account_error %}open{% endif %}>
+      <summary>New account</summary>
+      <form class="stack" hx-post="/setup/accounts" hx-target="#setup">
+        {% if account_error %}<p class="msg error">{{ account_error }}</p>{% endif %}
+        <div class="pair">
+          <label>Name
+            <input name="name" value="{{ values.acc_name }}" required autocomplete="off">
+          </label>
+          <label>Type
+            <select name="acc_type">
+              {% for type in account_types %}
+              <option value="{{ type }}" {% if type == values.acc_type %}selected{% endif %}>{{ type | capitalize }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+        <label>Description
+          <input name="description" value="{{ values.acc_description }}" autocomplete="off">
+        </label>
+        <button type="submit">Add account</button>
+      </form>
+    </details>
+    {% for type, accs in accounts_by_type.items() if accs %}
+    <h3>{{ type | capitalize }}</h3>
+    <table>
+      {% for a in accs %}<tr><td class="nowrap"><strong>{{ a.name }}</strong></td><td class="muted">{{ a.description }}</td></tr>{% endfor %}
+    </table>
+    {% endfor %}
+  </section>
+  <section class="panel">
+    <h2>Base movements</h2>
+    {% if base_success %}<p class="msg success">{{ base_success }}</p>{% endif %}
+    <details class="add" {% if base_error %}open{% endif %}>
+      <summary>New base movement</summary>
+      <form class="stack" hx-post="/setup/base-movements" hx-target="#setup">
+        {% if base_error %}<p class="msg error">{{ base_error }}</p>{% endif %}
+        <div class="pair">
+          <label>Name
+            <input name="name" value="{{ values.base_name }}" required autocomplete="off">
+          </label>
+          <label>Type
+            <select name="move_type" hx-get="/form/base-sides" hx-target="#base-sides">
+              {% for type in move_types %}
+              <option value="{{ type }}" {% if type == values.move_type %}selected{% endif %}>{{ type | capitalize }}</option>
+              {% endfor %}
+            </select>
+          </label>
+        </div>
+        <div id="base-sides">{% include "_base_sides.html" %}</div>
+        <p class="muted small">"Any" lets you pick the account on each movement.</p>
+        <label>Description
+          <input name="description" value="{{ values.base_description }}" autocomplete="off">
+        </label>
+        <button type="submit">Add base movement</button>
+      </form>
+    </details>
+    {% for type, bases in bases_by_type.items() if bases %}
+    <h3>{{ type | capitalize }}</h3>
+    <table>
+      <thead><tr><th>Name</th><th>Debit</th><th>Credit</th><th>Description</th></tr></thead>
+      {% for b in bases %}
+      <tr>
+        <td><strong>{{ b.name }}</strong></td>
+        <td>{{ b.acc_debit.name if b.acc_debit else "any" }}</td>
+        <td>{{ b.acc_credit.name if b.acc_credit else "any" }}</td>
+        <td class="muted">{{ b.description }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% endfor %}
+  </section>
+</div>

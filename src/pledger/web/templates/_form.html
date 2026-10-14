@@ -4,20 +4,19 @@
   <label>Date
     <input type="date" name="move_date" value="{{ values.move_date }}" required>
   </label>
-  <label>Base movement
-    <select name="base_movement" hx-get="/form/accounts" hx-target="#account-fields">
-      {% for type, names in bases_by_type.items() if names %}
-      <optgroup label="{{ type | capitalize }}">
-        {% for name in names %}
-        <option {% if name == values.base_movement %}selected{% endif %}>{{ name }}</option>
-        {% endfor %}
-      </optgroup>
+  <label>Type
+    <select name="move_type" hx-get="/form/bases" hx-target="#base-fields">
+      {% for type in move_types %}
+      <option value="{{ type }}" {% if type == move_type %}selected{% endif %}>{{ type | capitalize }}</option>
       {% endfor %}
     </select>
   </label>
-  <div id="account-fields">{% include "_account_fields.html" %}</div>
+  <div id="base-fields" class="stack">{% include "_base_fields.html" %}</div>
   <label>Amount
-    <input name="amount" inputmode="decimal" value="{{ values.amount }}" placeholder="0.00" required autocomplete="off">
+    <span class="money-input">
+      <span class="prefix">{{ currency }}</span>
+      <input name="amount" inputmode="decimal" value="{{ values.amount }}" placeholder="0.00" required autocomplete="off" data-money>
+    </span>
   </label>
   <label>Comment
     <input name="comment" value="{{ values.comment }}" autocomplete="off">
