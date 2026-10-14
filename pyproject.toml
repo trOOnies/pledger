@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pledger"
+version = "0.1.0"
+description = "Personal ledger"
+readme = "README.md"
+license-files = ["LICENSE"]
+requires-python = ">=3.10"
+dependencies = [
+    "pandas",
+    "pyyaml",
+]
+
+[project.optional-dependencies]
+dev = [
+    "build",
+    "ruff",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]

@@ -1,6 +1,8 @@
 install:
-	python -m pip install -r requirements.txt
+	python -m pip install -e ".[dev]"
+build:
+	python -m build
 run:
-	python src/main.py
+	python main.py
 lint:
 	ruff check
