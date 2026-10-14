@@ -18,8 +18,8 @@
             </select>
           </label>
         </div>
-        <label><span>Description <em class="optional">(optional)</em></span>
-          <input name="description" value="{{ values.acc_description }}" autocomplete="off">
+        <label>Description
+          <input name="description" value="{{ values.acc_description }}" required autocomplete="off">
         </label>
         <button type="submit">Add account</button>
       </form>
@@ -55,8 +55,8 @@
         </div>
         <div id="base-sides">{% include "_base_sides.html" %}</div>
         <p class="muted small">Leave a side as "Any" to pick its account on each movement.</p>
-        <label><span>Description <em class="optional">(optional)</em></span>
-          <input name="description" value="{{ values.base_description }}" autocomplete="off">
+        <label>Description
+          <input name="description" value="{{ values.base_description }}" required autocomplete="off">
         </label>
         <button type="submit">Add base movement</button>
       </form>

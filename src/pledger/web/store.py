@@ -153,7 +153,7 @@ class LedgerStore:
         csv_file.lines.append(buf.getvalue())
         self._write_file(csv_file)
 
-    def add_account(self, name: str, acc_type: str, description: str = "") -> None:
+    def add_account(self, name: str, acc_type: str, description: str) -> None:
         """Validate a new account and add it to the accounts YAML."""
         snapshot = self.load()
         name = _check_name(name, snapshot.accounts, "account")
@@ -163,16 +163,17 @@ class LedgerStore:
             raise ValueError(f"Invalid account type: {acc_type!r}") from None
         if acc_type == AccountType.EQUITY:
             raise ValueError("New equity accounts are not supported")
+        description = _check_description(description, "account")
         self._add_yaml_entry(
             self.settings.accounts_path, acc_type.value, name,
-            {"description": description.strip()},
+            {"description": description},
         )
 
     def add_base_movement(
         self,
         name: str,
         move_type: str,
-        description: str = "",
+        description: str,
         debit: str = "",
         credit: str = "",
     ) -> None:
@@ -183,6 +184,7 @@ class LedgerStore:
             move_type = MovementType(move_type)
         except ValueError:
             raise ValueError(f"Invalid movement type: {move_type!r}") from None
+        description = _check_description(description, "base movement")
         # Gains always credit equity and losses always debit it.
         if move_type == MovementType.GAIN:
             credit = ""
@@ -195,7 +197,7 @@ class LedgerStore:
         if debit and debit == credit:
             raise ValueError("Debit and credit accounts must be different")
 
-        fields = {"description": description.strip()}
+        fields = {"description": description}
         if debit:
             fields["debit"] = debit
         if credit:
@@ -282,6 +284,13 @@ def _check_name(name: str, existing: dict, what: str) -> str:
     if name in existing:
         raise ValueError(f"{what.capitalize()} {name!r} already exists")
     return name
+
+
+def _check_description(description: str, what: str) -> str:
+    description = description.strip()
+    if not description:
+        raise ValueError(f"The {what} description is required")
+    return description
 
 
 def _insert_yaml_entry(text: str, section: str, name: str, fields: dict) -> str:

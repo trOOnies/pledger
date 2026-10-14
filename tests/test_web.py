@@ -116,11 +116,12 @@ class TestSetupStore:
     @pytest.mark.parametrize(
         ("args", "message"),
         [
-            (("Ca", "asset"), "already exists"),
-            (("  ", "asset"), "name is required"),
-            (("A;B", "asset"), "cannot contain"),
-            (("Sv", "nope"), "Invalid account type"),
-            (("Eq2", "equity"), "equity accounts are not supported"),
+            (("Ca", "asset", "d"), "already exists"),
+            (("  ", "asset", "d"), "name is required"),
+            (("A;B", "asset", "d"), "cannot contain"),
+            (("Sv", "nope", "d"), "Invalid account type"),
+            (("Eq2", "equity", "d"), "equity accounts are not supported"),
+            (("Sv", "asset", "  "), "description is required"),
         ],
     )
     def test_add_account_rejects_invalid(self, settings, args, message):
@@ -132,7 +133,7 @@ class TestSetupStore:
     def test_add_base_movement(self, settings):
         store = LedgerStore(settings)
         store.add_base_movement("Rent", "loss", "Monthly rent", debit="Ca", credit="Bk")
-        store.add_base_movement("ATM", "transfer", "", debit="Ca", credit="Bk")
+        store.add_base_movement("ATM", "transfer", "Cash withdrawal", debit="Ca", credit="Bk")
         bases = store.load().base_movements
         rent = bases["Rent"]  # debit is forced to equity for losses
         assert (rent.acc_debit.name, rent.acc_credit.name) == ("Eq", "Bk")
@@ -144,11 +145,12 @@ class TestSetupStore:
     @pytest.mark.parametrize(
         ("args", "message"),
         [
-            (("Food", "loss"), "already exists"),
-            (("X", "nope"), "Invalid movement type"),
-            (("X", "transfer", "", "Ca", "Ca"), "must be different"),
-            (("X", "transfer", "", "Eq"), "non-selectable account"),
-            (("X", "gain", "", "Nope"), "non-selectable account"),
+            (("Food", "loss", "d"), "already exists"),
+            (("X", "nope", "d"), "Invalid movement type"),
+            (("X", "loss", ""), "description is required"),
+            (("X", "transfer", "d", "Ca", "Ca"), "must be different"),
+            (("X", "transfer", "d", "Eq"), "non-selectable account"),
+            (("X", "gain", "d", "Nope"), "non-selectable account"),
         ],
     )
     def test_add_base_movement_rejects_invalid(self, settings, args, message):
@@ -241,8 +243,9 @@ class TestPages:
         new_account = r.text.split('hx-post="/setup/accounts"')[1].split("</form>")[0]
         assert 'value="equity"' not in new_account
         assert 'value="asset"' in new_account
-        # 2 descriptions + credit (the default loss type fixes debit to equity)
-        assert r.text.count('<em class="optional">(optional)</em>') == 3
+        # Only credit: descriptions are required and the default loss type fixes debit
+        assert r.text.count('<em class="optional">(optional)</em>') == 1
+        assert r.text.count('name="description" value="" required') == 2
 
     def test_tables_are_sortable(self, client):
         index, setup = client.get("/").text, client.get("/setup").text
@@ -261,11 +264,16 @@ class TestPages:
         assert ">Sv</option>" in r.text  # selectable for new base movements
         assert "Sv" in LedgerStore(settings).load().accounts
 
-        r = client.post("/setup/accounts", data={"name": "Sv", "acc_type": "asset"}, headers=HTMX)
+        data = {"name": "Sv", "acc_type": "asset", "description": "x"}
+        r = client.post("/setup/accounts", data=data, headers=HTMX)
         assert 'class="msg error"' in r.text and "already exists" in r.text
 
+        data = {"name": "Sv2", "acc_type": "asset", "description": ""}
+        r = client.post("/setup/accounts", data=data, headers=HTMX)
+        assert "description is required" in r.text
+
     def test_setup_create_base_movement(self, client, settings):
-        data = {"name": "Rent", "move_type": "loss", "description": "", "credit": "Bk"}
+        data = {"name": "Rent", "move_type": "loss", "description": "Rent", "credit": "Bk"}
         r = client.post("/setup/base-movements", data=data, headers=HTMX)
         assert "Added base movement Rent" in r.text
         assert "Rent" in LedgerStore(settings).load().base_movements
@@ -322,9 +330,11 @@ class TestApi:
         body = {"name": "Sv", "type": "asset", "description": "Savings"}
         assert client.post("/api/accounts", json=body).status_code == 201
         assert client.post("/api/accounts", json=body).status_code == 422
-        equity = {"name": "Eq2", "type": "equity"}
+        equity = {"name": "Eq2", "type": "equity", "description": "x"}
         assert client.post("/api/accounts", json=equity).status_code == 422
-        body = {"name": "Deposit", "type": "transfer", "debit": "Sv", "credit": "Ca"}
+        no_description = {"name": "Sv2", "type": "asset"}
+        assert client.post("/api/accounts", json=no_description).status_code == 422
+        body = {"name": "Deposit", "type": "transfer", "description": "d", "debit": "Sv", "credit": "Ca"}
         assert client.post("/api/base-movements", json=body).status_code == 201
         bases = {b["name"]: b for b in client.get("/api/base-movements").json()}
         assert bases["Deposit"]["debit"] == "Sv"

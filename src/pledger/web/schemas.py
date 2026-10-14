@@ -19,12 +19,12 @@ class MovementIn(BaseModel):
 class AccountIn(BaseModel):
     name: str
     type: AccountType
-    description: str = ""
+    description: str
 
 
 class BaseMovementIn(BaseModel):
     name: str
     type: MovementType
-    description: str = ""
+    description: str
     debit: str | None = None
     credit: str | None = None
