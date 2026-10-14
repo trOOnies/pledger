@@ -69,3 +69,34 @@ def test_print_results(ledger, capsys):
     out = capsys.readouterr().out
     assert "RESULTS" in out
     assert "Profit:" in out
+
+
+def test_from_dataframe_ignores_extra_columns_and_does_not_mutate(
+    accounts, base_movements
+):
+    from pandas import DataFrame
+
+    df = DataFrame(
+        {
+            "move_date": ["2026-01-01"],
+            "base_movement": ["Gift"],
+            "acc_debit": ["Ca"],
+            "amount": ["1,234.50"],
+            "acc_credit": ["Eq"],
+            "comment": ["birthday"],
+        }
+    )
+    ledger = Ledger.from_dataframe(df, accounts, base_movements)
+    assert ledger.movements[0].amount == 1234.50
+    assert df.loc[0, "amount"] == "1,234.50"
+
+
+def test_balances(ledger):
+    balances = ledger.balances()
+    # Bk: +1000.50 salary, -200 withdraw
+    assert balances["Bk"] == pytest.approx(800.50)
+    # Ca: +200 withdraw, -50.25 food, +10 gift
+    assert balances["Ca"] == pytest.approx(159.75)
+    # Equity balance equals the profit
+    assert balances["Eq"] == pytest.approx(ledger.total_profits)
+    assert "Cc" not in balances

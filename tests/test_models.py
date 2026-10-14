@@ -18,19 +18,88 @@ class TestAccount:
         acc.add(-100.0)
         assert acc.total == -100.0
 
-    @pytest.mark.xfail(
-        reason="_check_positivity result is ignored, so negatives are never rejected",
-        strict=True,
-    )
-    def test_asset_cannot_go_negative(self, accounts):
-        with pytest.raises((AssertionError, ValueError)):
-            accounts["Ca"].add(-1.0)
+    @pytest.mark.parametrize("name", ["Ca", "Cc"])  # asset and liability
+    def test_add_rejects_negative_total(self, accounts, name):
+        acc = accounts[name]
+        acc.add(10.0)
+        with pytest.raises(ValueError, match=f"'{name}' positivity"):
+            acc.add(-10.01)
+        assert acc.total == 10.0  # unchanged after a rejected add
+
+    def test_add_down_to_zero_is_allowed(self, accounts):
+        acc = accounts["Ca"]
+        acc.add(10.0)
+        acc.add(-10.0)
+        assert acc.total == 0.0
+
+    def test_emptying_an_account_tolerates_float_rounding(self, accounts):
+        acc = accounts["Ca"]
+        acc.add(0.3)
+        acc.add(-0.1)  # total is 0.19999999999999998
+        acc.add(-0.2)
+        assert acc.total == pytest.approx(0.0)
+
+        acc = accounts["Bk"]
+        acc.add_many([0.3, -0.1, -0.2], strict=True)
+        assert acc.total == pytest.approx(0.0)
+
+    def test_add_many_tiny_negative_on_empty_account_is_allowed(self, accounts):
+        acc = accounts["Ca"]
+        acc.add_many([-1e-12], strict=True)
+        assert acc.total == pytest.approx(0.0)
+
+    @pytest.mark.parametrize("value", [0.0, 1e-12, -1e-12])
+    def test_add_zero_or_near_zero_is_a_noop(self, accounts, value):
+        acc = accounts["Ca"]
+        acc.add(value)
+        assert acc.total == 0
+
+    def test_add_many_rejects_negative_final_total(self, accounts):
+        acc = accounts["Ca"]
+        acc.add(5.0)
+        with pytest.raises(ValueError, match="3 added values.*'Ca' positivity"):
+            acc.add_many([1.0, -2.0, -5.0])
+        assert acc.total == 5.0
+
+    def test_add_many_allows_negative_subtotals_by_default(self, accounts):
+        acc = accounts["Ca"]
+        acc.add_many([-5.0, 10.0])
+        assert acc.total == 5.0
+
+    def test_add_many_strict_rejects_negative_subtotals(self, accounts):
+        acc = accounts["Ca"]
+        acc.add(1.0)
+        with pytest.raises(ValueError, match="'Ca' strict positivity"):
+            acc.add_many([-5.0, 10.0], strict=True)
+        assert acc.total == 1.0
+
+    def test_add_many_strict_allows_non_negative_subtotals(self, accounts):
+        acc = accounts["Ca"]
+        acc.add(5.0)
+        acc.add_many([-5.0, 10.0, -3.0], strict=True)
+        assert acc.total == 7.0
+
+    def test_add_many_empty_is_a_noop(self, accounts):
+        acc = accounts["Ca"]
+        acc.add_many([], strict=True)
+        assert acc.total == 0
+
+    def test_equity_has_no_positivity_limit(self, accounts):
+        acc = accounts["Eq"]
+        acc.add_many([-5.0, -10.0], strict=True)
+        assert acc.total == -15.0
 
     def test_load_yaml(self, accounts_yaml):
         accounts = Account.load_yaml(accounts_yaml)
         assert set(accounts) == {"Ca", "Bk", "Cc", "Eq"}
-        assert accounts["Cc"].acc_type == AccountType.LIABILITY
+        assert accounts["Cc"].acc_type is AccountType.LIABILITY
         assert accounts["Bk"].description == "Bank account"
+
+    def test_load_yaml_rejects_unknown_account_type(self, tmp_path):
+        path = tmp_path / "accounts.yaml"
+        path.write_text("assets:\n  Ca:\n    description: Cash\n")
+        with pytest.raises(ValueError, match="assets"):
+            Account.load_yaml(str(path))
 
     def test_load_yaml_requires_yaml_extension(self, tmp_path):
         with pytest.raises(AssertionError):
