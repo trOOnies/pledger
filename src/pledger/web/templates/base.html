@@ -28,6 +28,59 @@
       flash.hidden = false;
       setTimeout(() => { flash.hidden = true; }, 6000);
     });
+    // Sortable tables: click (or Enter on) a header to sort by that column; click
+    // again to reverse. The order is kept when HTMX re-renders the table.
+    const sortState = {};
+
+    function sortTable(table) {
+      const state = sortState[table.dataset.sortable];
+      const tbody = table.tBodies[0];
+      if (!state || !tbody || tbody.rows.length < 2) return;
+      const value = (row) => {
+        const cell = row.cells[state.col];
+        return cell ? (cell.dataset.sort ?? cell.textContent.trim()) : "";
+      };
+      const rows = [...tbody.rows].sort((a, b) => {
+        const [x, y] = [value(a), value(b)];
+        const [nx, ny] = [Number(x), Number(y)];
+        const cmp = x !== "" && y !== "" && !isNaN(nx) && !isNaN(ny)
+          ? nx - ny
+          : x.localeCompare(y, undefined, { numeric: true, sensitivity: "base" });
+        return state.dir * cmp;
+      });
+      tbody.append(...rows);
+      table.querySelectorAll("thead th").forEach((th, i) => {
+        if (i === state.col) th.setAttribute("aria-sort", state.dir > 0 ? "ascending" : "descending");
+        else th.removeAttribute("aria-sort");
+      });
+    }
+
+    function initSortable(root) {
+      root.querySelectorAll("table[data-sortable]").forEach((table) => {
+        table.querySelectorAll("thead th").forEach((th) => {
+          if (th.textContent.trim()) th.tabIndex = 0;
+        });
+        sortTable(table);
+      });
+    }
+
+    function onSortHeader(e) {
+      const th = e.target.closest("table[data-sortable] thead th");
+      if (!th || !th.textContent.trim()) return;
+      if (e.type === "keydown" && e.key !== "Enter" && e.key !== " ") return;
+      e.preventDefault();
+      const table = th.closest("table");
+      const key = table.dataset.sortable;
+      const prev = sortState[key];
+      sortState[key] = { col: th.cellIndex, dir: prev && prev.col === th.cellIndex ? -prev.dir : 1 };
+      sortTable(table);
+    }
+
+    document.addEventListener("click", onSortHeader);
+    document.addEventListener("keydown", onSortHeader);
+    document.addEventListener("DOMContentLoaded", () => initSortable(document));
+    document.addEventListener("htmx:afterSettle", (e) => initSortable(e.detail.elt));
+
     // Money inputs always show two decimals, e.g. 1234.5 -> 1,234.50.
     document.addEventListener("change", (e) => {
       const input = e.target;

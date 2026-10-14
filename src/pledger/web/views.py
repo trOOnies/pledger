@@ -133,7 +133,8 @@ def setup_context(snapshot: Snapshot, values: dict | None = None) -> dict:
             t.value: [b for b in snapshot.base_movements.values() if b.move_type == t]
             for t in MovementType
         },
-        "account_types": [t.value for t in ACCOUNT_TYPE_ORDER],
+        # New equity accounts are not supported for now.
+        "account_types": [t.value for t in ACCOUNT_TYPE_ORDER if t != AccountType.EQUITY],
         "move_types": [t.value for t in MovementType],
         "sides": base_sides(snapshot, values["move_type"]),
         "values": values,

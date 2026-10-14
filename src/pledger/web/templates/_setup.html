@@ -18,7 +18,7 @@
             </select>
           </label>
         </div>
-        <label>Description
+        <label><span>Description <em class="optional">(optional)</em></span>
           <input name="description" value="{{ values.acc_description }}" autocomplete="off">
         </label>
         <button type="submit">Add account</button>
@@ -26,8 +26,11 @@
     </details>
     {% for type, accs in accounts_by_type.items() if accs %}
     <h3>{{ type | capitalize }}</h3>
-    <table>
+    <table data-sortable="setup-accounts-{{ type }}">
+      <thead><tr><th>Name</th><th>Description</th></tr></thead>
+      <tbody>
       {% for a in accs %}<tr><td class="nowrap"><strong>{{ a.name }}</strong></td><td class="muted">{{ a.description }}</td></tr>{% endfor %}
+      </tbody>
     </table>
     {% endfor %}
   </section>
@@ -43,7 +46,7 @@
             <input name="name" value="{{ values.base_name }}" required autocomplete="off">
           </label>
           <label>Type
-            <select name="move_type" hx-get="/form/base-sides" hx-target="#base-sides">
+            <select name="move_type" hx-get="/form/base-sides" hx-target="#base-sides" hx-swap="innerHTML">
               {% for type in move_types %}
               <option value="{{ type }}" {% if type == values.move_type %}selected{% endif %}>{{ type | capitalize }}</option>
               {% endfor %}
@@ -51,8 +54,8 @@
           </label>
         </div>
         <div id="base-sides">{% include "_base_sides.html" %}</div>
-        <p class="muted small">"Any" lets you pick the account on each movement.</p>
-        <label>Description
+        <p class="muted small">Leave a side as "Any" to pick its account on each movement.</p>
+        <label><span>Description <em class="optional">(optional)</em></span>
           <input name="description" value="{{ values.base_description }}" autocomplete="off">
         </label>
         <button type="submit">Add base movement</button>
@@ -60,8 +63,9 @@
     </details>
     {% for type, bases in bases_by_type.items() if bases %}
     <h3>{{ type | capitalize }}</h3>
-    <table>
+    <table data-sortable="setup-bases-{{ type }}">
       <thead><tr><th>Name</th><th>Debit</th><th>Credit</th><th>Description</th></tr></thead>
+      <tbody>
       {% for b in bases %}
       <tr>
         <td><strong>{{ b.name }}</strong></td>
@@ -70,6 +74,7 @@
         <td class="muted">{{ b.description }}</td>
       </tr>
       {% endfor %}
+      </tbody>
     </table>
     {% endfor %}
   </section>

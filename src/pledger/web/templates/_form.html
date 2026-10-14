@@ -5,7 +5,7 @@
     <input type="date" name="move_date" value="{{ values.move_date }}" required>
   </label>
   <label>Type
-    <select name="move_type" hx-get="/form/bases" hx-target="#base-fields">
+    <select name="move_type" hx-get="/form/bases" hx-target="#base-fields" hx-swap="innerHTML">
       {% for type in move_types %}
       <option value="{{ type }}" {% if type == move_type %}selected{% endif %}>{{ type | capitalize }}</option>
       {% endfor %}
@@ -18,7 +18,7 @@
       <input name="amount" inputmode="decimal" value="{{ values.amount }}" placeholder="0.00" required autocomplete="off" data-money>
     </span>
   </label>
-  <label>Comment
+  <label><span>Comment <em class="optional">(optional)</em></span>
     <input name="comment" value="{{ values.comment }}" autocomplete="off">
   </label>
   <button type="submit">Add movement</button>

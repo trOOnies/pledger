@@ -120,6 +120,7 @@ class TestSetupStore:
             (("  ", "asset"), "name is required"),
             (("A;B", "asset"), "cannot contain"),
             (("Sv", "nope"), "Invalid account type"),
+            (("Eq2", "equity"), "equity accounts are not supported"),
         ],
     )
     def test_add_account_rejects_invalid(self, settings, args, message):
@@ -182,6 +183,14 @@ class TestPages:
         base_select = form.split('name="base_movement"')[1].split("</select>")[0]
         assert "Gift" in base_select and "Food" not in base_select  # gain only
 
+    def test_form_selects_swap_their_own_container(self, client):
+        # The form swaps outerHTML; without an explicit swap the selects would
+        # inherit it and replace (and lose) their target containers.
+        form = client.get("/").text
+        assert 'hx-target="#base-fields" hx-swap="innerHTML"' in form
+        assert 'hx-target="#account-fields" hx-swap="innerHTML"' in form
+        assert 'Comment <em class="optional">(optional)</em>' in form
+
     def test_form_bases_for_type(self, client):
         r = client.get("/form/bases", params={"move_type": "transfer"})
         assert "<option selected>Move</option>" in r.text
@@ -229,6 +238,19 @@ class TestPages:
         assert r.status_code == 200
         assert "Withdraw" in r.text
         assert "New account" in r.text and "New base movement" in r.text
+        new_account = r.text.split('hx-post="/setup/accounts"')[1].split("</form>")[0]
+        assert 'value="equity"' not in new_account
+        assert 'value="asset"' in new_account
+        # 2 descriptions + credit (the default loss type fixes debit to equity)
+        assert r.text.count('<em class="optional">(optional)</em>') == 3
+
+    def test_tables_are_sortable(self, client):
+        index, setup = client.get("/").text, client.get("/setup").text
+        assert 'data-sortable="movements"' in index
+        assert 'data-sortable="balances-asset"' in index
+        assert 'data-sort="1000.5"' in index  # sort by raw amount, not formatted text
+        assert 'data-sortable="setup-accounts-asset"' in setup
+        assert 'data-sortable="setup-bases-gain"' in setup
 
     def test_setup_create_account(self, client, settings):
         r = client.post(
@@ -300,6 +322,8 @@ class TestApi:
         body = {"name": "Sv", "type": "asset", "description": "Savings"}
         assert client.post("/api/accounts", json=body).status_code == 201
         assert client.post("/api/accounts", json=body).status_code == 422
+        equity = {"name": "Eq2", "type": "equity"}
+        assert client.post("/api/accounts", json=equity).status_code == 422
         body = {"name": "Deposit", "type": "transfer", "debit": "Sv", "credit": "Ca"}
         assert client.post("/api/base-movements", json=body).status_code == 201
         bases = {b["name"]: b for b in client.get("/api/base-movements").json()}

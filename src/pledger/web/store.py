@@ -161,6 +161,8 @@ class LedgerStore:
             acc_type = AccountType(acc_type)
         except ValueError:
             raise ValueError(f"Invalid account type: {acc_type!r}") from None
+        if acc_type == AccountType.EQUITY:
+            raise ValueError("New equity accounts are not supported")
         self._add_yaml_entry(
             self.settings.accounts_path, acc_type.value, name,
             {"description": description.strip()},

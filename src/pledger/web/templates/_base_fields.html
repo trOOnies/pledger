@@ -1,6 +1,6 @@
 <label>Base movement
   {% if bases %}
-  <select name="base_movement" hx-get="/form/accounts" hx-target="#account-fields">
+  <select name="base_movement" hx-get="/form/accounts" hx-target="#account-fields" hx-swap="innerHTML">
     {% for name in bases %}
     <option {% if name == base_movement %}selected{% endif %}>{{ name }}</option>
     {% endfor %}

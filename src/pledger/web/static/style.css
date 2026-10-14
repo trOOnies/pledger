@@ -98,6 +98,13 @@ tr:last-child td { border-bottom: none; }
 .nowrap { white-space: nowrap; }
 .muted { color: var(--muted); }
 .small { font-size: .8rem; margin: 0; }
+.optional { font-weight: normal; opacity: .8; }
+
+table[data-sortable] th[tabindex] { cursor: pointer; user-select: none; }
+table[data-sortable] th[tabindex]:hover { color: var(--text); }
+table[data-sortable] th[tabindex]::after { content: " ↕"; opacity: .35; }
+table[data-sortable] th[aria-sort="ascending"]::after { content: " ▲"; opacity: 1; }
+table[data-sortable] th[aria-sort="descending"]::after { content: " ▼"; opacity: 1; }
 .gain { color: var(--gain); }
 .loss { color: var(--loss); }
 

@@ -1,5 +1,5 @@
 {% macro side(name, label, fixed) %}
-<label>{{ label }}
+<label><span>{{ label }}{% if not fixed %} <em class="optional">(optional)</em>{% endif %}</span>
   {% if fixed %}
   <input value="{{ fixed }}" readonly tabindex="-1" class="fixed">
   {% else %}
