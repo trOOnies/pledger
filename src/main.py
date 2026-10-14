@@ -1,6 +1,7 @@
 """main.py"""
 
-from models import Account, Ledger, MovementBase
+from ledger import Ledger
+from models import Account, MovementBase
 
 
 def main() -> None:
@@ -9,6 +10,7 @@ def main() -> None:
 
     ledger = Ledger.from_csv("info/ledger.csv", accounts, base_movements)
     ledger.print_data()
+    ledger.print_results()
 
 
 if __name__ == "__main__":

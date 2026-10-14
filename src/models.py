@@ -5,7 +5,6 @@ from __future__ import annotations
 import datetime as dt
 from dataclasses import dataclass
 
-from pandas import read_csv
 from yaml import safe_load
 
 from enums import AccountType, MovementType
@@ -153,57 +152,4 @@ class Movement:
             + "\t" + self.acc_debit.name
             + "\t" + str(self.amount)
             + "\t" + self.acc_credit.name
-        )
-
-
-@dataclass
-class Ledger:
-    """Ledger of money movements."""
-    movements: list[Movement]
-
-    def __post_init__(self):
-        pass
-
-    def print_data(self) -> None:
-        """Print data in CLI."""
-        print(
-            "Move Date"
-            + "\t" + "Debit"
-            + "\t" + "Amount"
-            + "\t" + "Credit"
-        )
-        for move in self.movements:
-            move.print_data()
-
-    @classmethod
-    def from_csv(
-        cls,
-        path: str,
-        accounts: dict[str, Account],
-        base_movements: dict[str, MovementBase],
-    ) -> Ledger:
-        """
-        Creates a Ledger from a CSV file.
-        NOTE: Must use semicolons (';').
-        """
-        assert path.endswith(".csv")
-        df = read_csv(
-            path,
-            usecols=[
-                "move_date", "base_movement",
-                "acc_debit", "acc_credit", "amount",
-            ],
-            sep=";",
-        )
-        return cls(
-            movements=[
-                Movement(
-                    move_date=row.move_date,
-                    move_base=base_movements[row.base_movement],
-                    input_acc_debit=accounts[row.acc_debit],
-                    input_acc_credit=accounts[row.acc_credit],
-                    amount=row.amount,
-                )
-                for row in df.itertuples()
-            ]
         )
