@@ -46,6 +46,39 @@ class Ledger:
             ],
             sep=";",
         )
+
+        df["amount"] = (
+            df.amount
+            .map(lambda v: v.replace(",", "").replace(" ", "") if isinstance(v, str) else v)
+            .map(lambda v: 0.0 if isinstance(v, str) and v in {"", "nan"} else float(v))
+            .fillna(0.0)
+        )
+
+        # Accounts
+        not_seen_accounts = (
+            set(df.acc_debit.unique().tolist())
+            | set(df.acc_credit.unique().tolist())
+        )
+        not_seen_accounts = sorted([acc for acc in not_seen_accounts if acc not in accounts])
+        if not_seen_accounts:
+            raise ValueError(
+                "The following ledger accounts were not found in the settings:"
+                + str(not_seen_accounts)
+            )
+        del not_seen_accounts
+
+        # BaseMovements
+        not_seen_base_moves = set(df.base_movement.unique().tolist())
+        not_seen_base_moves = sorted(
+            [bm for bm in not_seen_base_moves if bm not in base_movements]
+        )
+        if not_seen_base_moves:
+            raise ValueError(
+                "The following ledger base movements were not found in the settings:"
+                + str(not_seen_base_moves)
+            )
+        del not_seen_base_moves
+
         return cls(
             movements=[
                 Movement(

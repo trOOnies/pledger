@@ -122,23 +122,39 @@ class Movement:
             assert c_gain and not c_loss, "Movement type must match"
             if self.move_base.debit_fixed:
                 assert self.input_acc_debit == self.move_base.acc_debit, (
-                    "Debit account must match"
+                    "Debit account must match: "
+                    + self.input_acc_debit.name
+                    + " != "
+                    + self.move_base.acc_debit.name
+                    + f" ({self.move_date})"
                 )
         elif self.move_type == MovementType.LOSS:
             assert c_loss and not c_gain, "Movement type must match"
             if self.move_base.credit_fixed:
                 assert self.input_acc_credit == self.move_base.acc_credit, (
-                    "Credit account must match"
+                    "Credit account must match: "
+                    + self.input_acc_credit.name
+                    + " != "
+                    + self.move_base.acc_credit.name
+                    + f" ({self.move_date})"
                 )
         elif self.move_type == MovementType.TRANSFER:
             assert not c_loss and not c_gain, "Movement type must match"
             if self.move_base.debit_fixed:
                 assert self.input_acc_debit == self.move_base.acc_debit, (
-                    "Debit account must match"
+                    "Debit account must match: "
+                    + self.input_acc_debit.name
+                    + " != "
+                    + self.move_base.acc_debit.name
+                    + f" ({self.move_date})"
                 )
             if self.move_base.credit_fixed:
                 assert self.input_acc_credit == self.move_base.acc_credit, (
-                    "Credit account must match"
+                    "Credit account must match: "
+                    + self.input_acc_credit.name
+                    + " != "
+                    + self.move_base.acc_credit.name
+                    + f" ({self.move_date})"
                 )
         else:
             raise ValueError(f"Unknown movement type: {self.move_type}")
