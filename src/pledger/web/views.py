@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import datetime as dt
+import math
+
 from pledger.enums import AccountType, MovementType
 from pledger.web.store import Snapshot, row_fingerprint
 
@@ -138,4 +141,148 @@ def setup_context(snapshot: Snapshot, values: dict | None = None) -> dict:
         "move_types": [t.value for t in MovementType],
         "sides": base_sides(snapshot, values["move_type"]),
         "values": values,
+    }
+
+
+def composition(totals: dict[str, float], limit: int = 8) -> list[dict]:
+    """
+    Positive totals sorted by size, with their share of the whole. Past `limit`
+    rows, the smallest ones are folded into a single "Other" row that keeps
+    them under `rest`.
+    """
+    items = sorted(((k, v) for k, v in totals.items() if v > 1e-9), key=lambda kv: -kv[1])
+    total = sum(v for _, v in items)
+    rest = items[limit - 1:] if len(items) > limit else []
+    if rest:
+        items = [*items[:limit - 1], (f"Other ({len(rest)})", sum(v for _, v in rest))]
+    top = max((v for _, v in items), default=0.0)
+
+    def row(name: str, value: float) -> dict:
+        return {"name": name, "value": value, "share": 100 * value / total, "width": 100 * value / top}
+
+    rows = [row(k, v) for k, v in items]
+    if rest:
+        rows[-1]["rest"] = [row(k, v) for k, v in rest]
+    return rows
+
+
+def nice_ticks(lo: float, hi: float, count: int = 4) -> list[float]:
+    """Round axis ticks covering [lo, hi]."""
+    if hi - lo < 1e-9:
+        lo, hi = lo - 1, hi + 1
+    raw = (hi - lo) / count
+    mag = 10 ** math.floor(math.log10(raw))
+    step = next(m * mag for m in (1, 2, 2.5, 5, 10) if m * mag >= raw)
+    ticks = [math.floor(lo / step) * step]
+    while ticks[-1] < hi - 1e-9:
+        ticks.append(ticks[-1] + step)
+    return ticks
+
+
+def compact(value: float) -> str:
+    """Short axis label, e.g. 1.5M, 400K, -20."""
+    for div, suffix in ((1e9, "B"), (1e6, "M"), (1e3, "K")):
+        if abs(value) >= div:
+            return f"{value / div:.3g}{suffix}"
+    return f"{value:.3g}"
+
+
+def equity_series(snapshot: Snapshot, month: str = "") -> list[dict]:
+    """Equity at the end of each day with gains or losses (within `month`, if given)."""
+    changes: dict[str, float] = {}
+    for move in snapshot.ledger().movements:
+        sign = {MovementType.GAIN: 1, MovementType.LOSS: -1}.get(move.move_type, 0)
+        if sign:
+            changes[move.move_date] = changes.get(move.move_date, 0.0) + sign * move.amount
+    series, equity = [], 0.0
+    for date in sorted(changes):
+        equity += changes[date]
+        if not month or date.startswith(month):
+            series.append({"date": date, "value": equity, "change": changes[date]})
+    return series
+
+
+def equity_chart(series: list[dict]) -> dict | None:
+    """
+    Points, path and axes to draw the equity line. Coordinates are percentages
+    of the plot area, so HTML labels and the SVG line share them.
+    """
+    if not series:
+        return None
+    dates = [dt.date.fromisoformat(p["date"]) for p in series]
+    ticks = nice_ticks(min(p["value"] for p in series), max(p["value"] for p in series))
+    y_lo, y_hi = ticks[0], ticks[-1]
+    first, last = dates[0], dates[-1]
+    span = max((last - first).days, 1)
+
+    def x(d: dt.date) -> float:
+        return 50.0 if first == last else round(100 * (d - first).days / span, 2)
+
+    def y(v: float) -> float:
+        return round(100 * (1 - (v - y_lo) / (y_hi - y_lo)), 2)
+
+    points = [{**p, "x": x(d), "y": y(p["value"])} for p, d in zip(series, dates)]
+
+    # Tick the start of each month, or the first and last day within a single month.
+    month_starts = [
+        dt.date(yr, mo, 1)
+        for yr in range(first.year, last.year + 1)
+        for mo in range(1, 13)
+        if first <= dt.date(yr, mo, 1) <= last
+    ]
+    if len(month_starts) >= 2:
+        every = math.ceil(len(month_starts) / 8)
+        x_ticks = [{"x": x(m), "label": m.strftime("%b %Y")} for m in month_starts[::every]]
+    else:
+        x_ticks = [{"x": x(d), "label": d.strftime("%b %d")} for d in sorted({first, last})]
+    return {
+        "path": "M" + " L".join(f"{p['x']},{p['y']}" for p in points),
+        "points": points,
+        "y_ticks": [{"y": y(t), "label": compact(t)} for t in ticks],
+        "x_ticks": x_ticks,
+        "last": points[-1],
+    }
+
+
+def build_charts(snapshot: Snapshot, month: str = "") -> dict:
+    """Composition of balances and results, and equity over time."""
+    rows = snapshot.rows
+    months = sorted({d[:7] for d in rows.move_date}, reverse=True)
+    # Balances as of the end of the month; gains and losses within it.
+    upto = rows[rows.move_date.str[:7] <= month] if month else rows
+    balances = snapshot.ledger(upto).balances()
+    period = snapshot.ledger(rows[rows.move_date.str.startswith(month)] if month else rows)
+
+    def by_account(acc_type: AccountType) -> list[dict]:
+        return composition({
+            a.name: balances.get(a.name, 0.0)
+            for a in snapshot.accounts.values()
+            if a.acc_type == acc_type
+        })
+
+    def by_base(move_type: MovementType) -> list[dict]:
+        totals: dict[str, float] = {}
+        for move in period.movements:
+            if move.move_type == move_type:
+                totals[move.move_base.name] = totals.get(move.move_base.name, 0.0) + move.amount
+        return composition(totals)
+
+    series = equity_series(snapshot, month)
+    equity = equity_chart(series)
+    if equity:
+        # A month is compared with the equity it started with; all time, with
+        # the first entry (usually the opening balances).
+        first = series[0]
+        start = first["value"] - first["change"] if month else first["value"]
+        equity["change"] = series[-1]["value"] - start
+        equity["since"] = "since the start of the month" if month else f"since {first['date']}"
+    return {
+        "months": months,
+        "month": month,
+        "assets": by_account(AccountType.ASSET),
+        "liabilities": by_account(AccountType.LIABILITY),
+        "gains": by_base(MovementType.GAIN),
+        "losses": by_base(MovementType.LOSS),
+        "equity": equity,
+        "equity_series": series,
     }

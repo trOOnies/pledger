@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Charts · pledger{% endblock %}
+{% block content %}
+<form id="filters" class="filters" hx-get="/charts" hx-target="#charts" hx-push-url="true" hx-trigger="change">
+  <label>Month
+    <select name="month">
+      <option value="">All time</option>
+      {% for m in months %}<option value="{{ m }}" {% if m == month %}selected{% endif %}>{{ m }}</option>{% endfor %}
+    </select>
+  </label>
+</form>
+
+<div id="charts">{% include "_charts.html" %}</div>
+
+<script>
+  // Equity chart hover: snap a crosshair, dot and tooltip to the nearest day.
+  document.addEventListener("pointermove", (e) => {
+    const chart = e.target.closest(".line-chart");
+    document.querySelectorAll(".line-chart.hover").forEach((c) => {
+      if (c !== chart) c.classList.remove("hover");
+    });
+    if (!chart) return;
+    // Coordinates are percentages of the plot area.
+    const box = chart.querySelector(".plot").getBoundingClientRect();
+    const mx = (100 * (e.clientX - box.left)) / box.width;
+    const points = JSON.parse(chart.dataset.points);
+    const p = points.reduce((a, b) => (Math.abs(b.x - mx) < Math.abs(a.x - mx) ? b : a));
+    chart.querySelector(".crosshair").setAttribute("transform", `translate(${p.x} 0)`);
+    const dot = chart.querySelector(".hover-dot");
+    dot.style.left = `${p.x}%`;
+    dot.style.top = `${p.y}%`;
+    const tip = chart.querySelector(".tooltip");
+    tip.querySelector(".tip-date").textContent = p.date;
+    tip.querySelector(".tip-value").textContent = p.value_text;
+    tip.querySelector(".tip-change").textContent = p.change_text;
+    tip.querySelector(".tip-change").className = "tip-change " + (p.change >= 0 ? "gain" : "loss");
+    tip.style.left = `${p.x}%`;
+    tip.style.top = `${p.y}%`;
+    tip.classList.toggle("flip", p.x > 60);
+    chart.classList.add("hover");
+  });
+  document.documentElement.addEventListener("pointerleave", () => {
+    document.querySelectorAll(".line-chart.hover").forEach((c) => c.classList.remove("hover"));
+  });
+</script>
+{% endblock %}

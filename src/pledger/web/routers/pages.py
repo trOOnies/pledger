@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse
 
 from pledger.web.dependencies import StoreDep
 from pledger.web.templating import is_partial, render_form, templates
-from pledger.web.views import build_view, setup_context
+from pledger.web.views import build_charts, build_view, setup_context
 
 router = APIRouter(tags=["pages"], default_response_class=HTMLResponse)
 
@@ -22,6 +22,13 @@ def index(request: Request, store: StoreDep, month: str = "", account: str = "")
     return templates.TemplateResponse(
         request, "index.html", {**view, "form": form}
     )
+
+
+@router.get("/charts")
+def charts(request: Request, store: StoreDep, month: str = ""):
+    context = build_charts(store.load(), month)
+    template = "_charts.html" if is_partial(request) else "charts.html"
+    return templates.TemplateResponse(request, template, context)
 
 
 @router.get("/setup")

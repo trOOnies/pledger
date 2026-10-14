@@ -1,0 +1,107 @@
+{% macro bar_row(item, kind, tag="div") %}
+<{{ tag }} class="bar-row" title="{{ item.name }}: {{ item.value | money }} ({{ '%.1f' | format(item.share) }}%)">
+  <span class="bar-name">{{ item.name }}</span>
+  <span class="num">{{ item.value | money }}</span>
+  <span class="num muted share">{{ '%.1f' | format(item.share) }}%</span>
+  <span class="bar-track"><span class="bar {{ kind }}" style="width: {{ '%.2f' | format(item.width) }}%"></span></span>
+</{{ tag }}>
+{% endmacro %}
+
+{% macro bars(title, items, kind, empty) %}
+<div class="composition">
+  <h3>{{ title }} <span class="total">{{ items | sum(attribute='value') | money }}</span></h3>
+  {% for item in items %}
+  {% if item.rest %}
+  <details class="other">
+    {{ bar_row(item, kind, "summary") }}
+    <div class="other-rows">{% for r in item.rest %}{{ bar_row(r, kind) }}{% endfor %}</div>
+  </details>
+  {% else %}
+  {{ bar_row(item, kind) }}
+  {% endif %}
+  {% else %}
+  <p class="muted small">{{ empty }}</p>
+  {% endfor %}
+</div>
+{% endmacro %}
+
+<div class="charts-grid">
+  <section class="panel">
+    <h2>Assets &amp; liabilities{% if month %} <small>as of end of {{ month }}</small>{% endif %}</h2>
+    <div class="composition-pair">
+      {{ bars("Assets", assets, "asset", "No asset balances.") }}
+      {{ bars("Liabilities", liabilities, "liability", "No liability balances.") }}
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Gains &amp; losses <small>{{ ("in " ~ month) if month else "all time" }}</small></h2>
+    <div class="composition-pair">
+      {{ bars("Gains", gains, "gain", "No gains in this period.") }}
+      {{ bars("Losses", losses, "loss", "No losses in this period.") }}
+    </div>
+  </section>
+</div>
+
+<section class="panel">
+  <h2>Equity over time <small>{{ ("in " ~ month) if month else "all time" }}, at each entry date</small></h2>
+  {% if equity %}
+  <p class="equity-headline">
+    <span class="num-lg">{{ equity.last.value | money }}</span>
+    <span class="{{ 'gain' if equity.change >= 0 else 'loss' }}">{{ '+' if equity.change >= 0 }}{{ equity.change | money }}</span>
+    <span class="muted">{{ equity.since }}</span>
+  </p>
+  {% set ns = namespace(points=[]) %}
+  {% for p in equity.points %}
+    {% set ns.points = ns.points + [{
+      "x": p.x, "y": p.y, "date": p.date, "change": p.change,
+      "value_text": p.value | money,
+      "change_text": ("+" if p.change >= 0 else "") ~ (p.change | money) ~ " that day",
+    }] %}
+  {% endfor %}
+  <div class="line-chart" data-points='{{ ns.points | tojson }}'>
+    <div class="y-axis" aria-hidden="true">
+      {% for t in equity.y_ticks %}<span style="top: {{ t.y }}%">{{ t.label }}</span>{% endfor %}
+    </div>
+    <div class="plot">
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img"
+        aria-label="Equity from {{ equity_series[0].date }} to {{ equity.last.date }}, ending at {{ equity.last.value | money }}">
+        {% for t in equity.y_ticks %}
+        <line class="{{ 'axis' if loop.first else 'grid' }}" x1="0" x2="100" y1="{{ t.y }}" y2="{{ t.y }}"/>
+        {% endfor %}
+        <path class="line" d="{{ equity.path }}"/>
+        <line class="crosshair" x1="0" x2="0" y1="0" y2="100"/>
+      </svg>
+      <span class="dot end-dot" style="left: {{ equity.last.x }}%; top: {{ equity.last.y }}%"></span>
+      <span class="dot hover-dot"></span>
+      <div class="tooltip" aria-hidden="true">
+        <div class="tip-date muted"></div>
+        <div class="tip-value"></div>
+        <div class="tip-change"></div>
+      </div>
+    </div>
+    <div class="x-axis" aria-hidden="true">
+      {% for t in equity.x_ticks %}<span style="left: {{ t.x }}%">{{ t.label }}</span>{% endfor %}
+    </div>
+  </div>
+  <details class="chart-table">
+    <summary>Show table</summary>
+    <div class="table-wrap">
+      <table data-sortable="equity">
+        <thead><tr><th>Date</th><th class="num">Change</th><th class="num">Equity</th></tr></thead>
+        <tbody>
+        {% for p in equity_series | reverse %}
+        <tr>
+          <td class="nowrap">{{ p.date }}</td>
+          <td class="num {{ 'gain' if p.change >= 0 else 'loss' }}" data-sort="{{ p.change }}">{{ p.change | money }}</td>
+          <td class="num" data-sort="{{ p.value }}">{{ p.value | money }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% else %}
+  <p class="muted">No gains or losses in this period.</p>
+  {% endif %}
+</section>

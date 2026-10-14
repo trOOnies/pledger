@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from pledger.web.app import create_app
 from pledger.web.store import LedgerStore, Settings, _insert_yaml_entry, row_fingerprint
 from pledger.web.templating import money
+from pledger.web.views import build_charts, composition, equity_series, nice_ticks
 
 HTMX = {"HX-Request": "true"}
 
@@ -292,6 +293,49 @@ class TestPages:
         r = client.get("/")
         assert r.status_code == 500
         assert "Could not load the ledger" in r.text
+
+    def test_charts(self, client):
+        r = client.get("/charts")
+        assert r.status_code == 200
+        assert 'href="/charts" aria-current="page"' in r.text
+        assert "Assets &amp; liabilities" in r.text and "Equity over time" in r.text
+        assert "$800.50" in r.text and "$159.75" in r.text  # Bk and Ca balances
+        assert "Salary" in r.text and "Food" in r.text
+        assert "$960.25" in r.text  # final equity
+        assert 'data-sortable="equity"' in r.text
+
+    def test_charts_partial_for_month(self, client, settings):
+        with settings.ledger_path.open("a") as f:
+            f.write("2026-02-01;Food;Eq;100;Ca;\n")
+        r = client.get("/charts", params={"month": "2026-02"}, headers=HTMX)
+        assert "<html" not in r.text
+        assert "as of end of 2026-02" in r.text
+        assert "Salary" not in r.text  # no gains in February
+        assert "-$100.00" in r.text and "$860.25" in r.text
+
+
+class TestCharts:
+    def test_composition_folds_the_smallest_into_other(self):
+        rows = composition({"a": 50, "b": 30, "c": 10, "d": 6, "e": 4, "zero": 0}, limit=3)
+        assert [r["name"] for r in rows] == ["a", "b", "Other (3)"]
+        assert rows[-1]["value"] == 20 and rows[-1]["share"] == 20
+        assert [r["name"] for r in rows[-1]["rest"]] == ["c", "d", "e"]
+        assert rows[0]["width"] == 100 and rows[1]["width"] == 60
+
+    def test_nice_ticks(self):
+        assert nice_ticks(51.9e6, 75.8e6) == [50e6, 60e6, 70e6, 80e6]
+        assert nice_ticks(0, 0.9) == [0, 0.25, 0.5, 0.75, 1.0]
+
+    def test_equity_series(self, settings):
+        snapshot = LedgerStore(settings).load()
+        series = equity_series(snapshot)
+        assert [(p["date"], p["value"]) for p in series] == [
+            ("2026-01-01", 1000.5), ("2026-01-03", 950.25), ("2026-01-04", 960.25),
+        ]
+        chart = build_charts(snapshot)["equity"]
+        assert chart["points"][0]["x"] == 0 and chart["points"][-1]["x"] == 100
+        assert chart["change"] == pytest.approx(-40.25)  # since the first entry
+        assert build_charts(snapshot, "2025-12")["equity"] is None
 
 
 class TestApi:
