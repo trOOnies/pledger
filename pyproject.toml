@@ -10,19 +10,34 @@ readme = "README.md"
 license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = [
+    "numpy",
     "pandas",
     "pyyaml",
 ]
 
 [project.optional-dependencies]
+web = [
+    "fastapi",
+    "jinja2",
+    "python-multipart",
+    "uvicorn",
+]
 dev = [
+    "pledger[web]",
     "build",
+    "httpx2",
     "pytest",
     "ruff",
 ]
 
+[project.scripts]
+pledger-web = "pledger.web.__main__:main"
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+"pledger.web" = ["templates/*.html", "static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

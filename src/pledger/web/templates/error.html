@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Error · pledger{% endblock %}
+{% block content %}
+<div class="panel">
+  <h2>Could not load the ledger</h2>
+  <p class="msg error">{{ error }}</p>
+  <p class="muted">Files read: <code>{{ settings.accounts_path }}</code>, <code>{{ settings.base_movements_path }}</code>,
+    <code>{{ settings.ledger_path }}</code>. Set <code>PLEDGER_ACCOUNTS</code>, <code>PLEDGER_BASE_MOVEMENTS</code>
+    and <code>PLEDGER_LEDGER</code> to use other paths.</p>
+</div>
+{% endblock %}

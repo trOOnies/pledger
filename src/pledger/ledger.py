@@ -4,10 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from pandas import read_csv
+from pandas import DataFrame, read_csv
 
-from pledger.enums import MovementType
+from pledger.enums import AccountType, MovementType
 from pledger.models import Account, Movement, MovementBase
+
+LEDGER_COLUMNS = ["move_date", "base_movement", "acc_debit", "acc_credit", "amount"]
 
 
 @dataclass
@@ -38,15 +40,18 @@ class Ledger:
         NOTE: Must use semicolons (';').
         """
         assert path.endswith(".csv")
-        df = read_csv(
-            path,
-            usecols=[
-                "move_date", "base_movement",
-                "acc_debit", "acc_credit", "amount",
-            ],
-            sep=";",
-        )
+        df = read_csv(path, usecols=LEDGER_COLUMNS, sep=";")
+        return cls.from_dataframe(df, accounts, base_movements)
 
+    @classmethod
+    def from_dataframe(
+        cls,
+        df: DataFrame,
+        accounts: dict[str, Account],
+        base_movements: dict[str, MovementBase],
+    ) -> Ledger:
+        """Creates a Ledger from a DataFrame with the LEDGER_COLUMNS."""
+        df = df[LEDGER_COLUMNS].copy()
         df["amount"] = (
             df.amount
             .map(lambda v: v.replace(",", "").replace(" ", "") if isinstance(v, str) else v)
@@ -91,6 +96,19 @@ class Ledger:
                 for row in df.itertuples()
             ]
         )
+
+    def balances(self) -> dict[str, float]:
+        """
+        Balance per account name, signed by its natural side: assets are
+        debit - credit; liabilities and equity are credit - debit.
+        """
+        balances: dict[str, float] = {}
+        for move in self.movements:
+            for acc, sign in ((move.acc_debit, 1), (move.acc_credit, -1)):
+                if acc.acc_type != AccountType.ASSET:
+                    sign = -sign
+                balances[acc.name] = balances.get(acc.name, 0.0) + sign * move.amount
+        return balances
 
     def print_data(self) -> None:
         """Print data in CLI."""

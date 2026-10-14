@@ -9,7 +9,9 @@ build: ## Build the library version
 	python -m build
 run: ## Run the main script
 	python main.py
+serve: ## Run the web app on http://127.0.0.1:8000
+	python -m pledger.web --reload
 test: ## Run the test suite
 	python -m pytest
 lint: ## Apply the linter
-	ruff check
+	ruff check --fix

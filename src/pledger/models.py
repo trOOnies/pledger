@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import datetime as dt
 from dataclasses import dataclass
+from math import isclose
 
+import numpy as np
 from yaml import safe_load
 
 from pledger.code.models import assert_accounts
@@ -25,18 +27,41 @@ class Account:
         self._check_positivity = (
             (lambda _: True)
             if self.acc_type == AccountType.EQUITY
-            else (lambda t: not (t < 0.0))
+            else (lambda t: t >= -1e-9)
         )
+        self._check_positivity_vect = np.vectorize(self._check_positivity)
 
     def add(self, value: float) -> None:
         """Adds a single value to the total."""
-        self.total += value
-        self._check_positivity(self.total)
+        if isclose(value, 0.0, abs_tol=1e-9):
+            return
 
-    def add_many(self, values: list[float]) -> None:
+        new_total = self.total + value
+        if not self._check_positivity(new_total):
+            raise ValueError(
+                f"The added value={value} would go against the account '{self.name}' positivity setting"
+            )
+        self.total = new_total
+
+    def add_many(self, values: list[float], strict: bool = False) -> None:
         """Adds many values to the total."""
-        self.total += sum(values)
-        self._check_positivity(self.total)
+        if not values:
+            return
+
+        new_total = self.total + sum(values)
+        if not self._check_positivity(new_total):
+            raise ValueError(
+                f"The {len(values)} added values would break the account '{self.name}' positivity setting"
+            )
+
+        if strict:
+            all_subtotals = np.array(values, dtype=float).cumsum() + self.total
+            if not self._check_positivity_vect(all_subtotals).all():
+                raise ValueError(
+                    f"The {len(values)} added values would break the account '{self.name}' strict positivity setting"
+                )
+
+        self.total = new_total
 
     @classmethod
     def load_yaml(cls, path: str) -> dict[str, Account]:
@@ -48,7 +73,7 @@ class Account:
             name: Account(
                 name=name,
                 description=acc_d["description"],
-                acc_type=acc_type,
+                acc_type=AccountType(acc_type),
             )
             for acc_type, at_accounts in data.items()
             for name, acc_d in at_accounts.items()

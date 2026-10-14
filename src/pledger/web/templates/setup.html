@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Setup · pledger{% endblock %}
+{% block content %}
+<p class="muted">Read-only. Edit these YAML files to change accounts and base movements:
+  <code>{{ settings.accounts_path }}</code>, <code>{{ settings.base_movements_path }}</code>.
+  Ledger: <code>{{ settings.ledger_path }}</code>.</p>
+<div class="layout setup">
+  <section class="panel">
+    <h2>Accounts</h2>
+    {% for type, accs in accounts_by_type.items() if accs %}
+    <h3>{{ type | capitalize }}</h3>
+    <table>
+      {% for a in accs %}<tr><td class="nowrap"><strong>{{ a.name }}</strong></td><td class="muted">{{ a.description }}</td></tr>{% endfor %}
+    </table>
+    {% endfor %}
+  </section>
+  <section class="panel">
+    <h2>Base movements</h2>
+    {% for type, bases in bases_by_type.items() if bases %}
+    <h3>{{ type | capitalize }}</h3>
+    <table>
+      <thead><tr><th>Name</th><th>Debit</th><th>Credit</th><th>Description</th></tr></thead>
+      {% for b in bases %}
+      <tr>
+        <td><strong>{{ b.name }}</strong></td>
+        <td>{{ b.acc_debit.name if b.acc_debit else "any" }}</td>
+        <td>{{ b.acc_credit.name if b.acc_credit else "any" }}</td>
+        <td class="muted">{{ b.description }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% endfor %}
+  </section>
+</div>
+{% endblock %}

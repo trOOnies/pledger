@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+<form id="filters" class="filters" hx-get="/" hx-target="#view" hx-push-url="true" hx-trigger="change">
+  <label>Month
+    <select name="month">
+      <option value="">All time</option>
+      {% for m in months %}<option value="{{ m }}" {% if m == month %}selected{% endif %}>{{ m }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Account
+    <select name="account">
+      <option value="">All accounts</option>
+      {% for a in accounts %}<option value="{{ a }}" {% if a == account %}selected{% endif %}>{{ a }}</option>{% endfor %}
+    </select>
+  </label>
+</form>
+
+<div class="layout">
+  <aside class="panel">
+    <h2>New movement</h2>
+    {{ form | safe }}
+  </aside>
+  <section id="view" hx-get="/" hx-include="#filters" hx-trigger="ledger-changed from:body">
+    {% include "_view.html" %}
+  </section>
+</div>
+{% endblock %}

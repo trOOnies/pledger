@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}pledger{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}">
+  <script src="{{ url_for('static', path='htmx.min.js') }}" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">pledger</a>
+    <nav>
+      <a href="/" {% if request.url.path == '/' %}aria-current="page"{% endif %}>Ledger</a>
+      <a href="/setup" {% if request.url.path == '/setup' %}aria-current="page"{% endif %}>Setup</a>
+      <a href="/docs">API</a>
+    </nav>
+  </header>
+  <div id="flash" class="flash" role="alert" hidden></div>
+  <main>{% block content %}{% endblock %}</main>
+  <script>
+    // Show server errors (e.g. a stale delete) instead of failing silently.
+    document.addEventListener("htmx:responseError", (e) => {
+      const flash = document.getElementById("flash");
+      let msg = e.detail.xhr.statusText || "Request failed";
+      try { msg = JSON.parse(e.detail.xhr.responseText).detail || msg; } catch {}
+      flash.textContent = msg;
+      flash.hidden = false;
+      setTimeout(() => { flash.hidden = true; }, 6000);
+    });
+  </script>
+</body>
+</html>
