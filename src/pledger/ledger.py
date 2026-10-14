@@ -6,8 +6,8 @@ from dataclasses import dataclass
 
 from pandas import read_csv
 
-from enums import MovementType
-from models import Account, Movement, MovementBase
+from pledger.enums import MovementType
+from pledger.models import Account, Movement, MovementBase
 
 
 @dataclass

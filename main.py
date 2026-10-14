@@ -1,7 +1,7 @@
 """main.py"""
 
-from ledger import Ledger
-from models import Account, MovementBase
+from pledger.ledger import Ledger
+from pledger.models import Account, MovementBase
 
 
 def main() -> None:

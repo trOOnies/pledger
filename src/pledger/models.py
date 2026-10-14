@@ -7,12 +7,14 @@ from dataclasses import dataclass
 
 from yaml import safe_load
 
-from enums import AccountType, MovementType
+from pledger.code.models import assert_accounts
+from pledger.enums import AccountType, LedgerSide, MovementType
 
 
 @dataclass
 class Account:
     """Ledger account."""
+
     name: str
     description: str
     acc_type: AccountType
@@ -56,6 +58,7 @@ class Account:
 @dataclass
 class MovementBase:
     """Ledger money movement base."""
+
     name: str
     description: str
     acc_debit: Account | None
@@ -86,15 +89,15 @@ class MovementBase:
                 acc_debit=(
                     accounts["Eq"]
                     if move_type == MovementType.LOSS
-                    else accounts[base_move_d["debit"]]
-                    if "debit" in base_move_d
+                    else accounts[base_move_d[LedgerSide.DEBIT.value]]
+                    if LedgerSide.DEBIT.value in base_move_d
                     else None
                 ),
                 acc_credit=(
                     accounts["Eq"]
                     if move_type == MovementType.GAIN
-                    else accounts[base_move_d["credit"]]
-                    if "credit" in base_move_d
+                    else accounts[base_move_d[LedgerSide.CREDIT.value]]
+                    if LedgerSide.CREDIT.value in base_move_d
                     else None
                 ),
             )
@@ -106,6 +109,7 @@ class MovementBase:
 @dataclass
 class Movement:
     """Ledger money movement."""
+
     move_date: dt.date
     move_base: MovementBase
     input_acc_debit: Account
@@ -121,40 +125,36 @@ class Movement:
         if self.move_type == MovementType.GAIN:
             assert c_gain and not c_loss, "Movement type must match"
             if self.move_base.debit_fixed:
-                assert self.input_acc_debit == self.move_base.acc_debit, (
-                    "Debit account must match: "
-                    + self.input_acc_debit.name
-                    + " != "
-                    + self.move_base.acc_debit.name
-                    + f" ({self.move_date})"
+                assert_accounts(
+                    LedgerSide.DEBIT,
+                    self.input_acc_debit,
+                    self.move_base.acc_debit,
+                    self.move_date,
                 )
         elif self.move_type == MovementType.LOSS:
             assert c_loss and not c_gain, "Movement type must match"
             if self.move_base.credit_fixed:
-                assert self.input_acc_credit == self.move_base.acc_credit, (
-                    "Credit account must match: "
-                    + self.input_acc_credit.name
-                    + " != "
-                    + self.move_base.acc_credit.name
-                    + f" ({self.move_date})"
+                assert_accounts(
+                    LedgerSide.CREDIT,
+                    self.input_acc_credit,
+                    self.move_base.acc_credit,
+                    self.move_date,
                 )
         elif self.move_type == MovementType.TRANSFER:
             assert not c_loss and not c_gain, "Movement type must match"
             if self.move_base.debit_fixed:
-                assert self.input_acc_debit == self.move_base.acc_debit, (
-                    "Debit account must match: "
-                    + self.input_acc_debit.name
-                    + " != "
-                    + self.move_base.acc_debit.name
-                    + f" ({self.move_date})"
+                assert_accounts(
+                    LedgerSide.DEBIT,
+                    self.input_acc_debit,
+                    self.move_base.acc_debit,
+                    self.move_date,
                 )
             if self.move_base.credit_fixed:
-                assert self.input_acc_credit == self.move_base.acc_credit, (
-                    "Credit account must match: "
-                    + self.input_acc_credit.name
-                    + " != "
-                    + self.move_base.acc_credit.name
-                    + f" ({self.move_date})"
+                assert_accounts(
+                    LedgerSide.CREDIT,
+                    self.input_acc_credit,
+                    self.move_base.acc_credit,
+                    self.move_date,
                 )
         else:
             raise ValueError(f"Unknown movement type: {self.move_type}")
@@ -165,7 +165,10 @@ class Movement:
     def print_data(self) -> None:
         print(
             self.move_date
-            + "\t" + self.acc_debit.name
-            + "\t" + str(self.amount)
-            + "\t" + self.acc_credit.name
+            + "\t"
+            + self.acc_debit.name
+            + "\t"
+            + str(self.amount)
+            + "\t"
+            + self.acc_credit.name
         )

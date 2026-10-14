@@ -6,6 +6,12 @@ from enum import Enum
 from typing import Any
 
 
+class LedgerSide(str, Enum):
+    """Ledger side."""
+    DEBIT = "debit"
+    CREDIT = "credit"
+
+
 class AccountType(str, Enum):
     """Type of account based on equity side."""
     ASSET = "asset"
