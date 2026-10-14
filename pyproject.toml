@@ -17,8 +17,13 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "build",
+    "pytest",
     "ruff",
 ]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"
