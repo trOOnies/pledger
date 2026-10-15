@@ -27,6 +27,7 @@ dev = [
     "build",
     "httpx2",
     "pytest",
+    "pytest-cov",
     "ruff",
 ]
 
@@ -42,3 +43,11 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra"
+
+[tool.coverage.run]
+source = ["pledger"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true

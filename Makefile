@@ -10,6 +10,6 @@ build: ## Build the library version
 serve: ## Run the web app on http://127.0.0.1:8000
 	python -m pledger.web --reload
 test: ## Run the test suite
-	python -m pytest
+	python -m pytest --cov
 lint: ## Apply the linter
 	ruff check --fix
