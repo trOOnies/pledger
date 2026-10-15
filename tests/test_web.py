@@ -338,6 +338,9 @@ class TestPages:
         assert client.post("/api/movements", json=body).status_code == 422
         assert len(rows(settings)) == 4
 
+    def test_static_urls_are_versioned(self, client):
+        assert "style.css?v=" in client.get("/").text
+
     def test_create_invalid_movement_shows_error(self, client, settings):
         form = {
             "move_date": "2026-02-01", "base_movement": "Gift",

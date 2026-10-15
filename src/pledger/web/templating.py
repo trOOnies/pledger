@@ -34,6 +34,14 @@ templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.filters["money"] = money_filter
 
 
+def static_version(path: str) -> int:
+    """A version for static URLs that changes with the file, so browsers never use a stale copy."""
+    return int((HERE / "static" / path).stat().st_mtime)
+
+
+templates.env.globals["static_version"] = static_version
+
+
 def is_partial(request: Request) -> bool:
     return (
         request.headers.get("HX-Request") == "true"
