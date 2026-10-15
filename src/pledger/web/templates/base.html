@@ -12,6 +12,7 @@
     <a class="brand" href="/">pledger</a>
     <nav>
       <a href="/" {% if request.url.path == '/' %}aria-current="page"{% endif %}>Ledger</a>
+      <a href="/accounts" {% if request.url.path == '/accounts' %}aria-current="page"{% endif %}>Accounts</a>
       <a href="/charts" {% if request.url.path == '/charts' %}aria-current="page"{% endif %}>Charts</a>
       <a href="/setup" {% if request.url.path == '/setup' %}aria-current="page"{% endif %}>Setup</a>
       <a href="/docs">API</a>

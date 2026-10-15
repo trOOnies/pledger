@@ -6,29 +6,53 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
 from pledger.web.dependencies import StoreDep
-from pledger.web.templating import is_partial, render_form, templates
-from pledger.web.views import build_charts, build_view, setup_context
+from pledger.web.templating import (
+    is_partial,
+    remember_month,
+    remembered_month,
+    render_form,
+    templates,
+)
+from pledger.web.views import (
+    build_accounts,
+    build_charts,
+    build_view,
+    months_of,
+    setup_context,
+)
 
 router = APIRouter(tags=["pages"], default_response_class=HTMLResponse)
 
 
 @router.get("/")
-def index(request: Request, store: StoreDep, month: str = "", account: str = ""):
+def index(request: Request, store: StoreDep, month: str | None = None, account: str = ""):
     snapshot = store.load()
+    month = remembered_month(request, month, months_of(snapshot))
     view = build_view(snapshot, month, account)
     if is_partial(request):
-        return templates.TemplateResponse(request, "_view.html", view)
+        return remember_month(templates.TemplateResponse(request, "_view.html", view), month)
     form = render_form(request, snapshot, {}).body.decode()
-    return templates.TemplateResponse(
-        request, "index.html", {**view, "form": form}
+    return remember_month(
+        templates.TemplateResponse(request, "index.html", {**view, "form": form}), month
     )
 
 
+@router.get("/accounts")
+def accounts(request: Request, store: StoreDep, month: str | None = None):
+    snapshot = store.load()
+    month = remembered_month(request, month, months_of(snapshot))
+    context = build_accounts(snapshot, month)
+    template = "_accounts.html" if is_partial(request) else "accounts.html"
+    return remember_month(templates.TemplateResponse(request, template, context), month)
+
+
 @router.get("/charts")
-def charts(request: Request, store: StoreDep, month: str = ""):
-    context = build_charts(store.load(), month)
+def charts(request: Request, store: StoreDep, month: str | None = None):
+    snapshot = store.load()
+    month = remembered_month(request, month, months_of(snapshot))
+    context = build_charts(snapshot, month)
     template = "_charts.html" if is_partial(request) else "charts.html"
-    return templates.TemplateResponse(request, template, context)
+    return remember_month(templates.TemplateResponse(request, template, context), month)
 
 
 @router.get("/setup")

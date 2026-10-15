@@ -73,7 +73,7 @@ main { padding: 1rem 1.5rem 3rem; max-width: 1400px; margin: 0 auto; }
 .layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 1rem; align-items: start; }
 .layout > aside { position: sticky; top: 1rem; }
 .layout.setup { grid-template-columns: 1fr 2fr; }
-#view { display: grid; gap: 1rem; min-width: 0; }
+#view, .layout > .view { display: grid; gap: 1rem; min-width: 0; }
 
 .panel {
   background: var(--surface); border: 1px solid var(--border);
@@ -86,12 +86,9 @@ main { padding: 1rem 1.5rem 3rem; max-width: 1400px; margin: 0 auto; }
   padding: .75rem 1rem; display: flex; flex-direction: column;
 }
 .card .label { color: var(--muted); font-size: .8rem; }
+.card .label small { opacity: .8; margin-left: .15rem; }
 .card .num { font-size: 1.4rem; font-weight: 600; }
 
-.balances summary { cursor: pointer; list-style: none; }
-.balances summary h2 { display: inline; }
-.balances summary::-webkit-details-marker { display: none; }
-.balance-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 1.5rem; }
 
 table { width: 100%; border-collapse: collapse; }
 th, td { padding: .35rem .5rem; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
@@ -169,7 +166,8 @@ button.icon:hover { color: var(--loss); }
 }
 
 .htmx-request #view, #view.htmx-request,
-.htmx-request #charts, #charts.htmx-request { opacity: .6; transition: opacity .2s; }
+.htmx-request #charts, #charts.htmx-request,
+.htmx-request #accounts-view, #accounts-view.htmx-request { opacity: .6; transition: opacity .2s; }
 
 /* Charts */
 #charts { display: grid; gap: 1rem; }

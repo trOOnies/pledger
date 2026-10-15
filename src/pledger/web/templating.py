@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import datetime as dt
+import re
 from pathlib import Path
 
-from fastapi import Request
+from fastapi import Request, Response
 from fastapi.templating import Jinja2Templates
 from jinja2 import pass_context
 
@@ -38,6 +39,27 @@ def is_partial(request: Request) -> bool:
         request.headers.get("HX-Request") == "true"
         and request.headers.get("HX-History-Restore-Request") != "true"
     )
+
+
+MONTH_COOKIE = "pledger_month"
+
+
+def remembered_month(request: Request, month: str | None, months: list[str]) -> str:
+    """
+    The month filter shared by the Ledger, Accounts and Charts pages: the one in
+    the URL if given (empty for all time), else the last one picked, if it still
+    has movements.
+    """
+    if month is None:
+        month = request.cookies.get(MONTH_COOKIE, "")
+        if month not in months:
+            month = ""
+    return month if re.fullmatch(r"\d{4}-\d{2}", month) else ""
+
+
+def remember_month(response: Response, month: str) -> Response:
+    response.set_cookie(MONTH_COOKIE, month, max_age=365 * 24 * 3600, httponly=True, samesite="lax")
+    return response
 
 
 def render_form(request: Request, snapshot: Snapshot, values: dict, **extra):

@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Accounts · pledger{% endblock %}
+{% block content %}
+<form id="filters" class="filters" hx-get="/accounts" hx-target="#accounts-view" hx-push-url="true" hx-trigger="change">
+  <label>Month
+    <select name="month">
+      <option value="">All time</option>
+      {% for m in months %}<option value="{{ m }}" {% if m == month %}selected{% endif %}>{{ m }}</option>{% endfor %}
+    </select>
+  </label>
+</form>
+
+<div id="accounts-view">{% include "_accounts.html" %}</div>
+{% endblock %}

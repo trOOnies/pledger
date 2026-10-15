@@ -1,30 +1,9 @@
+{% set period = ("in " ~ month) if month else "all time" %}
 <div class="cards">
-  <div class="card"><span class="label">Gains</span><span class="num gain">{{ gains | money }}</span></div>
-  <div class="card"><span class="label">Losses</span><span class="num loss">{{ losses | money }}</span></div>
-  <div class="card"><span class="label">Profit</span><span class="num {{ 'gain' if profit >= 0 else 'loss' }}">{{ profit | money }}</span></div>
+  <div class="card"><span class="label">Gains <small>{{ period }}{% if account %}, {{ account }}{% endif %}</small></span><span class="num gain">{{ gains | money }}</span></div>
+  <div class="card"><span class="label">Losses <small>{{ period }}{% if account %}, {{ account }}{% endif %}</small></span><span class="num loss">{{ losses | money }}</span></div>
+  <div class="card"><span class="label">Profit <small>{{ period }}{% if account %}, {{ account }}{% endif %}</small></span><span class="num {{ 'gain' if profit >= 0 else 'loss' }}">{{ profit | money }}</span></div>
 </div>
-
-<details class="panel balances" open>
-  <summary><h2>Balances{% if month %} <small>as of end of {{ month }}</small>{% endif %}</h2></summary>
-  <div class="balance-groups">
-    {% for type, accs in accounts_by_type.items() if accs %}
-    <div>
-      <h3>{{ type | capitalize }}</h3>
-      <table data-sortable="balances-{{ type }}">
-        <thead><tr><th>Account</th><th class="num">Balance</th></tr></thead>
-        <tbody>
-        {% for a in accs %}
-        <tr title="{{ a.description }}">
-          <td>{{ a.name }}</td>
-          <td class="num {{ 'loss' if a.balance < 0 and type != 'equity' }}" data-sort="{{ a.balance }}">{{ a.balance | money }}</td>
-        </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    {% endfor %}
-  </div>
-</details>
 
 <div class="panel">
   <h2>Movements <small>{{ movements | length }}</small></h2>

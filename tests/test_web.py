@@ -194,6 +194,10 @@ class TestSetupStore:
         assert settings.base_movements_path.read_text() == before
 
 
+def card_labels(html: str) -> list[str]:
+    return [c.split(" <small>")[0] for c in html.split('<span class="label">')[1:]]
+
+
 class TestPages:
     def test_index(self, client):
         r = client.get("/")
@@ -201,6 +205,40 @@ class TestPages:
         assert "New movement" in r.text
         assert "$1,000.50" in r.text
         assert "$960.25" in r.text  # profit card
+        assert "Balances" not in r.text and "New account" not in r.text
+        assert card_labels(r.text) == ["Gains", "Losses", "Profit"]
+
+    def test_accounts(self, client):
+        r = client.get("/accounts")
+        assert r.status_code == 200
+        assert 'href="/accounts" aria-current="page"' in r.text
+        assert card_labels(r.text) == ["Assets", "Liabilities", "Equity"]
+        cards = r.text.split('<div class="cards">')[1].split("</div>\n    </div>")[0]
+        assert cards.count("$960.25") == 2  # assets (800.50 + 159.75) and equity
+        assert "$0.00" in cards  # no liabilities
+        assert "Balances" in r.text and "New account" in r.text
+        assert "<td class=\"muted\">Bank account</td>" in r.text  # descriptions
+        new_account = r.text.split('hx-post="/accounts"')[1].split("</form>")[0]
+        assert 'value="equity"' not in new_account
+        assert 'value="asset"' in new_account
+
+    def test_accounts_partial_for_month(self, client):
+        r = client.get("/accounts", params={"month": "2026-01"}, headers=HTMX)
+        assert "<html" not in r.text and "as of end of 2026-01" in r.text
+
+    def test_month_is_shared_between_tabs(self, client, settings):
+        with settings.ledger_path.open("a") as f:
+            f.write("2026-02-01;Food;Eq;100;Ca;\n")
+        client.get("/charts", params={"month": "2026-02"})
+        for path in ["/", "/accounts", "/charts"]:
+            assert '<option value="2026-02" selected>' in client.get(path).text, path
+        # An explicit "All time" is remembered too
+        client.get("/accounts", params={"month": ""})
+        assert '<option value="2026-02" selected>' not in client.get("/").text
+        # Months without movements, or malformed ones, are ignored
+        client.cookies.set("pledger_month", "2030-01")
+        assert "as of end of" not in client.get("/accounts").text
+        assert client.get("/", params={"month": "<x>"}).status_code == 200
 
     def test_currency_setting(self, settings):
         client = TestClient(create_app(Settings(*list(vars(settings).values())[:3], "ARS")))
@@ -273,37 +311,34 @@ class TestPages:
         r = client.get("/setup")
         assert r.status_code == 200
         assert "Withdraw" in r.text
-        assert "New account" in r.text and "New base movement" in r.text
-        new_account = r.text.split('hx-post="/setup/accounts"')[1].split("</form>")[0]
-        assert 'value="equity"' not in new_account
-        assert 'value="asset"' in new_account
+        assert "New account" not in r.text and "New base movement" in r.text
         # Only credit: descriptions are required and the default loss type fixes debit
         assert r.text.count('<em class="optional">(optional)</em>') == 1
-        assert r.text.count('name="description" value="" required') == 2
+        assert r.text.count('name="description" value="" required') == 1
 
     def test_tables_are_sortable(self, client):
         index, setup = client.get("/").text, client.get("/setup").text
+        accounts = client.get("/accounts").text
         assert 'data-sortable="movements"' in index
-        assert 'data-sortable="balances-asset"' in index
+        assert 'data-sortable="balances-asset"' in accounts
         assert 'data-sort="1000.5"' in index  # sort by raw amount, not formatted text
-        assert 'data-sortable="setup-accounts-asset"' in setup
         assert 'data-sortable="setup-bases-gain"' in setup
 
-    def test_setup_create_account(self, client, settings):
+    def test_create_account(self, client, settings):
         r = client.post(
-            "/setup/accounts", data={"name": "Sv", "acc_type": "asset", "description": "Savings"},
+            "/accounts", data={"name": "Sv", "acc_type": "asset", "description": "Savings"},
             headers=HTMX,
         )
         assert "Added account Sv" in r.text
-        assert ">Sv</option>" in r.text  # selectable for new base movements
+        assert "<strong>Sv</strong>" in r.text
         assert "Sv" in LedgerStore(settings).load().accounts
 
         data = {"name": "Sv", "acc_type": "asset", "description": "x"}
-        r = client.post("/setup/accounts", data=data, headers=HTMX)
+        r = client.post("/accounts", data=data, headers=HTMX)
         assert 'class="msg error"' in r.text and "already exists" in r.text
 
         data = {"name": "Sv2", "acc_type": "asset", "description": ""}
-        r = client.post("/setup/accounts", data=data, headers=HTMX)
+        r = client.post("/accounts", data=data, headers=HTMX)
         assert "description is required" in r.text
 
     def test_setup_create_base_movement(self, client, settings):
@@ -382,6 +417,9 @@ class TestApi:
         data = client.get("/api/summary").json()
         assert data["profit"] == pytest.approx(960.25)
         assert data["balances"]["Bk"] == pytest.approx(800.50)
+        assert data["assets"] == pytest.approx(960.25)
+        assert data["liabilities"] == pytest.approx(0)
+        assert data["equity"] == pytest.approx(960.25)
 
     def test_summary_balances_are_cumulative_by_month(self, client, settings):
         LedgerStore(settings).add("2026-03-01", "Gift", "Ca", "Eq", "100")

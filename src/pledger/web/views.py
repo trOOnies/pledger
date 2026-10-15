@@ -11,20 +11,19 @@ from pledger.web.store import Snapshot, row_fingerprint
 ACCOUNT_TYPE_ORDER = list(AccountType)
 
 
-def build_view(snapshot: Snapshot, month: str = "", account: str = "") -> dict:
-    """Filtered movements, totals and balances for the ledger view."""
-    rows = snapshot.rows
-    months = sorted({d[:7] for d in rows.move_date}, reverse=True)
+def months_of(snapshot: Snapshot) -> list[str]:
+    """Months with movements, newest first."""
+    return sorted({d[:7] for d in snapshot.rows.move_date}, reverse=True)
 
+
+def build_view(snapshot: Snapshot, month: str = "", account: str = "") -> dict:
+    """Filtered movements and results for the ledger view."""
+    rows = snapshot.rows
     mask = rows.move_date.str.startswith(month) if month else rows.move_date.notna()
     if account:
         mask &= (rows.acc_debit == account) | (rows.acc_credit == account)
     filtered = rows[mask]
     ledger = snapshot.ledger(filtered)
-
-    # Balances are cumulative: as of the end of the selected month.
-    upto = rows[rows.move_date.str[:7] <= month] if month else rows
-    balances = snapshot.ledger(upto).balances()
 
     movements = [
         {
@@ -42,6 +41,25 @@ def build_view(snapshot: Snapshot, month: str = "", account: str = "") -> dict:
     ]
     movements.reverse()  # newest first
 
+    return {
+        "months": months_of(snapshot),
+        "month": month,
+        "account": account,
+        "accounts": list(snapshot.accounts),
+        "movements": movements,
+        "gains": ledger.total_gains,
+        "losses": ledger.total_losses,
+        "profit": ledger.total_profits,
+    }
+
+
+def build_accounts(snapshot: Snapshot, month: str = "", values: dict | None = None) -> dict:
+    """Balances per account and per type, plus the state of the new account form."""
+    rows = snapshot.rows
+    # Balances are cumulative: as of the end of the selected month.
+    upto = rows[rows.move_date.str[:7] <= month] if month else rows
+    balances = snapshot.ledger(upto).balances()
+
     accounts_by_type = {
         t.value: [
             {"name": a.name, "description": a.description, "balance": balances.get(a.name, 0.0)}
@@ -50,16 +68,19 @@ def build_view(snapshot: Snapshot, month: str = "", account: str = "") -> dict:
         ]
         for t in ACCOUNT_TYPE_ORDER
     }
+    totals = {t: sum(a["balance"] for a in accs) for t, accs in accounts_by_type.items()}
+    values = values or {}
+    values.setdefault("acc_type", AccountType.ASSET.value)
     return {
-        "months": months,
+        "months": months_of(snapshot),
         "month": month,
-        "account": account,
-        "accounts": list(snapshot.accounts),
-        "movements": movements,
-        "gains": ledger.total_gains,
-        "losses": ledger.total_losses,
-        "profit": ledger.total_profits,
+        "assets": totals[AccountType.ASSET.value],
+        "liabilities": totals[AccountType.LIABILITY.value],
+        "equity": totals[AccountType.EQUITY.value],
         "accounts_by_type": accounts_by_type,
+        # New equity accounts are not supported for now.
+        "account_types": [t.value for t in ACCOUNT_TYPE_ORDER if t != AccountType.EQUITY],
+        "values": values,
     }
 
 
@@ -129,21 +150,14 @@ def base_sides(snapshot: Snapshot, move_type: str) -> dict:
 
 
 def setup_context(snapshot: Snapshot, values: dict | None = None) -> dict:
-    """Accounts and base movements by type, plus state of the setup forms."""
+    """Base movements by type, plus the state of the setup form."""
     values = values or {}
-    values.setdefault("acc_type", AccountType.ASSET.value)
     values.setdefault("move_type", MovementType.LOSS.value)
     return {
-        "accounts_by_type": {
-            t.value: [a for a in snapshot.accounts.values() if a.acc_type == t]
-            for t in ACCOUNT_TYPE_ORDER
-        },
         "bases_by_type": {
             t.value: [b for b in snapshot.base_movements.values() if b.move_type == t]
             for t in MovementType
         },
-        # New equity accounts are not supported for now.
-        "account_types": [t.value for t in ACCOUNT_TYPE_ORDER if t != AccountType.EQUITY],
         "move_types": [t.value for t in MovementType],
         "sides": base_sides(snapshot, values["move_type"]),
         "values": values,
@@ -253,7 +267,7 @@ def equity_chart(series: list[dict]) -> dict | None:
 def build_charts(snapshot: Snapshot, month: str = "") -> dict:
     """Composition of balances and results, and equity over time."""
     rows = snapshot.rows
-    months = sorted({d[:7] for d in rows.move_date}, reverse=True)
+    months = months_of(snapshot)
     # Balances as of the end of the month; gains and losses within it.
     upto = rows[rows.move_date.str[:7] <= month] if month else rows
     balances = snapshot.ledger(upto).balances()

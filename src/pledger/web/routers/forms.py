@@ -9,8 +9,15 @@ from fastapi.responses import HTMLResponse, Response
 
 from pledger.web.dependencies import StoreDep
 from pledger.web.store import LedgerStore, StaleRowError
-from pledger.web.templating import money, render_form, templates
-from pledger.web.views import account_fields, base_fields, base_sides, setup_context
+from pledger.web.templating import money, remembered_month, render_form, templates
+from pledger.web.views import (
+    account_fields,
+    base_fields,
+    base_sides,
+    build_accounts,
+    months_of,
+    setup_context,
+)
 
 router = APIRouter(tags=["forms"], default_response_class=HTMLResponse)
 
@@ -92,7 +99,15 @@ def render_setup(request: Request, store: LedgerStore, values: dict, **extra):
     )
 
 
-@router.post("/setup/accounts")
+def render_accounts(request: Request, store: LedgerStore, values: dict, **extra):
+    snapshot = store.load()
+    month = remembered_month(request, None, months_of(snapshot))
+    return templates.TemplateResponse(
+        request, "_accounts.html", {**build_accounts(snapshot, month, values), **extra}
+    )
+
+
+@router.post("/accounts")
 def create_account(
     request: Request,
     store: StoreDep,
@@ -104,8 +119,8 @@ def create_account(
         store.add_account(name, acc_type, description)
     except ValueError as e:
         values = {"acc_type": acc_type, "acc_name": name, "acc_description": description}
-        return render_setup(request, store, values, account_error=str(e))
-    return render_setup(
+        return render_accounts(request, store, values, account_error=str(e))
+    return render_accounts(
         request, store, {"acc_type": acc_type}, account_success=f"Added account {name.strip()}"
     )
 
