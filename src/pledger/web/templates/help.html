@@ -1,0 +1,220 @@
+{% extends "base.html" %}
+{% block title %}Help · pledger{% endblock %}
+{% block content %}
+{% set sections = [
+  ("start", "🚀", "Getting started"),
+  ("tabs", "🧭", "The tabs"),
+  ("concepts", "💡", "Key ideas"),
+  ("how-to", "🛠️", "How to…"),
+  ("examples", "🧾", "Examples"),
+  ("glossary", "📖", "Glossary"),
+  ("faq", "❓", "Questions"),
+] %}
+{% macro heading(n) %}{% set s = sections[n - 1] %}<h2 class="help-heading"><span class="help-num">{{ n }}.</span> <span aria-hidden="true">{{ s[1] }}</span> {{ s[2] }}</h2>{% endmacro %}
+
+<header class="help-hero">
+  <h1>Pledger</h1>
+  <p class="help-tagline">Your money, <strong>one movement at a time</strong>. Here is everything you need to know to use it.</p>
+</header>
+
+<div class="help">
+  <nav class="panel help-toc" aria-label="On this page">
+    <h2>On this page</h2>
+    <ol>
+      {% for id, emoji, title in sections %}
+      <li><a href="#{{ id }}"><span aria-hidden="true">{{ emoji }}</span> {{ title }}</a></li>
+      {% endfor %}
+    </ol>
+  </nav>
+
+  <article class="help-body">
+    <section class="panel" id="start">
+      {{ heading(1) }}
+      <p>Pledger is a <strong>personal ledger</strong>: a list of every time money moved, where it
+        came from and where it went. From that list it works out <strong>how much you have</strong>
+        in each account, <strong>how much you earned and spent</strong>, and <strong>how your wealth
+        changes</strong> over time.</p>
+      <p>Each time money moves you add one <strong>movement</strong>: a date, what kind of movement
+        it was, the two accounts involved and the amount. <strong>Everything else in Pledger is
+        calculated from those movements.</strong></p>
+      <p class="note">💱 All amounts are in your <strong>base currency ({{ settings.currency }})</strong>.
+        If you hold other currencies, enter their value converted to the base currency.</p>
+    </section>
+
+    <section class="panel" id="tabs">
+      {{ heading(2) }}
+      <dl>
+        <dt>📋 Ledger</dt>
+        <dd>Your <strong>movements</strong>, newest first, with the form to <strong>add new
+          ones</strong>. The cards at the top show your <strong>gains, losses and profit</strong>.
+          Use the <em>Month</em> and <em>Account</em> filters to narrow everything down.</dd>
+        <dt>🏦 Accounts</dt>
+        <dd>Every account with its <strong>description and balance</strong>, your total
+          <strong>assets, liabilities and equity</strong>, and the form to <strong>add a new
+          account</strong>. With a month picked, balances show where each account stood
+          <strong>at the end of that month</strong>.</dd>
+        <dt>📊 Charts</dt>
+        <dd>What your assets and liabilities are made of, your gains and losses <strong>grouped by
+          result type</strong> (click a result type to see what is inside it), a <strong>result
+          table</strong> and a line showing your <strong>equity over time</strong>. Hover over the
+          line to see each day.</dd>
+        <dt>⚙️ Setup</dt>
+        <dd>Your <strong>result types</strong> and <strong>base movements</strong>. You can add new
+          ones here.</dd>
+        <dt>❓ Help</dt>
+        <dd>This page.</dd>
+      </dl>
+      <p class="note">🗓️ The <strong>Month filter is shared</strong>: pick a month on Ledger,
+        Accounts or Charts and the other tabs open on that same month. Pick
+        <em>All time</em> to clear it.</p>
+    </section>
+
+    <section class="panel" id="concepts">
+      {{ heading(3) }}
+
+      <h3>🏦 Accounts</h3>
+      <p>An account is any place where money is <strong>kept or owed</strong>. There are three kinds:</p>
+      <ul>
+        <li><strong>Assets</strong>: what you <strong>own</strong>, such as cash, a bank account or investments.</li>
+        <li><strong>Liabilities</strong>: what you <strong>owe</strong>, such as a credit card balance or a debt.</li>
+        <li><strong>Equity</strong>: your <strong>net worth</strong>, that is,
+          <strong>assets minus liabilities</strong>. There is a single equity account, and
+          Pledger uses it on its own for gains and losses.</li>
+      </ul>
+
+      <h3>⚖️ Debit and credit</h3>
+      <p>Every movement has <strong>two sides</strong>, and the amount is the same on both:</p>
+      <ul>
+        <li>The <strong>debit</strong> account is where the money <strong>goes to</strong> ➡️.</li>
+        <li>The <strong>credit</strong> account is where the money <strong>comes from</strong> ⬅️.</li>
+      </ul>
+      <p>For a liability this works the other way round from what you might expect: paying off a
+        credit card <strong>debits</strong> the card, because you now owe less, and buying with the
+        card <strong>credits</strong> it, because you now owe more.</p>
+
+      <h3>🔀 Movement types</h3>
+      <ul>
+        <li><span class="badge gain">G</span> <strong>Gain</strong>: money that makes you
+          <strong>richer</strong>, such as a salary or a gift. It is credited to equity.</li>
+        <li><span class="badge loss">L</span> <strong>Loss</strong>: money that makes you
+          <strong>poorer</strong>, such as food, rent or fees. It is debited from equity.</li>
+        <li><span class="badge transfer">T</span> <strong>Transfer</strong>: money that moves
+          <strong>between your own accounts</strong>, such as a cash withdrawal or a credit card
+          payment. It <strong>does not change your equity</strong>.</li>
+      </ul>
+
+      <h3>🏷️ Base movements</h3>
+      <p>A base movement is a <strong>category</strong> for movements, such as "Basic - Food" or
+        "Work - Salary Main". Choosing one tells Pledger whether the movement is a
+        <strong>gain, a loss or a transfer</strong>. Some base movements <strong>always use the same
+        account</strong> on one side: in the form that side is filled in for you and cannot be
+        changed. A side shown as <strong>-</strong> means <strong>any account</strong> can be used there.</p>
+
+      <h3>🗂️ Result types</h3>
+      <p>Result types group gains and losses into <strong>larger families</strong>, such as
+        <em>Operative</em> (everyday income and spending), <em>Investments</em> or <em>Taxes</em>.
+        Every gain and loss base movement belongs to <strong>exactly one</strong> result type;
+        transfers have none. Result types are <strong>numbered</strong>, and the Charts tab lists
+        them in that order, with a <strong>running total</strong> that shows how each family adds to
+        or takes from your profit.</p>
+    </section>
+
+    <section class="panel" id="how-to">
+      {{ heading(4) }}
+
+      <h3>✍️ Record a movement</h3>
+      <ol>
+        <li>Go to <a href="/">Ledger</a>.</li>
+        <li>Pick the <strong>date</strong> and the <strong>type</strong>: gain, loss or transfer.</li>
+        <li>Pick the <strong>base movement</strong> that best describes it.</li>
+        <li>Choose the <strong>debit and credit</strong> accounts, unless they are already filled in.</li>
+        <li>Enter the <strong>amount</strong>, add a comment if you like, and press <strong>Add movement</strong>.</li>
+      </ol>
+      <p>If something does not fit, for example an account that cannot be used with that base
+        movement, Pledger <strong>explains the problem and nothing is saved</strong>.</p>
+
+      <h3>🩹 Fix a mistake</h3>
+      <p>Movements cannot be edited. <strong>Delete</strong> the wrong one with the
+        <strong>&times;</strong> button at the end of its row and <strong>add it again</strong> with
+        the right details.</p>
+
+      <h3>➕ Add an account</h3>
+      <p>Go to <a href="/accounts">Accounts</a>, fill in the <strong>New account</strong> form
+        (name, type and description) and press <strong>Add account</strong>.</p>
+
+      <h3>➕ Add a result type or base movement</h3>
+      <p>Go to <a href="/setup">Setup</a>, open <strong>New result type</strong> or
+        <strong>New base movement</strong>, fill in the form and press the button. Every entry needs
+        a short <strong>name</strong> and a <strong>description</strong>.</p>
+      <ul>
+        <li>A new <strong>base movement</strong> that is a gain or a loss also needs a
+          <strong>result type</strong>.</li>
+        <li>For a base movement's debit and credit, choose an account to <strong>always use that
+          account</strong>, or leave <strong>-</strong> to choose the account each time.</li>
+        <li>A new <strong>result type</strong> is added <strong>at the end</strong> of the list.</li>
+      </ul>
+      <p>To rename, reorder or remove entries, the settings files have to be <strong>edited by hand</strong>.</p>
+
+      <h3>🔎 Look at a single month or account</h3>
+      <p>Use the <strong>Month</strong> filter on Ledger, Accounts or Charts (it is remembered
+        across tabs), and the <strong>Account</strong> filter on Ledger. Pick <em>All time</em> to
+        go back.</p>
+    </section>
+
+    <section class="panel" id="examples">
+      {{ heading(5) }}
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>What happened</th><th>Type</th><th>Debit (to)</th><th>Credit (from)</th></tr></thead>
+          <tbody>
+            <tr><td>💼 Your salary arrives at the bank</td><td><span class="badge gain">G</span> Gain</td><td>Bank account</td><td>Equity</td></tr>
+            <tr><td>🛒 You buy groceries in cash</td><td><span class="badge loss">L</span> Loss</td><td>Equity</td><td>Cash</td></tr>
+            <tr><td>🍝 You pay for dinner with a credit card</td><td><span class="badge loss">L</span> Loss</td><td>Equity</td><td>Credit card</td></tr>
+            <tr><td>🏧 You withdraw cash from the bank</td><td><span class="badge transfer">T</span> Transfer</td><td>Cash</td><td>Bank account</td></tr>
+            <tr><td>💳 You pay the credit card bill</td><td><span class="badge transfer">T</span> Transfer</td><td>Credit card</td><td>Bank account</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel" id="glossary">
+      {{ heading(6) }}
+      <dl class="glossary">
+        <dt>Balance</dt>
+        <dd>How much an account <strong>holds</strong> (assets) or how much is <strong>owed</strong>
+          on it (liabilities) at a point in time, after adding up all its movements.</dd>
+        <dt>Base currency</dt>
+        <dd>The currency <strong>every amount</strong> in Pledger is written in.</dd>
+        <dt>Cumulative</dt>
+        <dd>In the Charts result table, the net results <strong>added up</strong> from the first
+          result type down to that row. The last row <strong>equals your profit</strong>.</dd>
+        <dt>Equity</dt>
+        <dd>Your <strong>net worth</strong>: assets minus liabilities. Gains raise it and losses lower it.</dd>
+        <dt>Fixed side</dt>
+        <dd>A debit or credit account that a base movement <strong>always uses</strong>.</dd>
+        <dt>Gains, losses and profit</dt>
+        <dd>The total of your gain movements, the total of your loss movements, and the
+          <strong>difference</strong> between them, for the chosen period.</dd>
+        <dt>Movement</dt>
+        <dd>One entry in the ledger: money moving <strong>from one account to another</strong> on a date.</dd>
+        <dt>Net</dt>
+        <dd>Gains minus losses, here for a <strong>single result type</strong>.</dd>
+      </dl>
+    </section>
+
+    <section class="panel" id="faq">
+      {{ heading(7) }}
+      <h3>🤔 Why does my profit differ from the change in my bank balance?</h3>
+      <p><strong>Profit only counts gains and losses.</strong> Transfers, such as moving money to
+        savings or paying a credit card bill, change account balances but not your profit.</p>
+      <h3>🔒 Why can't I choose the equity account?</h3>
+      <p>Pledger <strong>uses equity on its own</strong>: it is the credit side of every gain and
+        the debit side of every loss, and transfers never touch it.</p>
+      <h3>⚠️ The page says it could not load the ledger.</h3>
+      <p>One of the settings files or the ledger has a problem, for example a movement that uses an
+        account or base movement that no longer exists. <strong>The message says what is
+        wrong</strong>; fix that entry in the file and reload the page.</p>
+    </section>
+  </article>
+</div>
+{% endblock %}

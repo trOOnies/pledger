@@ -15,11 +15,16 @@
       <a href="/accounts" {% if request.url.path == '/accounts' %}aria-current="page"{% endif %}>Accounts</a>
       <a href="/charts" {% if request.url.path == '/charts' %}aria-current="page"{% endif %}>Charts</a>
       <a href="/setup" {% if request.url.path == '/setup' %}aria-current="page"{% endif %}>Setup</a>
+      <a href="/help" {% if request.url.path == '/help' %}aria-current="page"{% endif %}>Help</a>
       <a href="/docs">API</a>
     </nav>
   </header>
   <div id="flash" class="flash" role="alert" hidden></div>
   <main>{% block content %}{% endblock %}</main>
+  <footer class="site-footer">
+    <p>&copy; 2026 Pledger by trOOnies</p>
+    <p>Made with Claude Code</p>
+  </footer>
   <script>
     // Show server errors (e.g. a stale delete) instead of failing silently.
     document.addEventListener("htmx:responseError", (e) => {

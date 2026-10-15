@@ -55,6 +55,11 @@ def charts(request: Request, store: StoreDep, month: str | None = None):
     return remember_month(templates.TemplateResponse(request, template, context), month)
 
 
+@router.get("/help")
+def help_page(request: Request, store: StoreDep):
+    return templates.TemplateResponse(request, "help.html", {"settings": store.settings})
+
+
 @router.get("/setup")
 def setup(request: Request, store: StoreDep):
     context = setup_context(store.load())

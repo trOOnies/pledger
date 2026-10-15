@@ -11,9 +11,11 @@ make lint
 
 ## Web app
 
-A FastAPI + HTMX UI to browse the ledger, see balances, add or delete movements, and
-add accounts and base movements from the Setup page. The Charts page shows the
-composition of assets, liabilities, gains and losses, and equity over time.
+A FastAPI + HTMX UI. The Ledger page lists, adds and deletes movements; Accounts shows
+balances and adds accounts; Setup adds result types and base movements. The Charts page
+shows the composition of assets and liabilities, gains and losses by result type, a result
+statement, and equity over time. The Help page explains the concepts for everyday users.
+The month filter is shared by Ledger, Accounts and Charts (remembered in a cookie).
 
 ```sh
 make serve     # http://127.0.0.1:8000 (API docs at /docs)

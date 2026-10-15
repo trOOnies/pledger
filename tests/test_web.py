@@ -380,6 +380,25 @@ class TestPages:
         r = client.post("/setup/result-types", data=data, headers=HTMX)
         assert 'class="msg error"' in r.text and "already exists" in r.text
 
+    def test_help(self, client):
+        r = client.get("/help")
+        assert r.status_code == 200
+        assert 'href="/help" aria-current="page"' in r.text
+        assert "<h1>Pledger</h1>" in r.text and "help-logo" not in r.text
+        # Section headings carry the same numbers as the index
+        toc = r.text.split('<ol>')[1].split("</ol>")[0]
+        titles = [li.split("</span> ")[1].split("</a>")[0] for li in toc.split("<li>")[1:]]
+        assert len(titles) == 7
+        for n, title in enumerate(titles, start=1):
+            assert f'<span class="help-num">{n}.</span>' in r.text
+            assert f"</span> {title}</h2>" in r.text
+
+    @pytest.mark.parametrize("path", ["/", "/accounts", "/charts", "/setup", "/help"])
+    def test_footer(self, client, path):
+        text = client.get(path).text
+        assert "&copy; 2026 Pledger by trOOnies" in text
+        assert "Made with Claude Code" in text
+
     def test_tables_are_sortable(self, client):
         index, setup = client.get("/").text, client.get("/setup").text
         accounts = client.get("/accounts").text
