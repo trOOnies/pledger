@@ -413,6 +413,7 @@ class TestPages:
         assert "Assets &amp; liabilities" in r.text and "Equity over time" in r.text
         assert "$800.50" in r.text and "$159.75" in r.text  # Bk and Ca balances
         assert "Salary" in r.text and "Food" in r.text
+        assert "by result type" in r.text and "Result by type" in r.text
         assert "$960.25" in r.text  # final equity
         assert 'data-sortable="equity"' in r.text
 
@@ -422,7 +423,7 @@ class TestPages:
         r = client.get("/charts", params={"month": "2026-02"}, headers=HTMX)
         assert "<html" not in r.text
         assert "as of end of 2026-02" in r.text
-        assert "Salary" not in r.text  # no gains in February
+        assert "Salary" in r.text  # no gains in February, but still listed at zero
         assert "-$100.00" in r.text and "$860.25" in r.text
 
 
@@ -433,6 +434,59 @@ class TestCharts:
         assert rows[-1]["value"] == 20 and rows[-1]["share"] == 20
         assert [r["name"] for r in rows[-1]["rest"]] == ["c", "d", "e"]
         assert rows[0]["width"] == 100 and rows[1]["width"] == 60
+
+    def test_composition_ordered_keeps_order_and_everything(self):
+        rows = composition({"b": 0, "a": 50, "c": -5, "d": 10}, limit=2, ordered=True)
+        assert [r["name"] for r in rows] == ["b", "a", "c", "d"]
+        assert "rest" not in rows[-1]
+        assert rows[2]["width"] == 0 and rows[1]["width"] == 100
+        assert composition({"a": 0}, ordered=True)[0]["share"] == 0
+
+    def test_charts_keep_defined_order(self, settings):
+        with settings.ledger_path.open("a") as f:
+            f.write("2026-01-05;Card fee;Eq;500;Cc;\n")  # makes Cc a liability, Card fee the top loss
+        charts = build_charts(LedgerStore(settings).load())
+        assert [r["name"] for r in charts["assets"]] == ["Ca", "Bk"]  # accounts.yaml order
+        assert [r["name"] for r in charts["liabilities"]] == ["Cc"]
+        losses = charts["losses"][0]["children"]
+        assert [r["name"] for r in losses] == ["Food", "Card fee"]  # definition order, not size
+        gains = charts["gains"]
+        assert [r["name"] for r in gains] == ["Operative", "Gifts"]  # result type id order
+
+    def test_charts_list_everything_even_at_zero(self, settings):
+        with settings.ledger_path.open("a") as f:
+            f.write("2026-02-01;Food;Eq;100;Ca;\n")
+        charts = build_charts(LedgerStore(settings).load(), "2026-02")
+        # Only Food moved in February; every other bar is still there, at zero
+        assert [r["name"] for r in charts["assets"]] == ["Ca", "Bk"]
+        assert [r["name"] for r in charts["liabilities"]] == ["Cc"]
+        gains = charts["gains"]
+        assert [(r["name"], r["value"]) for r in gains] == [("Operative", 0), ("Gifts", 0)]
+        assert [c["name"] for c in gains[0]["children"]] == ["Salary"]
+        assert [c["name"] for c in gains[1]["children"]] == ["Gift"]
+        losses = charts["losses"]
+        assert [r["name"] for r in losses] == ["Operative", "Gifts"]
+        assert [(c["name"], c["value"]) for c in losses[0]["children"]] == [("Food", 100), ("Card fee", 0)]
+        assert losses[1]["children"] == []  # Gifts has no loss base movements
+
+    def test_gains_and_losses_by_result_type(self, settings):
+        charts = build_charts(LedgerStore(settings).load())
+        gains = {r["name"]: r for r in charts["gains"]}
+        assert set(gains) == {"Operative", "Gifts"}
+        assert gains["Operative"]["value"] == pytest.approx(1000.5)
+        assert [c["name"] for c in gains["Operative"]["children"]] == ["Salary"]
+        # Children are drawn on the parent's scale
+        gift = gains["Gifts"]["children"][0]
+        assert gift["share"] == pytest.approx(gains["Gifts"]["share"])
+        assert gift["width"] == pytest.approx(gains["Gifts"]["width"])
+        assert [r["name"] for r in charts["losses"]] == ["Operative", "Gifts"]  # Gifts at zero
+
+        statement = charts["statement"]
+        assert [r["name"] for r in statement] == ["Operative", "Gifts"]  # id order
+        assert statement[0]["gains"] == pytest.approx(1000.5)
+        assert statement[0]["losses"] == pytest.approx(-50.25)
+        assert statement[0]["net"] == pytest.approx(950.25)
+        assert statement[1]["cumulative"] == pytest.approx(960.25)
 
     def test_nice_ticks(self):
         assert nice_ticks(51.9e6, 75.8e6) == [50e6, 60e6, 70e6, 80e6]

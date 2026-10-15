@@ -7,7 +7,9 @@
   --accent: #2f5bd3;
   --accent-text: #ffffff;
   --gain: #1a7f4b;
+  --gain-nested: #3f9f6f;
   --loss: #c0392b;
+  --loss-nested: #d9665a;
   --transfer: #6b7380;
   --gain-bg: #e3f4ea;
   --loss-bg: #fbe7e5;
@@ -29,7 +31,9 @@
     --accent: #6f93f2;
     --accent-text: #0d1117;
     --gain: #4cc38a;
+    --gain-nested: #b9edd3;
     --loss: #f07167;
+    --loss-nested: #fccbc6;
     --transfer: #9099a6;
     --gain-bg: #17321f;
     --loss-bg: #3a1c1a;
@@ -188,6 +192,9 @@ button.icon:hover { color: var(--loss); }
 .bar.liability { background: var(--series-liability); }
 .bar.gain { background: var(--gain); }
 .bar.loss { background: var(--loss); }
+/* A result type's base movements: a lighter step of the same hue. */
+.other-rows.children .bar.gain { background: var(--gain-nested); }
+.other-rows.children .bar.loss { background: var(--loss-nested); }
 .share { font-size: .8rem; }
 .other summary { cursor: pointer; list-style: none; }
 .other summary::-webkit-details-marker { display: none; }
@@ -231,6 +238,8 @@ button.icon:hover { color: var(--loss); }
 .tip-date { font-size: .75rem; }
 .tip-value { font-weight: 600; }
 .tip-change { font-size: .8rem; }
+.statement tbody tr:hover { background: var(--bg); }
+.statement tfoot th { position: static; color: var(--text); border-top: 2px solid var(--border); font-size: inherit; }
 .chart-table { margin-top: .75rem; }
 .chart-table summary { cursor: pointer; color: var(--muted); }
 .chart-table .table-wrap { max-height: 50vh; margin-top: .5rem; }

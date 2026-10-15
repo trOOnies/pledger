@@ -1,24 +1,30 @@
 {% macro bar_row(item, kind, tag="div") %}
 <{{ tag }} class="bar-row" title="{{ item.name }}: {{ item.value | money }} ({{ '%.1f' | format(item.share) }}%)">
   <span class="bar-name">{{ item.name }}</span>
-  <span class="num">{{ item.value | money }}</span>
+  <span class="num {{ 'loss' if item.value < 0 }}">{{ item.value | money }}</span>
   <span class="num muted share">{{ '%.1f' | format(item.share) }}%</span>
-  <span class="bar-track"><span class="bar {{ kind }}" style="width: {{ '%.2f' | format(item.width) }}%"></span></span>
+  <span class="bar-track">{% if item.value > 0 %}<span class="bar {{ kind }}" style="width: {{ '%.2f' | format(item.width) }}%"></span>{% endif %}</span>
 </{{ tag }}>
+{% endmacro %}
+
+{# A row with `rest` (folded small rows) or `children` (its breakdown) expands. #}
+{% macro bar_item(item, kind) %}
+{% set nested = item.rest or item.children %}
+{% if nested %}
+<details class="other">
+  {{ bar_row(item, kind, "summary") }}
+  <div class="other-rows {{ 'children' if item.children }}">{% for r in nested %}{{ bar_item(r, kind) }}{% endfor %}</div>
+</details>
+{% else %}
+{{ bar_row(item, kind) }}
+{% endif %}
 {% endmacro %}
 
 {% macro bars(title, items, kind, empty) %}
 <div class="composition">
   <h3>{{ title }} <span class="total">{{ items | sum(attribute='value') | money }}</span></h3>
   {% for item in items %}
-  {% if item.rest %}
-  <details class="other">
-    {{ bar_row(item, kind, "summary") }}
-    <div class="other-rows">{% for r in item.rest %}{{ bar_row(r, kind) }}{% endfor %}</div>
-  </details>
-  {% else %}
-  {{ bar_row(item, kind) }}
-  {% endif %}
+  {{ bar_item(item, kind) }}
   {% else %}
   <p class="muted small">{{ empty }}</p>
   {% endfor %}
@@ -35,13 +41,46 @@
   </section>
 
   <section class="panel">
-    <h2>Gains &amp; losses <small>{{ ("in " ~ month) if month else "all time" }}</small></h2>
+    <h2>Gains &amp; losses by result type <small>{{ ("in " ~ month) if month else "all time" }}</small></h2>
     <div class="composition-pair">
-      {{ bars("Gains", gains, "gain", "No gains in this period.") }}
-      {{ bars("Losses", losses, "loss", "No losses in this period.") }}
+      {{ bars("Gains", gains, "gain", "No result types yet.") }}
+      {{ bars("Losses", losses, "loss", "No result types yet.") }}
     </div>
+    <p class="muted small">Click a result type to see its base movements.</p>
   </section>
 </div>
+
+<section class="panel">
+  <h2>Result by type <small>{{ ("in " ~ month) if month else "all time" }}, in result type order</small></h2>
+  <div class="table-wrap">
+    <table class="statement">
+      <thead><tr><th>Result type</th><th class="num">Gains</th><th class="num">Losses</th><th class="num">Net</th><th class="num" title="Running total of the net results, from the first result type down">Cumulative</th></tr></thead>
+      <tbody>
+      {% for r in statement %}
+      <tr title="{{ r.description }}">
+        <td>{{ r.name }}</td>
+        <td class="num {{ 'muted' if not r.gains }}">{{ r.gains | money }}</td>
+        <td class="num {{ 'muted' if not r.losses else 'loss' }}">{{ r.losses | money }}</td>
+        <td class="num {{ 'gain' if r.net > 0 else 'loss' if r.net < 0 else 'muted' }}">{{ r.net | money }}</td>
+        <td class="num">{{ r.cumulative | money }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+      {% if statement %}
+      {% set net = statement | sum(attribute='net') %}
+      <tfoot>
+      <tr>
+        <th>Profit</th>
+        <th class="num">{{ statement | sum(attribute='gains') | money }}</th>
+        <th class="num">{{ statement | sum(attribute='losses') | money }}</th>
+        <th class="num {{ 'gain' if net >= 0 else 'loss' }}">{{ net | money }}</th>
+        <th></th>
+      </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</section>
 
 <section class="panel">
   <h2>Equity over time <small>{{ ("in " ~ month) if month else "all time" }}, at each entry date</small></h2>

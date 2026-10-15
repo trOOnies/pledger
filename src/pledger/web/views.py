@@ -169,21 +169,42 @@ def setup_context(snapshot: Snapshot, values: dict | None = None) -> dict:
     }
 
 
-def composition(totals: dict[str, float], limit: int = 8) -> list[dict]:
+def composition(
+    totals: dict[str, float],
+    limit: int | None = 8,
+    total: float | None = None,
+    top: float | None = None,
+    ordered: bool = False,
+) -> list[dict]:
     """
     Positive totals sorted by size, with their share of the whole. Past `limit`
     rows, the smallest ones are folded into a single "Other" row that keeps
-    them under `rest`.
+    them under `rest`. `total` and `top` default to these totals' sum and
+    largest row; pass the parent's to draw nested rows on the parent's scale.
+
+    With `ordered`, every total is kept (zero or negative too) in the given
+    order and nothing is folded.
     """
-    items = sorted(((k, v) for k, v in totals.items() if v > 1e-9), key=lambda kv: -kv[1])
-    total = sum(v for _, v in items)
-    rest = items[limit - 1:] if len(items) > limit else []
+    if ordered:
+        items = list(totals.items())
+    else:
+        items = sorted(((k, v) for k, v in totals.items() if v > 1e-9), key=lambda kv: -kv[1])
+    rest = items[limit - 1:] if limit and not ordered and len(items) > limit else []
     if rest:
         items = [*items[:limit - 1], (f"Other ({len(rest)})", sum(v for _, v in rest))]
-    top = max((v for _, v in items), default=0.0)
+    if total is None:
+        total = sum(v for _, v in items)
+    if top is None:
+        top = max((v for _, v in items), default=0.0)
 
     def row(name: str, value: float) -> dict:
-        return {"name": name, "value": value, "share": 100 * value / total, "width": 100 * value / top}
+        return {
+            "name": name,
+            "value": value,
+            # Rounded so tiny negatives don't show as "-0.0%"
+            "share": round(100 * value / total, 1) + 0.0 if total else 0.0,
+            "width": 100 * max(value, 0.0) / top if top > 0 else 0.0,
+        }
 
     rows = [row(k, v) for k, v in items]
     if rest:
@@ -278,19 +299,57 @@ def build_charts(snapshot: Snapshot, month: str = "") -> dict:
     balances = snapshot.ledger(upto).balances()
     period = snapshot.ledger(rows[rows.move_date.str.startswith(month)] if month else rows)
 
+    # Accounts, result types and base movements keep the order they are defined in.
     def by_account(acc_type: AccountType) -> list[dict]:
-        return composition({
-            a.name: balances.get(a.name, 0.0)
-            for a in snapshot.accounts.values()
-            if a.acc_type == acc_type
-        })
+        return composition(
+            {
+                a.name: balances.get(a.name, 0.0)
+                for a in snapshot.accounts.values()
+                if a.acc_type == acc_type
+            },
+            ordered=True,
+        )
 
-    def by_base(move_type: MovementType) -> list[dict]:
-        totals: dict[str, float] = {}
-        for move in period.movements:
-            if move.move_type == move_type:
-                totals[move.move_base.name] = totals.get(move.move_base.name, 0.0) + move.amount
-        return composition(totals)
+    # Gains and losses per result type, then per base movement within each.
+    period_totals: dict[str, float] = {}
+    for move in period.movements:
+        name = move.move_base.name
+        period_totals[name] = period_totals.get(name, 0.0) + move.amount
+    result_types = [snapshot.result_types[i] for i in sorted(snapshot.result_types)]
+    results: dict[MovementType, dict[str, dict[str, float]]] = {
+        move_type: {
+            rt.long_name: {
+                b.name: period_totals.get(b.name, 0.0)
+                for b in snapshot.base_movements.values()
+                if b.result_type is rt and b.move_type == move_type
+            }
+            for rt in result_types
+        }
+        for move_type in (MovementType.GAIN, MovementType.LOSS)
+    }
+
+    def by_result_type(move_type: MovementType) -> list[dict]:
+        # Every result type and base movement is listed, even at zero in this period.
+        by_rt = results[move_type]
+        rows = composition({rt: sum(bases.values()) for rt, bases in by_rt.items()}, ordered=True)
+        if not rows:
+            return rows
+        scale = {"total": sum(r["value"] for r in rows), "top": max(r["value"] for r in rows)}
+        for row in rows:
+            row["children"] = composition(by_rt[row["name"]], ordered=True, **scale)
+        return rows
+
+    # Result statement: each result type in id order, with a running total.
+    statement, running = [], 0.0
+    for rt_id in sorted(snapshot.result_types):
+        rt = snapshot.result_types[rt_id]
+        gains = sum(results[MovementType.GAIN].get(rt.long_name, {}).values())
+        losses = sum(results[MovementType.LOSS].get(rt.long_name, {}).values())
+        running += gains - losses
+        statement.append({
+            "name": rt.long_name, "description": rt.description,
+            "gains": gains, "losses": -losses, "net": gains - losses, "cumulative": running,
+        })
 
     series = equity_series(snapshot, month)
     equity = equity_chart(series)
@@ -306,8 +365,9 @@ def build_charts(snapshot: Snapshot, month: str = "") -> dict:
         "month": month,
         "assets": by_account(AccountType.ASSET),
         "liabilities": by_account(AccountType.LIABILITY),
-        "gains": by_base(MovementType.GAIN),
-        "losses": by_base(MovementType.LOSS),
+        "gains": by_result_type(MovementType.GAIN),
+        "losses": by_result_type(MovementType.LOSS),
+        "statement": statement,
         "equity": equity,
         "equity_series": series,
     }
