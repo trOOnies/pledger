@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import datetime as dt
 import io
+import math
 import os
 import re
 import tempfile
@@ -125,6 +126,12 @@ class LedgerStore:
             value = float(str(amount).replace(",", "").strip())
         except ValueError:
             raise ValueError(f"Invalid amount: {amount!r}") from None
+        if not math.isfinite(value):
+            raise ValueError(f"Invalid amount: {amount!r}")
+        if value < 0:
+            raise ValueError(
+                "The amount cannot be negative; pick the opposite base movement or swap the accounts"
+            )
         if acc_debit == acc_credit:
             raise ValueError("Debit and credit accounts must be different")
 

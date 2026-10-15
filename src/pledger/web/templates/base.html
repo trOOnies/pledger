@@ -83,6 +83,20 @@
     document.addEventListener("DOMContentLoaded", () => initSortable(document));
     document.addEventListener("htmx:afterSettle", (e) => initSortable(e.detail.elt));
 
+    // Warn (without blocking) when a movement is dated after today.
+    function checkFutureDates(root) {
+      const today = new Date().toLocaleDateString("en-CA");  // YYYY-MM-DD, local time
+      root.querySelectorAll("input[data-future-warning]").forEach((input) => {
+        const hint = input.parentElement.querySelector(".hint.warn");
+        if (hint) hint.hidden = !(input.value && input.value > today);
+      });
+    }
+    document.addEventListener("input", (e) => {
+      if (e.target.matches("input[data-future-warning]")) checkFutureDates(e.target.parentElement);
+    });
+    document.addEventListener("DOMContentLoaded", () => checkFutureDates(document));
+    document.addEventListener("htmx:afterSettle", (e) => checkFutureDates(e.detail.elt));
+
     // Money inputs always show two decimals, e.g. 1234.5 -> 1,234.50.
     document.addEventListener("change", (e) => {
       const input = e.target;

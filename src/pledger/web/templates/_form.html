@@ -2,7 +2,8 @@
   {% if error %}<p class="msg error">{{ error }}</p>{% endif %}
   {% if success %}<p class="msg success">{{ success }}</p>{% endif %}
   <label>Date
-    <input type="date" name="move_date" value="{{ values.move_date }}" required>
+    <input type="date" name="move_date" value="{{ values.move_date }}" required data-future-warning>
+    <span class="hint warn" hidden>⚠️ This date is in the future.</span>
   </label>
   <label>Type
     <select name="move_type" hx-get="/form/bases" hx-target="#base-fields" hx-swap="innerHTML">
@@ -15,7 +16,7 @@
   <label>Amount
     <span class="money-input">
       <span class="prefix">{{ currency }}</span>
-      <input name="amount" inputmode="decimal" value="{{ values.amount }}" placeholder="0.00" required autocomplete="off" data-money>
+      <input name="amount" inputmode="decimal" min="0" value="{{ values.amount }}" placeholder="0.00" required autocomplete="off" data-money>
     </span>
   </label>
   <label><span>Comment <em class="optional">(optional)</em></span>

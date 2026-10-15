@@ -61,7 +61,7 @@
           </label>
         </div>
         <div id="base-sides">{% include "_base_sides.html" %}</div>
-        <p class="muted small">Leave a side as "Any" to pick its account on each movement.</p>
+        <p class="muted small">Leave a side as "-" to pick its account on each movement.</p>
         <label>Description
           <input name="description" value="{{ values.base_description }}" required autocomplete="off">
         </label>
@@ -77,8 +77,8 @@
       <tr>
         <td><strong>{{ b.name }}</strong></td>
         {% if type != "transfer" %}<td>{{ b.result_type.long_name }}</td>{% endif %}
-        <td>{{ b.acc_debit.name if b.acc_debit else "any" }}</td>
-        <td>{{ b.acc_credit.name if b.acc_credit else "any" }}</td>
+        <td>{% if b.acc_debit %}{{ b.acc_debit.name }}{% else %}<span class="muted" title="Any account">-</span>{% endif %}</td>
+        <td>{% if b.acc_credit %}{{ b.acc_credit.name }}{% else %}<span class="muted" title="Any account">-</span>{% endif %}</td>
         <td class="muted">{{ b.description }}</td>
       </tr>
       {% endfor %}

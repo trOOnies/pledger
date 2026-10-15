@@ -10,6 +10,7 @@
   --gain-nested: #3f9f6f;
   --loss: #c0392b;
   --loss-nested: #d9665a;
+  --warn: #9a6100;
   --transfer: #6b7380;
   --gain-bg: #e3f4ea;
   --loss-bg: #fbe7e5;
@@ -34,6 +35,7 @@
     --gain-nested: #b9edd3;
     --loss: #f07167;
     --loss-nested: #fccbc6;
+    --warn: #e3b341;
     --transfer: #9099a6;
     --gain-bg: #17321f;
     --loss-bg: #3a1c1a;
@@ -164,6 +166,7 @@ button.icon:hover { color: var(--loss); }
 .msg { margin: 0; padding: .5rem .75rem; border-radius: 6px; }
 .msg.error { background: var(--loss-bg); color: var(--loss); }
 .msg.success { background: var(--gain-bg); color: var(--gain); }
+.hint.warn { color: var(--warn); font-size: .8rem; }
 
 .flash {
   position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%);

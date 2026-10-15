@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 from typing import Annotated
 
 from fastapi import APIRouter, Form, HTTPException, Request
@@ -76,7 +77,8 @@ def create_movement(
     value = float(amount.replace(",", ""))
     response = render_form(
         request, store.load(), keep,
-        success=f"Added {base_movement}: {money(value, store.settings.currency)}",
+        success=f"Added {base_movement}: {money(value, store.settings.currency)}"
+        + (" (dated in the future)" if move_date > dt.date.today().isoformat() else ""),
     )
     response.headers["HX-Trigger"] = "ledger-changed"
     return response

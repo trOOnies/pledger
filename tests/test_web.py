@@ -1,5 +1,6 @@
 """Tests for pledger.web."""
 
+import datetime as dt
 from pathlib import Path
 
 import pytest
@@ -315,8 +316,27 @@ class TestPages:
         r = client.post("/movements", data=form, headers=HTMX)
         assert r.status_code == 200
         assert r.headers["HX-Trigger"] == "ledger-changed"
-        assert "Added Gift: $5.00" in r.text
+        assert "Added Gift: $5.00" in r.text and "(dated in the future)" not in r.text
         assert len(rows(settings)) == 5
+
+    def test_future_date_warns_but_is_saved(self, client, settings):
+        future = (dt.date.today() + dt.timedelta(days=3)).isoformat()
+        form = {"move_date": future, "base_movement": "Gift", "acc_debit": "Ca", "acc_credit": "Eq", "amount": "5"}
+        r = client.post("/movements", data=form, headers=HTMX)
+        assert "Added Gift: $5.00 (dated in the future)" in r.text
+        assert len(rows(settings)) == 5
+        # The form warns on the client before submitting
+        assert "data-future-warning" in r.text and "This date is in the future" in r.text
+
+    @pytest.mark.parametrize(("amount", "message"), [("-5", "cannot be negative"), ("nan", "Invalid amount")])
+    def test_negative_amount_is_blocked(self, client, settings, amount, message):
+        form = {"move_date": "2026-02-01", "base_movement": "Gift", "acc_debit": "Ca", "acc_credit": "Eq", "amount": amount}
+        r = client.post("/movements", data=form, headers=HTMX)
+        assert 'class="msg error"' in r.text and message in r.text
+        assert len(rows(settings)) == 4
+        body = {**form, "amount": -5}
+        assert client.post("/api/movements", json=body).status_code == 422
+        assert len(rows(settings)) == 4
 
     def test_create_invalid_movement_shows_error(self, client, settings):
         form = {
@@ -345,6 +365,10 @@ class TestPages:
         assert r.text.count('<em class="optional">(optional)</em>') == 1
         assert r.text.count('name="description" value="" required') == 2
         assert "New result type" in r.text and ">Operative</td>" in r.text
+        # Free sides read "-" (any account)
+        assert ">Any<" not in r.text and ">any<" not in r.text
+        assert '<option value="" title="Any account">-</option>' in r.text
+        assert '<span class="muted" title="Any account">-</span>' in r.text
 
     def test_setup_create_result_type(self, client, settings):
         data = {"name": "Tax", "long_name": "Taxes", "description": "Taxes paid"}

@@ -4,7 +4,7 @@
   <input value="{{ fixed }}" readonly tabindex="-1" class="fixed">
   {% else %}
   <select name="{{ name }}">
-    <option value="">Any</option>
+    <option value="" title="Any account">-</option>
     {% for acc in sides.free %}
     <option {% if acc == values[name] %}selected{% endif %}>{{ acc }}</option>
     {% endfor %}
