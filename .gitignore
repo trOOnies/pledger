@@ -1,6 +1,7 @@
 # Sensitive information
 info/*.csv
 info/*.yaml
+info/currencies/*.csv
 
 # Local project files
 local/
