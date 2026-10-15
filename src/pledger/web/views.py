@@ -150,10 +150,15 @@ def base_sides(snapshot: Snapshot, move_type: str) -> dict:
 
 
 def setup_context(snapshot: Snapshot, values: dict | None = None) -> dict:
-    """Base movements by type, plus the state of the setup form."""
+    """Result types and base movements, plus state of the setup forms."""
     values = values or {}
     values.setdefault("move_type", MovementType.LOSS.value)
     return {
+        "result_types": [snapshot.result_types[i] for i in sorted(snapshot.result_types)],
+        "bases_per_result_type": {
+            rt.name: sum(b.result_type is rt for b in snapshot.base_movements.values())
+            for rt in snapshot.result_types.values()
+        },
         "bases_by_type": {
             t.value: [b for b in snapshot.base_movements.values() if b.move_type == t]
             for t in MovementType

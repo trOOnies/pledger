@@ -125,6 +125,24 @@ def create_account(
     )
 
 
+@router.post("/setup/result-types")
+def create_result_type(
+    request: Request,
+    store: StoreDep,
+    name: Annotated[str, Form()],
+    long_name: Annotated[str, Form()] = "",
+    description: Annotated[str, Form()] = "",
+):
+    try:
+        store.add_result_type(name, long_name, description)
+    except ValueError as e:
+        values = {"rt_name": name, "rt_long_name": long_name, "rt_description": description}
+        return render_setup(request, store, values, result_type_error=str(e))
+    return render_setup(
+        request, store, {}, result_type_success=f"Added result type {name.strip()}"
+    )
+
+
 @router.post("/setup/base-movements")
 def create_base_movement(
     request: Request,

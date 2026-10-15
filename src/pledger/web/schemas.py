@@ -22,6 +22,12 @@ class AccountIn(BaseModel):
     description: str
 
 
+class ResultTypeIn(BaseModel):
+    name: str
+    long_name: str
+    description: str
+
+
 class BaseMovementIn(BaseModel):
     name: str
     type: MovementType

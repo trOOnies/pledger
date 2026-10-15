@@ -1,4 +1,46 @@
 <div class="layout setup">
+  <div class="column">
+  <section class="panel">
+    <h2>Result types</h2>
+    <p class="muted small">Gains and losses are grouped under result types, in this order.</p>
+    {% if result_type_success %}<p class="msg success">{{ result_type_success }}</p>{% endif %}
+    <details class="add" {% if result_type_error %}open{% endif %}>
+      <summary>New result type</summary>
+      <form class="stack" hx-post="/setup/result-types" hx-target="#setup">
+        {% if result_type_error %}<p class="msg error">{{ result_type_error }}</p>{% endif %}
+        <div class="pair">
+          <label>Name
+            <input name="name" value="{{ values.rt_name }}" required autocomplete="off" placeholder="e.g. Op">
+          </label>
+          <label>Long name
+            <input name="long_name" value="{{ values.rt_long_name }}" required autocomplete="off" placeholder="e.g. Operative">
+          </label>
+        </div>
+        <label>Description
+          <input name="description" value="{{ values.rt_description }}" required autocomplete="off">
+        </label>
+        <p class="muted small">New result types go last; reorder them by editing the file.</p>
+        <button type="submit">Add result type</button>
+      </form>
+    </details>
+    <table data-sortable="setup-result-types">
+      <thead><tr><th class="num">#</th><th>Name</th><th>Long name</th><th class="num" title="Base movements">Bases</th><th>Description</th></tr></thead>
+      <tbody>
+      {% for rt in result_types %}
+      <tr>
+        <td class="num muted">{{ rt.id }}</td>
+        <td class="nowrap"><strong>{{ rt.name }}</strong></td>
+        <td>{{ rt.long_name }}</td>
+        <td class="num">{{ bases_per_result_type[rt.name] }}</td>
+        <td class="muted">{{ rt.description }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="5" class="muted">No result types.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  </div>
   <section class="panel">
     <h2>Base movements</h2>
     {% if base_success %}<p class="msg success">{{ base_success }}</p>{% endif %}

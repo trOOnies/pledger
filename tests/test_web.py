@@ -174,6 +174,35 @@ class TestSetupStore:
         gifts = data["result_types"]["Gifts"]["base_movements"]
         assert gifts["loss"] == {"Gift out": {"description": "Gift to others"}}
 
+    def test_add_result_type(self, settings):
+        store = LedgerStore(settings)
+        store.add_result_type(" Tax ", "Taxes", "Taxes paid")
+        result_types = store.load().result_types
+        assert (result_types[3].name, result_types[3].long_name) == ("Tax", "Taxes")
+        data = yaml.safe_load(settings.base_movements_path.read_text())
+        assert data["result_types"]["Tax"] == {
+            "id": 3, "long_name": "Taxes", "description": "Taxes paid",
+        }
+        # Base movements can then be added under it
+        store.add_base_movement("Income tax", "loss", "Income tax", result_type="Tax")
+        assert store.load().base_movements["Income tax"].result_type.name == "Tax"
+
+    @pytest.mark.parametrize(
+        ("args", "message"),
+        [
+            (("Op", "Operative", "d"), "already exists"),
+            (("", "X", "d"), "name is required"),
+            (("yes", "X", "d"), "needs quoting"),
+            (("X", " ", "d"), "long name is required"),
+            (("X", "X", ""), "description is required"),
+        ],
+    )
+    def test_add_result_type_rejects_invalid(self, settings, args, message):
+        before = settings.base_movements_path.read_text()
+        with pytest.raises(ValueError, match=message):
+            LedgerStore(settings).add_result_type(*args)
+        assert settings.base_movements_path.read_text() == before
+
     @pytest.mark.parametrize(
         ("args", "message"),
         [
@@ -314,7 +343,15 @@ class TestPages:
         assert "New account" not in r.text and "New base movement" in r.text
         # Only credit: descriptions are required and the default loss type fixes debit
         assert r.text.count('<em class="optional">(optional)</em>') == 1
-        assert r.text.count('name="description" value="" required') == 1
+        assert r.text.count('name="description" value="" required') == 2
+        assert "New result type" in r.text and ">Operative</td>" in r.text
+
+    def test_setup_create_result_type(self, client, settings):
+        data = {"name": "Tax", "long_name": "Taxes", "description": "Taxes paid"}
+        r = client.post("/setup/result-types", data=data, headers=HTMX)
+        assert "Added result type Tax" in r.text and ">Taxes</td>" in r.text
+        r = client.post("/setup/result-types", data=data, headers=HTMX)
+        assert 'class="msg error"' in r.text and "already exists" in r.text
 
     def test_tables_are_sortable(self, client):
         index, setup = client.get("/").text, client.get("/setup").text
@@ -322,6 +359,7 @@ class TestPages:
         assert 'data-sortable="movements"' in index
         assert 'data-sortable="balances-asset"' in accounts
         assert 'data-sort="1000.5"' in index  # sort by raw amount, not formatted text
+        assert 'data-sortable="setup-result-types"' in setup
         assert 'data-sortable="setup-bases-gain"' in setup
 
     def test_create_account(self, client, settings):
@@ -465,3 +503,11 @@ class TestApi:
         assert client.post("/api/base-movements", json=body).status_code == 201
         body = {"name": "Tip2", "type": "loss", "description": "d"}
         assert client.post("/api/base-movements", json=body).status_code == 422
+
+    def test_result_types(self, client):
+        assert [rt["name"] for rt in client.get("/api/result-types").json()] == ["Op", "Gifts"]
+        body = {"name": "Tax", "long_name": "Taxes", "description": "d"}
+        assert client.post("/api/result-types", json=body).status_code == 201
+        assert client.post("/api/result-types", json=body).status_code == 422
+        result_types = client.get("/api/result-types").json()
+        assert result_types[-1] == {"id": 3, "name": "Tax", "long_name": "Taxes", "description": "d"}

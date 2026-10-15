@@ -253,7 +253,7 @@ class MovementBase:
         sections = [
             (result_types[rt["id"]], move_type, mt_base_moves)
             for rt in data["result_types"].values()
-            for move_type, mt_base_moves in (rt["base_movements"] or {}).items()
+            for move_type, mt_base_moves in (rt.get("base_movements") or {}).items()
         ]
         if any(
             move_type not in {MovementType.GAIN.value, MovementType.LOSS.value}

@@ -73,6 +73,7 @@ main { padding: 1rem 1.5rem 3rem; max-width: 1400px; margin: 0 auto; }
 .layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 1rem; align-items: start; }
 .layout > aside { position: sticky; top: 1rem; }
 .layout.setup { grid-template-columns: 1fr 2fr; }
+.layout .column { display: grid; gap: 1rem; min-width: 0; }
 #view, .layout > .view { display: grid; gap: 1rem; min-width: 0; }
 
 .panel {

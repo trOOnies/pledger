@@ -172,6 +172,25 @@ class LedgerStore:
             {"description": description},
         )
 
+    def add_result_type(self, name: str, long_name: str, description: str) -> None:
+        """Validate a new result type and add it, with the next id, to the base movements YAML."""
+        snapshot = self.load()
+        existing = {rt.name: rt for rt in snapshot.result_types.values()}
+        name = _check_name(name, existing, "result type")
+        # The name is a YAML key that later base movements are inserted under.
+        if not yaml.safe_dump({name: 0}).startswith(f"{name}:"):
+            raise ValueError(f"The result type name {name!r} needs quoting in YAML; use a simpler name")
+        long_name = long_name.strip()
+        if not long_name:
+            raise ValueError("The result type long name is required")
+        description = _check_description(description, "result type")
+        fields = {
+            "id": max(snapshot.result_types, default=0) + 1,
+            "long_name": long_name,
+            "description": description,
+        }
+        self._add_yaml_entry(self.settings.base_movements_path, ("result_types",), name, fields)
+
     def add_base_movement(
         self,
         name: str,
