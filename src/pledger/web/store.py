@@ -16,7 +16,7 @@ from pandas import DataFrame, read_csv
 
 from pledger.enums import AccountType, MovementType
 from pledger.ledger import Ledger
-from pledger.models import Account, Movement, MovementBase
+from pledger.models import Account, Movement, MovementBase, ResultType
 
 BOM = "﻿"
 
@@ -44,7 +44,7 @@ class Settings:
         return cls(
             accounts_path=Path(os.environ.get("PLEDGER_ACCOUNTS", "info/accounts.yaml")),
             base_movements_path=Path(
-                os.environ.get("PLEDGER_BASE_MOVEMENTS", "info/base_movements.yaml")
+                os.environ.get("PLEDGER_BASE_MOVEMENTS", "info/result_types.yaml")
             ),
             ledger_path=Path(os.environ.get("PLEDGER_LEDGER", "info/ledger.csv")),
             currency=os.environ.get("PLEDGER_CURRENCY", "$"),
@@ -57,6 +57,7 @@ class Snapshot:
 
     accounts: dict[str, Account]
     base_movements: dict[str, MovementBase]
+    result_types: dict[int, ResultType]
     rows: DataFrame  # raw CSV rows, all columns as strings
 
     def ledger(self, rows: DataFrame | None = None) -> Ledger:
@@ -87,12 +88,14 @@ class LedgerStore:
         s = self.settings
         try:
             accounts = Account.load_yaml(str(s.accounts_path))
-            base_movements = MovementBase.load_yaml(str(s.base_movements_path), accounts)
+            base_movements, result_types = MovementBase.load_yaml(
+                str(s.base_movements_path), accounts
+            )
             rows = read_csv(
                 s.ledger_path, sep=";", dtype=str, keep_default_na=False,
                 encoding="utf-8-sig",
             )
-            snapshot = Snapshot(accounts, base_movements, rows)
+            snapshot = Snapshot(accounts, base_movements, result_types, rows)
             snapshot.ledger()  # validate the whole ledger up front
         except (OSError, KeyError, ValueError, AssertionError) as e:
             raise LedgerDataError(f"{type(e).__name__}: {e}") from e
@@ -165,7 +168,7 @@ class LedgerStore:
             raise ValueError("New equity accounts are not supported")
         description = _check_description(description, "account")
         self._add_yaml_entry(
-            self.settings.accounts_path, acc_type.value, name,
+            self.settings.accounts_path, (acc_type.value,), name,
             {"description": description},
         )
 
@@ -176,8 +179,12 @@ class LedgerStore:
         description: str,
         debit: str = "",
         credit: str = "",
+        result_type: str = "",
     ) -> None:
-        """Validate a new base movement and add it to the base movements YAML."""
+        """
+        Validate a new base movement and add it to the base movements YAML: gains
+        and losses under their result type, transfers in the `transfer` section.
+        """
         snapshot = self.load()
         name = _check_name(name, snapshot.base_movements, "base movement")
         try:
@@ -185,6 +192,15 @@ class LedgerStore:
         except ValueError:
             raise ValueError(f"Invalid movement type: {move_type!r}") from None
         description = _check_description(description, "base movement")
+        if move_type == MovementType.TRANSFER:
+            section = (MovementType.TRANSFER.value,)
+        else:
+            names = {rt.name for rt in snapshot.result_types.values()}
+            if not result_type:
+                raise ValueError("Gains and losses require a result type")
+            if result_type not in names:
+                raise ValueError(f"Unknown result type: {result_type!r}")
+            section = ("result_types", result_type, "base_movements", move_type.value)
         # Gains always credit equity and losses always debit it.
         if move_type == MovementType.GAIN:
             credit = ""
@@ -202,13 +218,13 @@ class LedgerStore:
             fields["debit"] = debit
         if credit:
             fields["credit"] = credit
-        self._add_yaml_entry(
-            self.settings.base_movements_path, move_type.value, name, fields
-        )
+        self._add_yaml_entry(self.settings.base_movements_path, section, name, fields)
 
-    def _add_yaml_entry(self, path: Path, section: str, name: str, fields: dict) -> None:
+    def _add_yaml_entry(
+        self, path: Path, section: tuple[str, ...], name: str, fields: dict
+    ) -> None:
         """
-        Insert `name: fields` at the end of a top-level section, as text, so the
+        Insert `name: fields` at the end of a (nested) section, as text, so the
         rest of the file (comments, extra keys, ordering) is left as is. Rolls
         back if the files no longer load.
         """
@@ -293,38 +309,79 @@ def _check_description(description: str, what: str) -> str:
     return description
 
 
-def _insert_yaml_entry(text: str, section: str, name: str, fields: dict) -> str:
-    """Return `text` with `name: fields` appended to the top-level `section`."""
+def _insert_yaml_entry(text: str, section: tuple[str, ...], name: str, fields: dict) -> str:
+    """
+    Return `text` with `name: fields` appended to the mapping at `section`, a path
+    of keys from the top level (e.g. `("result_types", "Op", "base_movements", "loss")`).
+    Missing keys along the path are created at the end of their parent.
+    """
     newline = "\r\n" if "\r\n" in text else "\n"
     lines = text.split(newline)
-    header = re.compile(rf"^{re.escape(section)}:\s*(#.*)?$")
-    start = next((i for i, line in enumerate(lines) if header.match(line)), None)
 
-    if start is None:
-        if any(line.startswith(f"{section}:") for line in lines):
-            raise ValueError(f"Cannot add to the {section!r} section; edit the file by hand")
-        while lines and not lines[-1].strip():
-            lines.pop()
-        return newline.join([*lines, f"{section}:", *_yaml_entry(name, fields, 2), ""])
+    def is_content(line: str) -> bool:
+        return bool(line.strip()) and not line.lstrip().startswith("#")
 
-    # The section ends at the next top-level key; insert after its last indented line.
-    last, indent = start, None
-    for i in range(start + 1, len(lines)):
-        line = lines[i]
-        if line.strip() and line[0] not in " \t#":
-            break
-        if line.strip() and line[0] in " \t" and not line.lstrip().startswith("#"):
-            last = i
-            if indent is None:
-                indent = len(line) - len(line.lstrip())
-    lines[last + 1:last + 1] = _yaml_entry(name, fields, indent or 2)
+    def indent_of(line: str) -> int:
+        return len(line) - len(line.lstrip())
+
+    # The block of the current key: its header line, indent and child lines [lo, hi).
+    head, head_indent, lo, hi = None, -1, 0, len(lines)
+    step = None  # indentation step, taken from the file
+    for depth, key in enumerate(section):
+        children = [i for i in range(lo, hi) if is_content(lines[i])]
+        child_indent = indent_of(lines[children[0]]) if children else None
+        if child_indent is not None and head is not None:
+            step = step or child_indent - head_indent
+        if child_indent is None:
+            child_indent = head_indent + (step or 2) if head is not None else 0
+
+        header = re.compile(rf"^ {{{child_indent}}}{re.escape(key)}:\s*(#.*)?$")
+        found = next((i for i in children if header.match(lines[i])), None)
+        if found is None:
+            if any(lines[i].lstrip().startswith(f"{key}:") and indent_of(lines[i]) == child_indent
+                   for i in children):
+                raise ValueError(f"Cannot add to the {key!r} section; edit the file by hand")
+            # Append the missing key (and the rest of the path) after the block.
+            at = (children[-1] + 1) if children else lo
+            if head is None:
+                while lines and not lines[-1].strip():
+                    lines.pop()
+                at = len(lines)
+            unit = step or 2
+            new = [
+                " " * (child_indent + unit * j) + f"{k}:"
+                for j, k in enumerate(section[depth:])
+            ]
+            entry_indent = child_indent + unit * len(new)
+            new += _yaml_entry(name, fields, entry_indent, unit)
+            lines[at:at] = new + ([""] if head is None else [])
+            return newline.join(lines)
+
+        head, head_indent = found, child_indent
+        lo = found + 1
+        hi = next(
+            (i for i in range(lo, hi) if is_content(lines[i]) and indent_of(lines[i]) <= head_indent),
+            hi,
+        )
+
+    # Insert after the last content line of the section.
+    children = [i for i in range(lo, hi) if is_content(lines[i])]
+    if children:
+        entry_indent = indent_of(lines[children[0]])
+        step = step or entry_indent - head_indent
+        at = children[-1] + 1
+    else:
+        step = step or 2
+        entry_indent = head_indent + step
+        at = head + 1
+    lines[at:at] = _yaml_entry(name, fields, entry_indent, step)
     return newline.join(lines)
 
 
-def _yaml_entry(name: str, fields: dict, indent: int) -> list[str]:
+def _yaml_entry(name: str, fields: dict, indent: int, step: int) -> list[str]:
     dumped = yaml.safe_dump(
         {name: fields}, sort_keys=False, allow_unicode=True,
-        default_flow_style=False, indent=indent, width=10**9,
+        default_flow_style=False, indent=step, width=10**9,
     )
     return [" " * indent + line for line in dumped.splitlines()]
 

@@ -19,11 +19,12 @@ composition of assets, liabilities, gains and losses, and equity over time.
 make serve     # http://127.0.0.1:8000 (API docs at /docs)
 ```
 
-It reads `info/accounts.yaml`, `info/base_movements.yaml` and `info/ledger.csv` from the
+It reads `info/accounts.yaml`, `info/result_types.yaml` and `info/ledger.csv` from the
 current directory. Override with `PLEDGER_ACCOUNTS`, `PLEDGER_BASE_MOVEMENTS` and
 `PLEDGER_LEDGER`. The CSV stays the source of truth: adding a movement appends one line,
 deleting removes one line, and the rest of the file is left byte-for-byte as it was.
-New accounts and base movements are inserted at the end of their section in the YAML files,
+New accounts and base movements are inserted at the end of their section in the YAML files
+(gains and losses under their result type, transfers under `transfer`),
 leaving the rest of each file as it was.
 
 Amounts are shown with a `$` currency symbol and two decimals; set `PLEDGER_CURRENCY`

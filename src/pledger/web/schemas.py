@@ -28,3 +28,4 @@ class BaseMovementIn(BaseModel):
     description: str
     debit: str | None = None
     credit: str | None = None
+    result_type: str | None = None  # required for gains and losses

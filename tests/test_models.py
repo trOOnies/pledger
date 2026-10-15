@@ -1,9 +1,12 @@
 """Tests for pledger.models."""
 
+from pathlib import Path
+
+import pandas as pd
 import pytest
 
 from pledger.enums import AccountType, MovementType
-from pledger.models import Account, Movement, MovementBase
+from pledger.models import Account, Currency, Movement, MovementBase, ResultType
 
 
 class TestAccount:
@@ -118,7 +121,7 @@ class TestMovementBase:
 
     def test_load_yaml(self, accounts_yaml, base_movements_yaml):
         accounts = Account.load_yaml(accounts_yaml)
-        bases = MovementBase.load_yaml(base_movements_yaml, accounts)
+        bases, result_types = MovementBase.load_yaml(base_movements_yaml, accounts)
 
         assert bases["Salary"].acc_debit is accounts["Bk"]
         assert bases["Salary"].acc_credit is accounts["Eq"]
@@ -127,6 +130,75 @@ class TestMovementBase:
         assert bases["Card fee"].acc_credit is accounts["Cc"]
         assert bases["Withdraw"].move_type == MovementType.TRANSFER
         assert bases["Move"].acc_debit is None and bases["Move"].acc_credit is None
+
+        assert sorted(result_types) == [1, 2]
+        assert result_types[1].name == "Op" and result_types[1].long_name == "Operative"
+        assert bases["Salary"].result_type is result_types[1]
+        assert bases["Gift"].result_type is result_types[2]
+        assert bases["Withdraw"].result_type is None
+
+    @pytest.mark.parametrize(
+        ("old", "new", "message"),
+        [
+            ("    id: 2\n", "    id: 3\n", "must be unique and go from 1"),
+            ("    id: 2\n", "    id: 1\n", "must be unique and go from 1"),
+            ("      gain:\n        Gift:", "      transfer:\n        Gift:", "only include 'gain' and 'loss'"),
+            ("  Move:\n", "  Food:\n", "Duplicated base movement name: 'Food'"),
+            ("  Move:\n    description: Free transfer\n",
+             "  Move:\n    description: Free transfer\n    debit: Eq\n", "fixed Equity account"),
+        ],
+    )
+    def test_load_yaml_rejects_invalid(self, tmp_path, accounts_yaml, base_movements_yaml, old, new, message):
+        accounts = Account.load_yaml(accounts_yaml)
+        path = tmp_path / "result_types.yaml"
+        text = Path(base_movements_yaml).read_text(encoding="utf-8")
+        assert old in text
+        path.write_text(text.replace(old, new, 1), encoding="utf-8")
+        with pytest.raises(ValueError, match=message):
+            MovementBase.load_yaml(str(path), accounts)
+
+    def test_result_type_must_match_move_type(self, accounts, result_types):
+        with pytest.raises(ValueError, match="result type"):
+            MovementBase("Food", "", accounts["Eq"], None, None)
+        with pytest.raises(ValueError, match="result type"):
+            MovementBase("Move", "", None, None, result_types[1])
+
+
+class TestResultType:
+    def test_id_is_one_indexed(self):
+        with pytest.raises(ValueError, match="Value seen: 0"):
+            ResultType(0, "Op", "Operative", "")
+
+
+class TestCurrency:
+    def test_load_yaml(self, tmp_path):
+        (tmp_path / "currencies").mkdir()
+        (tmp_path / "currencies" / "USD.csv").write_text(
+            "date;unit_value_in_base_currency\n2026-01-05;1500.5\n2025-12-29;1480\n"
+        )
+        path = tmp_path / "currencies.yaml"
+        path.write_text(
+            "base_currency:\n  name: ARS\n  description: Pesos\n"
+            "other_currencies:\n  - name: USD\n    description: Dollar\n"
+        )
+        base, others = Currency.load_yaml(str(path))
+        assert base.name == "ARS" and base.is_base_currency
+        usd = others["USD"]
+        assert not usd.is_base_currency
+        assert list(usd.base_currency_mapping) == [1480, 1500.5]  # sorted by date
+        assert usd.base_currency_mapping.index[0] == pd.Timestamp("2025-12-29")
+
+    def test_load_yaml_without_other_currencies(self, tmp_path):
+        path = tmp_path / "currencies.yaml"
+        path.write_text("base_currency:\n  name: ARS\n  description: Pesos\nother_currencies:\n")
+        base, others = Currency.load_yaml(str(path))
+        assert base.name == "ARS" and others == {}
+
+    def test_load_yaml_rejects_bad_names(self, tmp_path):
+        path = tmp_path / "currencies.yaml"
+        path.write_text("base_currency:\n  name: ars\n  description: Pesos\n")
+        with pytest.raises(AssertionError, match="A-Z"):
+            Currency.load_yaml(str(path))
 
 
 class TestMovement:

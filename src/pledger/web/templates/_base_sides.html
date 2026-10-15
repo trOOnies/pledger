@@ -12,6 +12,15 @@
   {% endif %}
 </label>
 {% endmacro %}
+{% if sides.result_types %}
+<label>Result type
+  <select name="result_type">
+    {% for rt in sides.result_types %}
+    <option value="{{ rt.name }}" {% if rt.name == values.result_type %}selected{% endif %}>{{ rt.long_name }}</option>
+    {% endfor %}
+  </select>
+</label>
+{% endif %}
 <div class="pair">
   {{ side("debit", "Debit", sides.debit_fixed) }}
   {{ side("credit", "Credit", sides.credit_fixed) }}

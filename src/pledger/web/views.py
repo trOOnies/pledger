@@ -119,6 +119,12 @@ def base_sides(snapshot: Snapshot, move_type: str) -> dict:
         "debit_fixed": equity if move_type == MovementType.LOSS.value else None,
         "credit_fixed": equity if move_type == MovementType.GAIN.value else None,
         "free": [a.name for a in snapshot.free_accounts()],
+        # Gains and losses are filed under a result type; transfers have none.
+        "result_types": (
+            []
+            if move_type == MovementType.TRANSFER.value
+            else [snapshot.result_types[i] for i in sorted(snapshot.result_types)]
+        ),
     }
 
 

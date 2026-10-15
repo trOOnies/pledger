@@ -104,15 +104,34 @@ class TestSetupStore:
 
     def test_insert_yaml_entry_into_missing_section(self):
         text = "asset:\n  Ca:\n    description: Cash\n\n"
-        out = _insert_yaml_entry(text, "liability", "Cc", {"description": ""})
+        out = _insert_yaml_entry(text, ("liability",), "Cc", {"description": ""})
         assert out == "asset:\n  Ca:\n    description: Cash\nliability:\n  Cc:\n    description: ''\n"
 
     def test_insert_yaml_entry_keeps_crlf_and_indent(self):
         text = "gain:\r\n    A:\r\n        description: a\r\nloss: {}\r\n"
-        out = _insert_yaml_entry(text, "gain", "B", {"description": "b"})
+        out = _insert_yaml_entry(text, ("gain",), "B", {"description": "b"})
         assert out == "gain:\r\n    A:\r\n        description: a\r\n    B:\r\n        description: b\r\nloss: {}\r\n"
         with pytest.raises(ValueError, match="edit the file by hand"):
-            _insert_yaml_entry(text, "loss", "C", {"description": "c"})
+            _insert_yaml_entry(text, ("loss",), "C", {"description": "c"})
+
+    def test_insert_yaml_entry_nested(self):
+        text = (
+            "rt:\n  A:\n    bm:\n      gain:\n        G:\n          description: g\n"
+            "  B:\n    id: 2\n    bm:\n      gain:\n"
+            "transfer:\n  T:\n    description: t\n"
+        )
+        out = _insert_yaml_entry(text, ("rt", "A", "bm", "gain"), "G2", {"description": "x"})
+        assert "        G:\n          description: g\n        G2:\n          description: x\n  B:" in out
+        # Missing keys are created at the end of their parent block
+        out = _insert_yaml_entry(text, ("rt", "A", "bm", "loss"), "L", {"description": "x"})
+        assert "description: g\n      loss:\n        L:\n          description: x\n  B:" in out
+        # Empty (null) sections get their first entry
+        out = _insert_yaml_entry(text, ("rt", "B", "bm", "gain"), "G3", {"description": "x"})
+        assert "      gain:\n        G3:\n          description: x\ntransfer:" in out
+        # Only direct children match: "gain" under A is not a key of "rt"
+        out = _insert_yaml_entry(text, ("rt", "gain"), "X", {"description": "x"})
+        assert out.endswith("  gain:\n    X:\n      description: x\ntransfer:\n  T:\n    description: t\n")
+        assert yaml.safe_load(out)["rt"]["A"]["bm"]["gain"] == {"G": {"description": "g"}}
 
     @pytest.mark.parametrize(
         ("args", "message"),
@@ -133,15 +152,27 @@ class TestSetupStore:
 
     def test_add_base_movement(self, settings):
         store = LedgerStore(settings)
-        store.add_base_movement("Rent", "loss", "Monthly rent", debit="Ca", credit="Bk")
-        store.add_base_movement("ATM", "transfer", "Cash withdrawal", debit="Ca", credit="Bk")
+        store.add_base_movement(
+            "Rent", "loss", "Monthly rent", debit="Ca", credit="Bk", result_type="Op"
+        )
+        store.add_base_movement(
+            "ATM", "transfer", "Cash withdrawal", debit="Ca", credit="Bk", result_type="Op"
+        )
+        store.add_base_movement("Gift out", "loss", "Gift to others", result_type="Gifts")
         bases = store.load().base_movements
         rent = bases["Rent"]  # debit is forced to equity for losses
         assert (rent.acc_debit.name, rent.acc_credit.name) == ("Eq", "Bk")
         assert rent.move_type.value == "loss"
+        assert rent.result_type.name == "Op"
         assert (bases["ATM"].acc_debit.name, bases["ATM"].acc_credit.name) == ("Ca", "Bk")
+        assert bases["ATM"].result_type is None  # transfers ignore the result type
+        assert bases["Gift out"].result_type.name == "Gifts"
         data = yaml.safe_load(settings.base_movements_path.read_text())
-        assert data["loss"]["Rent"] == {"description": "Monthly rent", "credit": "Bk"}
+        op = data["result_types"]["Op"]["base_movements"]
+        assert op["loss"]["Rent"] == {"description": "Monthly rent", "credit": "Bk"}
+        assert data["transfer"]["ATM"] == {"description": "Cash withdrawal", "debit": "Ca", "credit": "Bk"}
+        gifts = data["result_types"]["Gifts"]["base_movements"]
+        assert gifts["loss"] == {"Gift out": {"description": "Gift to others"}}
 
     @pytest.mark.parametrize(
         ("args", "message"),
@@ -151,7 +182,9 @@ class TestSetupStore:
             (("X", "loss", ""), "description is required"),
             (("X", "transfer", "d", "Ca", "Ca"), "must be different"),
             (("X", "transfer", "d", "Eq"), "non-selectable account"),
-            (("X", "gain", "d", "Nope"), "non-selectable account"),
+            (("X", "gain", "d", "Nope", "", "Op"), "non-selectable account"),
+            (("X", "gain", "d"), "require a result type"),
+            (("X", "loss", "d", "", "", "Nope"), "Unknown result type"),
         ],
     )
     def test_add_base_movement_rejects_invalid(self, settings, args, message):
@@ -274,10 +307,13 @@ class TestPages:
         assert "description is required" in r.text
 
     def test_setup_create_base_movement(self, client, settings):
-        data = {"name": "Rent", "move_type": "loss", "description": "Rent", "credit": "Bk"}
+        data = {
+            "name": "Rent", "move_type": "loss", "description": "Rent", "credit": "Bk",
+            "result_type": "Gifts",
+        }
         r = client.post("/setup/base-movements", data=data, headers=HTMX)
         assert "Added base movement Rent" in r.text
-        assert "Rent" in LedgerStore(settings).load().base_movements
+        assert LedgerStore(settings).load().base_movements["Rent"].result_type.name == "Gifts"
         r = client.get("/form/bases", params={"move_type": "loss"})
         assert "Rent" in r.text
 
@@ -285,6 +321,9 @@ class TestPages:
         r = client.get("/form/base-sides", params={"move_type": "gain"})
         assert '<select name="debit"' in r.text
         assert 'name="credit"' not in r.text and 'value="Eq"' in r.text
+        assert '<select name="result_type"' in r.text and ">Operative</option>" in r.text
+        r = client.get("/form/base-sides", params={"move_type": "transfer"})
+        assert 'name="result_type"' not in r.text
 
     def test_broken_ledger_shows_error_page(self, client, settings):
         settings.ledger_path.write_text(
@@ -358,6 +397,8 @@ class TestApi:
         assert len(client.get("/api/accounts").json()) == 4
         bases = {b["name"]: b for b in client.get("/api/base-movements").json()}
         assert bases["Withdraw"]["debit"] == "Ca"
+        assert bases["Withdraw"]["result_type"] is None
+        assert bases["Gift"]["result_type"] == "Gifts"
 
     def test_create_and_delete(self, client, settings):
         body = {
@@ -382,3 +423,7 @@ class TestApi:
         assert client.post("/api/base-movements", json=body).status_code == 201
         bases = {b["name"]: b for b in client.get("/api/base-movements").json()}
         assert bases["Deposit"]["debit"] == "Sv"
+        body = {"name": "Tip", "type": "loss", "description": "d", "result_type": "Op"}
+        assert client.post("/api/base-movements", json=body).status_code == 201
+        body = {"name": "Tip2", "type": "loss", "description": "d"}
+        assert client.post("/api/base-movements", json=body).status_code == 422

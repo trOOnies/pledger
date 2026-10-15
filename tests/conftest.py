@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from pledger.enums import AccountType
-from pledger.models import Account, MovementBase
+from pledger.models import Account, MovementBase, ResultType
 
 ACCOUNTS_YAML = """\
 asset:
@@ -22,18 +22,30 @@ equity:
 """
 
 BASE_MOVEMENTS_YAML = """\
-gain:
-  Salary:
-    description: Monthly salary
-    debit: Bk
-  Gift:
-    description: Any gift
-loss:
-  Food:
-    description: Groceries
-  Card fee:
-    description: Credit card fee
-    credit: Cc
+result_types:
+  Op:
+    id: 1
+    long_name: Operative
+    description: Operative results
+    base_movements:
+      gain:
+        Salary:
+          description: Monthly salary
+          debit: Bk
+      loss:
+        Food:
+          description: Groceries
+        Card fee:
+          description: Credit card fee
+          credit: Cc
+  Gifts:
+    id: 2
+    long_name: Gifts
+    description: Results because of gifts
+    base_movements:
+      gain:
+        Gift:
+          description: Any gift
 transfer:
   Withdraw:
     description: Bank to cash
@@ -63,15 +75,24 @@ def accounts() -> dict[str, Account]:
 
 
 @pytest.fixture
-def base_movements(accounts) -> dict[str, MovementBase]:
-    eq = accounts["Eq"]
+def result_types() -> dict[int, ResultType]:
     return {
-        "Salary": MovementBase("Salary", "", accounts["Bk"], eq),
-        "Gift": MovementBase("Gift", "", None, eq),
-        "Food": MovementBase("Food", "", eq, None),
-        "Card fee": MovementBase("Card fee", "", eq, accounts["Cc"]),
-        "Withdraw": MovementBase("Withdraw", "", accounts["Ca"], accounts["Bk"]),
-        "Move": MovementBase("Move", "", None, None),
+        1: ResultType(1, "Op", "Operative", "Operative results"),
+        2: ResultType(2, "Gifts", "Gifts", "Results because of gifts"),
+    }
+
+
+@pytest.fixture
+def base_movements(accounts, result_types) -> dict[str, MovementBase]:
+    eq = accounts["Eq"]
+    op, gifts = result_types[1], result_types[2]
+    return {
+        "Salary": MovementBase("Salary", "", accounts["Bk"], eq, op),
+        "Gift": MovementBase("Gift", "", None, eq, gifts),
+        "Food": MovementBase("Food", "", eq, None, op),
+        "Card fee": MovementBase("Card fee", "", eq, accounts["Cc"], op),
+        "Withdraw": MovementBase("Withdraw", "", accounts["Ca"], accounts["Bk"], None),
+        "Move": MovementBase("Move", "", None, None, None),
     }
 
 

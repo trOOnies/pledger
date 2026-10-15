@@ -64,11 +64,12 @@
     {% for type, bases in bases_by_type.items() if bases %}
     <h3>{{ type | capitalize }}</h3>
     <table data-sortable="setup-bases-{{ type }}">
-      <thead><tr><th>Name</th><th>Debit</th><th>Credit</th><th>Description</th></tr></thead>
+      <thead><tr><th>Name</th>{% if type != "transfer" %}<th>Result type</th>{% endif %}<th>Debit</th><th>Credit</th><th>Description</th></tr></thead>
       <tbody>
       {% for b in bases %}
       <tr>
         <td><strong>{{ b.name }}</strong></td>
+        {% if type != "transfer" %}<td>{{ b.result_type.long_name }}</td>{% endif %}
         <td>{{ b.acc_debit.name if b.acc_debit else "any" }}</td>
         <td>{{ b.acc_credit.name if b.acc_credit else "any" }}</td>
         <td class="muted">{{ b.description }}</td>
