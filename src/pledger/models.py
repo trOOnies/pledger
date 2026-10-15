@@ -340,14 +340,3 @@ class Movement:
 
         self.acc_debit = self.input_acc_debit
         self.acc_credit = self.input_acc_credit
-
-    def print_data(self) -> None:
-        print(
-            self.move_date
-            + "\t"
-            + self.acc_debit.name
-            + "\t"
-            + str(self.amount)
-            + "\t"
-            + self.acc_credit.name
-        )

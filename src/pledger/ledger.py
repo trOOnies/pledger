@@ -110,29 +110,6 @@ class Ledger:
                 balances[acc.name] = balances.get(acc.name, 0.0) + sign * move.amount
         return balances
 
-    def print_data(self) -> None:
-        """Print data in CLI."""
-        print(40 * "-")
-        print("LEDGER")
-        print(
-            "Move Date"
-            + "\t" + "Debit"
-            + "\t" + "Amount"
-            + "\t" + "Credit"
-        )
-        for move in self.movements:
-            move.print_data()
-        print(40 * "-")
-
-    def print_results(self) -> None:
-        """Print results in CLI."""
-        print(40 * "-")
-        print("RESULTS")
-        print("Gains: ", self.total_gains)
-        print("Losses:", self.total_losses)
-        print("Profit:", self.total_profits)
-        print(40 * "-")
-
     def add_movement(self, movement: Movement) -> None:
         """Add a Movement to the Ledger."""
         self.movements.append(movement)

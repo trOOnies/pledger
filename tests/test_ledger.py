@@ -64,13 +64,6 @@ def test_from_csv_unknown_base_movement(tmp_path, accounts, base_movements):
         Ledger.from_csv(str(path), accounts, base_movements)
 
 
-def test_print_results(ledger, capsys):
-    ledger.print_results()
-    out = capsys.readouterr().out
-    assert "RESULTS" in out
-    assert "Profit:" in out
-
-
 def test_from_dataframe_ignores_extra_columns_and_does_not_mutate(
     accounts, base_movements
 ):
