@@ -329,6 +329,17 @@ class TestPages:
         assert "<th>Currency</th><th>Liquid</th>" in r.text
         assert "<td>USD</td>" in r.text
 
+    def test_accounts_grouped_by_currency_or_liquidity(self, client):
+        r = client.get("/accounts")
+        assert 'name="accounts-group" value="currency" checked' in r.text
+        assert 'name="accounts-group" value="liquidity"' in r.text
+        by_currency = r.text.split('data-group="currency"')[1].split('data-group="liquidity"')[0]
+        by_liquidity = r.text.split('data-group="liquidity"')[1]
+        assert '<span class="bar-name">ARS</span>' in by_currency
+        assert '<span class="bar-name">USD</span>' in by_currency
+        assert '<span class="bar-name">Liquid</span>' in by_liquidity
+        assert '<span class="bar-name">Illiquid</span>' in by_liquidity  # Cc
+
     def test_accounts_partial_for_month(self, client):
         r = client.get("/accounts", params={"month": "2026-01"}, headers=HTMX)
         assert "<html" not in r.text and "as of end of 2026-01" in r.text

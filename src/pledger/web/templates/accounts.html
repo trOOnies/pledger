@@ -11,4 +11,16 @@
 </form>
 
 <div id="accounts-view">{% include "_accounts.html" %}</div>
+
+<script>
+  // Keep the grouping picked for the Assets & liabilities bars when the view re-renders.
+  let accountsGroup = "currency";
+  document.addEventListener("change", (e) => {
+    if (e.target.name === "accounts-group") accountsGroup = e.target.value;
+  });
+  document.addEventListener("htmx:afterSwap", () => {
+    const radio = document.querySelector(`input[name="accounts-group"][value="${accountsGroup}"]`);
+    if (radio) radio.checked = true;
+  });
+</script>
 {% endblock %}

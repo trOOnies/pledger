@@ -54,8 +54,25 @@ def build_view(snapshot: Snapshot, month: str = "", account: str = "") -> dict:
     }
 
 
+LIQUIDITY_GROUPS = {True: "Liquid", False: "Illiquid"}
+
+
+def grouped_composition(totals: dict[str, dict[str, float]]) -> list[dict]:
+    """Ordered composition of groups, each with its rows as children, on the groups' scale."""
+    rows = composition({g: sum(items.values()) for g, items in totals.items()}, ordered=True)
+    if not rows:
+        return rows
+    scale = {"total": sum(r["value"] for r in rows), "top": max(r["value"] for r in rows)}
+    for row in rows:
+        row["children"] = composition(totals[row["name"]], ordered=True, **scale)
+    return rows
+
+
 def build_accounts(snapshot: Snapshot, month: str = "", values: dict | None = None) -> dict:
-    """Balances per account and per type, plus the state of the new account form."""
+    """
+    Balances per account and per type, grouped by currency and by liquidity,
+    plus the state of the new account form.
+    """
     rows = snapshot.rows
     # Balances are cumulative: as of the end of the selected month.
     upto = rows[rows.move_date.str[:7] <= month] if month else rows
@@ -76,6 +93,30 @@ def build_accounts(snapshot: Snapshot, month: str = "", values: dict | None = No
         for t in ACCOUNT_TYPE_ORDER
     }
     totals = {t: sum(a["balance"] for a in accs) for t, accs in accounts_by_type.items()}
+
+    # Assets and liabilities grouped by currency (base first) or by liquidity,
+    # listing every group that has accounts.
+    def grouped(acc_type: AccountType, key: str, groups: list) -> list[dict]:
+        accs = accounts_by_type[acc_type.value]
+        return grouped_composition({
+            name: {a["name"]: a["balance"] for a in accs if a[key] == group}
+            for group, name in groups
+            if any(a[key] == group for a in accs)
+        })
+
+    by_currency = [(c, c) for c in snapshot.currencies]
+    by_liquidity = list(LIQUIDITY_GROUPS.items())
+    groupings = {
+        "currency": {
+            "assets": grouped(AccountType.ASSET, "currency", by_currency),
+            "liabilities": grouped(AccountType.LIABILITY, "currency", by_currency),
+        },
+        "liquidity": {
+            "assets": grouped(AccountType.ASSET, "is_liquid", by_liquidity),
+            "liabilities": grouped(AccountType.LIABILITY, "is_liquid", by_liquidity),
+        },
+    }
+
     values = values or {}
     values.setdefault("acc_type", AccountType.ASSET.value)
     values.setdefault("acc_currency", snapshot.base_currency.name)
@@ -87,6 +128,7 @@ def build_accounts(snapshot: Snapshot, month: str = "", values: dict | None = No
         "liabilities": totals[AccountType.LIABILITY.value],
         "equity": totals[AccountType.EQUITY.value],
         "accounts_by_type": accounts_by_type,
+        "groupings": groupings,
         # New equity accounts are not supported for now.
         "account_types": [t.value for t in ACCOUNT_TYPE_ORDER if t != AccountType.EQUITY],
         "currencies": list(snapshot.currencies.values()),
@@ -340,14 +382,7 @@ def build_charts(snapshot: Snapshot, month: str = "") -> dict:
 
     def by_result_type(move_type: MovementType) -> list[dict]:
         # Every result type and base movement is listed, even at zero in this period.
-        by_rt = results[move_type]
-        rows = composition({rt: sum(bases.values()) for rt, bases in by_rt.items()}, ordered=True)
-        if not rows:
-            return rows
-        scale = {"total": sum(r["value"] for r in rows), "top": max(r["value"] for r in rows)}
-        for row in rows:
-            row["children"] = composition(by_rt[row["name"]], ordered=True, **scale)
-        return rows
+        return grouped_composition(results[move_type])
 
     # Result statement: each result type in id order, with a running total.
     statement, running = [], 0.0

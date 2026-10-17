@@ -1,36 +1,4 @@
-{% macro bar_row(item, kind, tag="div") %}
-<{{ tag }} class="bar-row" title="{{ item.name }}: {{ item.value | money }} ({{ '%.1f' | format(item.share) }}%)">
-  <span class="bar-name">{{ item.name }}</span>
-  <span class="num {{ 'loss' if item.value < 0 }}">{{ item.value | money }}</span>
-  <span class="num muted share">{{ '%.1f' | format(item.share) }}%</span>
-  <span class="bar-track">{% if item.value > 0 %}<span class="bar {{ kind }}" style="width: {{ '%.2f' | format(item.width) }}%"></span>{% endif %}</span>
-</{{ tag }}>
-{% endmacro %}
-
-{# A row with `rest` (folded small rows) or `children` (its breakdown) expands. #}
-{% macro bar_item(item, kind) %}
-{% set nested = item.rest or item.children %}
-{% if nested %}
-<details class="other">
-  {{ bar_row(item, kind, "summary") }}
-  <div class="other-rows {{ 'children' if item.children }}">{% for r in nested %}{{ bar_item(r, kind) }}{% endfor %}</div>
-</details>
-{% else %}
-{{ bar_row(item, kind) }}
-{% endif %}
-{% endmacro %}
-
-{% macro bars(title, items, kind, empty) %}
-<div class="composition">
-  <h3>{{ title }} <span class="total">{{ items | sum(attribute='value') | money }}</span></h3>
-  {% for item in items %}
-  {{ bar_item(item, kind) }}
-  {% else %}
-  <p class="muted small">{{ empty }}</p>
-  {% endfor %}
-</div>
-{% endmacro %}
-
+{% from "_bars.html" import bars with context %}
 <div class="charts-grid">
   <section class="panel">
     <h2>Assets &amp; liabilities{% if month %} <small>as of end of {{ month }}</small>{% endif %}</h2>
