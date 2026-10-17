@@ -177,6 +177,11 @@ input, select, button {
   min-width: 0; width: 100%;
 }
 .filters select { width: auto; }
+.stack label.check, .pair label.check {
+  display: flex; align-items: center; gap: .4rem; align-self: end;
+  padding-bottom: .45rem; font-size: 14px; color: var(--text); cursor: pointer;
+}
+input[type="checkbox"], input[type="radio"] { width: auto; margin: 0; accent-color: var(--accent); }
 input.fixed { background: var(--bg); color: var(--muted); }
 
 .money-input { display: flex; align-items: stretch; }

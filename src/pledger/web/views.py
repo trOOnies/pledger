@@ -62,7 +62,13 @@ def build_accounts(snapshot: Snapshot, month: str = "", values: dict | None = No
 
     accounts_by_type = {
         t.value: [
-            {"name": a.name, "description": a.description, "balance": balances.get(a.name, 0.0)}
+            {
+                "name": a.name,
+                "description": a.description,
+                "currency": a.currency.name,
+                "is_liquid": a.is_liquid,
+                "balance": balances.get(a.name, 0.0),
+            }
             for a in snapshot.accounts.values()
             if a.acc_type == t
         ]
@@ -71,6 +77,8 @@ def build_accounts(snapshot: Snapshot, month: str = "", values: dict | None = No
     totals = {t: sum(a["balance"] for a in accs) for t, accs in accounts_by_type.items()}
     values = values or {}
     values.setdefault("acc_type", AccountType.ASSET.value)
+    values.setdefault("acc_currency", snapshot.base_currency.name)
+    values.setdefault("acc_initial_amount", "0.00")
     return {
         "months": months_of(snapshot),
         "month": month,
@@ -80,6 +88,7 @@ def build_accounts(snapshot: Snapshot, month: str = "", values: dict | None = No
         "accounts_by_type": accounts_by_type,
         # New equity accounts are not supported for now.
         "account_types": [t.value for t in ACCOUNT_TYPE_ORDER if t != AccountType.EQUITY],
+        "currencies": list(snapshot.currencies.values()),
         "values": values,
     }
 

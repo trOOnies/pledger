@@ -20,6 +20,10 @@ class AccountIn(BaseModel):
     name: str
     type: AccountType
     description: str
+    initial_amount: float
+    currency: str = ""  # the base currency if empty
+    is_liquid: bool = False
+    initial_date: str = ""  # the first date of the ledger if empty
 
 
 class ResultTypeIn(BaseModel):

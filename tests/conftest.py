@@ -2,20 +2,42 @@
 
 from __future__ import annotations
 
+import pandas as pd
 import pytest
 
 from pledger.enums import AccountType
-from pledger.models import Account, MovementBase, ResultType
+from pledger.models import Account, Currency, MovementBase, ResultType
+
+CURRENCIES_YAML = """\
+base_currency:
+  name: ARS
+  description: Pesos
+other_currencies:
+  - name: USD
+    description: Dollar
+"""
+
+USD_CSV = """\
+date;unit_value_in_base_currency
+2026-01-01;1000
+"""
 
 ACCOUNTS_YAML = """\
 asset:
   Ca:
     description: Cash
+    is_liquid: true
+    initial_amount: 0.0
   Bk:
     description: Bank account
+    currency: USD
+    is_liquid: true
+    initial_amount: 100.5
+    initial_date: 2025-12-31
 liability:
   Cc:
     description: Credit card
+    initial_amount: 0
 equity:
   Eq:
     description: Equity
@@ -65,12 +87,21 @@ move_date;base_movement;acc_debit;amount;acc_credit;comment
 
 
 @pytest.fixture
-def accounts() -> dict[str, Account]:
+def currencies() -> dict[str, Currency]:
     return {
-        "Ca": Account("Ca", "Cash", AccountType.ASSET),
-        "Bk": Account("Bk", "Bank account", AccountType.ASSET),
-        "Cc": Account("Cc", "Credit card", AccountType.LIABILITY),
-        "Eq": Account("Eq", "Equity", AccountType.EQUITY),
+        "ARS": Currency("ARS", "Pesos", None),
+        "USD": Currency("USD", "Dollar", pd.Series([1000.0], index=[pd.Timestamp("2026-01-01")])),
+    }
+
+
+@pytest.fixture
+def accounts(currencies) -> dict[str, Account]:
+    ars, usd = currencies["ARS"], currencies["USD"]
+    return {
+        "Ca": Account("Ca", "Cash", AccountType.ASSET, ars, 0.0, is_liquid=True),
+        "Bk": Account("Bk", "Bank account", AccountType.ASSET, usd, 100.5, is_liquid=True),
+        "Cc": Account("Cc", "Credit card", AccountType.LIABILITY, ars, 0.0),
+        "Eq": Account("Eq", "Equity", AccountType.EQUITY, ars, 0.0),
     }
 
 
@@ -94,6 +125,15 @@ def base_movements(accounts, result_types) -> dict[str, MovementBase]:
         "Withdraw": MovementBase("Withdraw", "", accounts["Ca"], accounts["Bk"], None),
         "Move": MovementBase("Move", "", None, None, None),
     }
+
+
+@pytest.fixture
+def currencies_yaml(tmp_path):
+    (tmp_path / "currencies").mkdir(exist_ok=True)
+    (tmp_path / "currencies" / "USD.csv").write_text(USD_CSV, encoding="utf-8")
+    path = tmp_path / "currencies.yaml"
+    path.write_text(CURRENCIES_YAML, encoding="utf-8")
+    return str(path)
 
 
 @pytest.fixture

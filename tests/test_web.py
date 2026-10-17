@@ -16,8 +16,10 @@ HTMX = {"HX-Request": "true"}
 
 
 @pytest.fixture
-def settings(accounts_yaml, base_movements_yaml, ledger_csv) -> Settings:
-    return Settings(Path(accounts_yaml), Path(base_movements_yaml), Path(ledger_csv))
+def settings(accounts_yaml, base_movements_yaml, ledger_csv, currencies_yaml) -> Settings:
+    return Settings(
+        Path(accounts_yaml), Path(base_movements_yaml), Path(ledger_csv), Path(currencies_yaml)
+    )
 
 
 @pytest.fixture
@@ -90,18 +92,36 @@ class TestSetupStore:
         path = settings.accounts_path
         path.write_text(
             "# my accounts\nasset:\n  Ca:\n    long_name: Cash (A)\n    description: Cash\n"
-            "  Bk:\n    description: Bank account\n\nliability:\n  Cc:\n    description: Credit card\n"
+            "    initial_amount: 0\n  Bk:\n    description: Bank account\n    initial_amount: 0\n"
+            "\nliability:\n  Cc:\n    description: Credit card\n    initial_amount: 0\n"
             "equity:\n  Eq:\n    description: Equity\n"
         )
         before = path.read_text()
 
-        LedgerStore(settings).add_account("Sv", "asset", "Savings: 10%")
+        LedgerStore(settings).add_account("Sv", "asset", "Savings: 10%", 0.0)
 
         lines = before.splitlines()
         assert path.read_text().splitlines() == (
-            lines[:7] + ["  Sv:", "    description: 'Savings: 10%'"] + lines[7:]
+            lines[:9] + [
+                "  Sv:", "    description: 'Savings: 10%'", "    currency: ARS",
+                "    is_liquid: false", "    initial_amount: 0.0",
+            ] + lines[9:]
         )
-        assert LedgerStore(settings).load().accounts["Sv"].description == "Savings: 10%"
+        sv = LedgerStore(settings).load().accounts["Sv"]
+        assert sv.description == "Savings: 10%"
+        assert (sv.currency.name, sv.is_liquid, sv.initial_amount, sv.initial_date) == (
+            "ARS", False, 0.0, None
+        )
+
+    def test_add_account_with_currency_liquidity_and_initial_values(self, settings):
+        LedgerStore(settings).add_account(
+            "Sv", "asset", "Savings", "1,234.5", "USD", True, "2026-01-15"
+        )
+        assert "    initial_date: 2026-01-15" in settings.accounts_path.read_text()
+        sv = LedgerStore(settings).load().accounts["Sv"]
+        assert (sv.currency.name, sv.is_liquid, sv.initial_amount, sv.initial_date) == (
+            "USD", True, 1234.5, dt.date(2026, 1, 15)
+        )
 
     def test_insert_yaml_entry_into_missing_section(self):
         text = "asset:\n  Ca:\n    description: Cash\n\n"
@@ -137,12 +157,17 @@ class TestSetupStore:
     @pytest.mark.parametrize(
         ("args", "message"),
         [
-            (("Ca", "asset", "d"), "already exists"),
-            (("  ", "asset", "d"), "name is required"),
-            (("A;B", "asset", "d"), "cannot contain"),
-            (("Sv", "nope", "d"), "Invalid account type"),
-            (("Eq2", "equity", "d"), "equity accounts are not supported"),
-            (("Sv", "asset", "  "), "description is required"),
+            (("Ca", "asset", "d", 0), "already exists"),
+            (("  ", "asset", "d", 0), "name is required"),
+            (("A;B", "asset", "d", 0), "cannot contain"),
+            (("Sv", "nope", "d", 0), "Invalid account type"),
+            (("Eq2", "equity", "d", 0), "equity accounts are not supported"),
+            (("Sv", "asset", "  ", 0), "description is required"),
+            (("Sv", "asset", "d", 0, "EUR"), "Unknown currency"),
+            (("Sv", "asset", "d", "-1"), "cannot be negative"),
+            (("Sv", "asset", "d", "abc"), "Invalid initial amount"),
+            (("Sv", "asset", "d", "  "), "initial amount is required"),
+            (("Sv", "asset", "d", 0, "", False, "2026-13-01"), "Invalid initial date"),
         ],
     )
     def test_add_account_rejects_invalid(self, settings, args, message):
@@ -251,6 +276,12 @@ class TestPages:
         new_account = r.text.split('hx-post="/accounts"')[1].split("</form>")[0]
         assert 'value="equity"' not in new_account
         assert 'value="asset"' in new_account
+        for field in ('name="currency"', 'name="is_liquid"', 'name="initial_amount"', 'name="initial_date"'):
+            assert field in new_account
+        assert '<option value="ARS" title="Pesos" selected>ARS (base)</option>' in new_account
+        assert 'name="initial_amount" inputmode="decimal" value="0.00" placeholder="0.00" required' in new_account
+        assert "<th>Currency</th><th>Liquid</th>" in r.text
+        assert "<td>USD</td>" in r.text
 
     def test_accounts_partial_for_month(self, client):
         r = client.get("/accounts", params={"month": "2026-01"}, headers=HTMX)
@@ -271,7 +302,7 @@ class TestPages:
         assert client.get("/", params={"month": "<x>"}).status_code == 200
 
     def test_currency_setting(self, settings):
-        client = TestClient(create_app(Settings(*list(vars(settings).values())[:3], "ARS")))
+        client = TestClient(create_app(Settings(*list(vars(settings).values())[:4], "ARS")))
         assert "ARS 1,000.50" in client.get("/").text
 
     def test_index_partial_for_htmx(self, client):
@@ -410,20 +441,43 @@ class TestPages:
 
     def test_create_account(self, client, settings):
         r = client.post(
-            "/accounts", data={"name": "Sv", "acc_type": "asset", "description": "Savings"},
+            "/accounts",
+            data={"name": "Sv", "acc_type": "asset", "description": "Savings", "initial_amount": "0.00"},
             headers=HTMX,
         )
         assert "Added account Sv" in r.text
         assert "<strong>Sv</strong>" in r.text
         assert "Sv" in LedgerStore(settings).load().accounts
 
-        data = {"name": "Sv", "acc_type": "asset", "description": "x"}
+        data = {"name": "Sv", "acc_type": "asset", "description": "x", "initial_amount": "0"}
         r = client.post("/accounts", data=data, headers=HTMX)
         assert 'class="msg error"' in r.text and "already exists" in r.text
 
-        data = {"name": "Sv2", "acc_type": "asset", "description": ""}
+        data = {"name": "Sv2", "acc_type": "asset", "description": "", "initial_amount": "0"}
         r = client.post("/accounts", data=data, headers=HTMX)
         assert "description is required" in r.text
+
+        # The initial amount must always be sent
+        data = {"name": "Sv2", "acc_type": "asset", "description": "d"}
+        for extra in ({}, {"initial_amount": ""}):
+            r = client.post("/accounts", data={**data, **extra}, headers=HTMX)
+            assert "initial amount is required" in r.text
+        assert "Sv2" not in LedgerStore(settings).load().accounts
+
+        data = {
+            "name": "Sv3", "acc_type": "asset", "description": "d", "currency": "USD",
+            "is_liquid": "true", "initial_amount": "1,000.00", "initial_date": "2026-01-02",
+        }
+        assert "Added account Sv3" in client.post("/accounts", data=data, headers=HTMX).text
+        sv3 = LedgerStore(settings).load().accounts["Sv3"]
+        assert (sv3.currency.name, sv3.is_liquid, sv3.initial_amount) == ("USD", True, 1000.0)
+        assert sv3.initial_date == dt.date(2026, 1, 2)
+        # A failed submit keeps what was typed
+        data = {**data, "name": "Sv4", "initial_amount": "-5"}
+        r = client.post("/accounts", data=data, headers=HTMX)
+        assert "cannot be negative" in r.text
+        assert 'value="-5"' in r.text and 'value="2026-01-02"' in r.text
+        assert 'name="is_liquid" value="true" checked' in r.text
 
     def test_setup_create_base_movement(self, client, settings):
         data = {
@@ -570,7 +624,13 @@ class TestApi:
     def test_movements_and_metadata(self, client):
         movements = client.get("/api/movements").json()
         assert movements[0]["date"] == "2026-01-04"  # newest first
-        assert len(client.get("/api/accounts").json()) == 4
+        accounts = {a["name"]: a for a in client.get("/api/accounts").json()}
+        assert len(accounts) == 4
+        assert accounts["Bk"] == {
+            "name": "Bk", "description": "Bank account", "type": "asset", "currency": "USD",
+            "is_liquid": True, "initial_amount": 100.5, "initial_date": "2025-12-31",
+        }
+        assert accounts["Cc"]["initial_date"] is None
         bases = {b["name"]: b for b in client.get("/api/base-movements").json()}
         assert bases["Withdraw"]["debit"] == "Ca"
         assert bases["Withdraw"]["result_type"] is None
@@ -588,12 +648,26 @@ class TestApi:
         assert client.post("/api/movements", json=body).status_code == 422
 
     def test_create_account_and_base_movement(self, client):
+        # The initial amount is required, and can't be null
         body = {"name": "Sv", "type": "asset", "description": "Savings"}
+        assert client.post("/api/accounts", json=body).status_code == 422
+        assert client.post("/api/accounts", json={**body, "initial_amount": None}).status_code == 422
+        body["initial_amount"] = 0.0
         assert client.post("/api/accounts", json=body).status_code == 201
         assert client.post("/api/accounts", json=body).status_code == 422
+        usd = {
+            "name": "Us", "type": "asset", "description": "d", "initial_amount": 50,
+            "currency": "USD", "is_liquid": True,
+        }
+        assert client.post("/api/accounts", json=usd).status_code == 201
+        assert client.post("/api/accounts", json={**usd, "name": "Eu", "currency": "EUR"}).status_code == 422
+        accounts = {a["name"]: a for a in client.get("/api/accounts").json()}
+        assert accounts["Us"]["currency"] == "USD" and accounts["Us"]["is_liquid"]
+        assert accounts["Us"]["initial_amount"] == 50.0
         equity = {"name": "Eq2", "type": "equity", "description": "x"}
         assert client.post("/api/accounts", json=equity).status_code == 422
-        no_description = {"name": "Sv2", "type": "asset"}
+        assert client.post("/api/accounts", json={**equity, "initial_amount": 0}).status_code == 422
+        no_description = {"name": "Sv2", "type": "asset", "initial_amount": 0}
         assert client.post("/api/accounts", json=no_description).status_code == 422
         body = {"name": "Deposit", "type": "transfer", "description": "d", "debit": "Sv", "credit": "Ca"}
         assert client.post("/api/base-movements", json=body).status_code == 201

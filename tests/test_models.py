@@ -1,5 +1,6 @@
 """Tests for pledger.models."""
 
+import datetime as dt
 from pathlib import Path
 
 import pandas as pd
@@ -92,21 +93,70 @@ class TestAccount:
         acc.add_many([-5.0, -10.0], strict=True)
         assert acc.total == -15.0
 
-    def test_load_yaml(self, accounts_yaml):
-        accounts = Account.load_yaml(accounts_yaml)
+    def test_load_yaml(self, accounts_yaml, currencies_yaml):
+        accounts = Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml))
         assert set(accounts) == {"Ca", "Bk", "Cc", "Eq"}
         assert accounts["Cc"].acc_type is AccountType.LIABILITY
         assert accounts["Bk"].description == "Bank account"
 
-    def test_load_yaml_rejects_unknown_account_type(self, tmp_path):
+    def test_load_yaml_currency_liquidity_and_initial_values(self, accounts_yaml, currencies_yaml):
+        accounts = Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml))
+        bk, cc = accounts["Bk"], accounts["Cc"]
+        assert bk.currency.name == "USD" and not bk.currency.is_base_currency
+        assert bk.is_liquid and bk.initial_amount == 100.5
+        assert bk.initial_date == dt.date(2025, 12, 31)
+        # Defaults: base currency, not liquid, 0 from the first ledger date
+        assert cc.currency.name == "ARS" and cc.currency.is_base_currency
+        assert (cc.is_liquid, cc.initial_amount, cc.initial_date) == (False, 0.0, None)
+        assert accounts["Eq"].initial_amount == 0.0  # equity accounts don't set one
+
+    @pytest.mark.parametrize(
+        ("extra", "message"),
+        [
+            ("    currency: EUR\n", "unknown currency"),
+            ("    is_liquid: maybe\n", "is_liquid must be true or false"),
+            ("    initial_date: someday\n", "invalid initial date"),
+            ("    initial_amount: lots\n", "initial_amount must be a number"),
+            ("    initial_amount: true\n", "initial_amount must be a number"),
+            ("    initial_amount:\n", "initial_amount must be a number"),
+        ],
+    )
+    def test_load_yaml_rejects_invalid_fields(self, tmp_path, currencies_yaml, extra, message):
+        path = tmp_path / "accounts.yaml"
+        if "initial_amount" not in extra:
+            extra += "    initial_amount: 0\n"
+        path.write_text("asset:\n  Ca:\n    description: Cash\n" + extra)
+        with pytest.raises(ValueError, match=message):
+            Account.load_yaml(str(path), *Currency.load_yaml(currencies_yaml))
+
+    @pytest.mark.parametrize(
+        ("text", "message"),
+        [
+            ("asset:\n  Ca:\n    description: Cash\n", "'Ca' must have an initial_amount"),
+            ("liability:\n  Cc:\n    description: Card\n", "'Cc' must have an initial_amount"),
+            (
+                "equity:\n  Eq:\n    description: Equity\n    initial_amount: 0\n",
+                "Equity account 'Eq' must not have an initial_amount",
+            ),
+        ],
+    )
+    def test_load_yaml_initial_amount_is_required_except_for_equity(
+        self, tmp_path, currencies_yaml, text, message
+    ):
+        path = tmp_path / "accounts.yaml"
+        path.write_text(text)
+        with pytest.raises(ValueError, match=message):
+            Account.load_yaml(str(path), *Currency.load_yaml(currencies_yaml))
+
+    def test_load_yaml_rejects_unknown_account_type(self, tmp_path, currencies_yaml):
         path = tmp_path / "accounts.yaml"
         path.write_text("assets:\n  Ca:\n    description: Cash\n")
         with pytest.raises(ValueError, match="assets"):
-            Account.load_yaml(str(path))
+            Account.load_yaml(str(path), *Currency.load_yaml(currencies_yaml))
 
-    def test_load_yaml_requires_yaml_extension(self, tmp_path):
+    def test_load_yaml_requires_yaml_extension(self, tmp_path, currencies_yaml):
         with pytest.raises(AssertionError):
-            Account.load_yaml(str(tmp_path / "accounts.yml"))
+            Account.load_yaml(str(tmp_path / "accounts.yml"), *Currency.load_yaml(currencies_yaml))
 
 
 class TestMovementBase:
@@ -119,8 +169,8 @@ class TestMovementBase:
         assert move.move_type == MovementType.TRANSFER
         assert not move.debit_fixed and not move.credit_fixed
 
-    def test_load_yaml(self, accounts_yaml, base_movements_yaml):
-        accounts = Account.load_yaml(accounts_yaml)
+    def test_load_yaml(self, accounts_yaml, base_movements_yaml, currencies_yaml):
+        accounts = Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml))
         bases, result_types = MovementBase.load_yaml(base_movements_yaml, accounts)
 
         assert bases["Salary"].acc_debit is accounts["Bk"]
@@ -148,8 +198,10 @@ class TestMovementBase:
              "  Move:\n    description: Free transfer\n    debit: Eq\n", "fixed Equity account"),
         ],
     )
-    def test_load_yaml_rejects_invalid(self, tmp_path, accounts_yaml, base_movements_yaml, old, new, message):
-        accounts = Account.load_yaml(accounts_yaml)
+    def test_load_yaml_rejects_invalid(
+        self, tmp_path, accounts_yaml, base_movements_yaml, currencies_yaml, old, new, message
+    ):
+        accounts = Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml))
         path = tmp_path / "result_types.yaml"
         text = Path(base_movements_yaml).read_text(encoding="utf-8")
         assert old in text

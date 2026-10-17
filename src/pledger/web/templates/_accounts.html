@@ -20,6 +20,28 @@
       <label>Description
         <input name="description" value="{{ values.acc_description }}" required autocomplete="off">
       </label>
+      <div class="pair">
+        <label>Currency
+          <select name="currency">
+            {% for c in currencies %}
+            <option value="{{ c.name }}" title="{{ c.description }}" {% if c.name == values.acc_currency %}selected{% endif %}>{{ c.name }}{% if c.is_base_currency %} (base){% endif %}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label class="check">
+          <input type="checkbox" name="is_liquid" value="true" {% if values.acc_is_liquid %}checked{% endif %}>
+          Liquid
+        </label>
+      </div>
+      <div class="pair">
+        <label>Initial amount
+          <input name="initial_amount" inputmode="decimal" value="{{ values.acc_initial_amount }}" placeholder="0.00" required autocomplete="off" data-money>
+        </label>
+        <label><span>Initial date <em class="optional">(optional)</em></span>
+          <input type="date" name="initial_date" value="{{ values.acc_initial_date }}">
+        </label>
+      </div>
+      <p class="muted small">The initial amount is in the account's currency. Without an initial date, the account starts on the first date of the ledger.</p>
       <button type="submit">Add account</button>
     </form>
   </aside>
@@ -36,12 +58,14 @@
       {% for type, accs in accounts_by_type.items() if accs %}
       <h3>{{ type | capitalize }}</h3>
       <table data-sortable="balances-{{ type }}">
-        <thead><tr><th>Account</th><th>Description</th><th class="num">Balance</th></tr></thead>
+        <thead><tr><th>Account</th><th>Description</th><th>Currency</th><th>Liquid</th><th class="num">Balance</th></tr></thead>
         <tbody>
         {% for a in accs %}
         <tr>
           <td class="nowrap"><strong>{{ a.name }}</strong></td>
           <td class="muted">{{ a.description }}</td>
+          <td>{{ a.currency }}</td>
+          <td data-sort="{{ 1 if a.is_liquid else 0 }}">{{ "Yes" if a.is_liquid else "No" }}</td>
           <td class="num {{ 'loss' if a.balance < 0 and type != 'equity' }}" data-sort="{{ a.balance }}">{{ a.balance | money }}</td>
         </tr>
         {% endfor %}

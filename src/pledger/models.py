@@ -128,6 +128,10 @@ class Account:
     name: str
     description: str
     acc_type: AccountType
+    currency: Currency
+    initial_amount: float
+    is_liquid: bool = False
+    initial_date: dt.date | None = None  # None: the first date found in the ledger
 
     def __post_init__(self):
         self.total = 0
@@ -172,18 +176,67 @@ class Account:
         self.total = new_total
 
     @classmethod
-    def load_yaml(cls, path: str) -> dict[str, Account]:
-        """Load Accounts from YAML path."""
+    def load_yaml(
+        cls,
+        path: str,
+        base_currency: Currency,
+        other_currencies: dict[str, Currency] | None = None,
+    ) -> dict[str, Account]:
+        """
+        Load Accounts from YAML path. An account without a `currency` is in the
+        base currency. Every account must set its `initial_amount`, except equity
+        accounts, which must not (theirs is 0.0).
+        """
         data = _load_yaml(path)
-        return {
-            name: Account(
-                name=name,
-                description=acc_d["description"],
-                acc_type=AccountType(acc_type),
-            )
-            for acc_type, at_accounts in data.items()
-            for name, acc_d in at_accounts.items()
-        }
+        currencies = {base_currency.name: base_currency, **(other_currencies or {})}
+
+        def currency_of(name: str, acc_d: dict) -> Currency:
+            curr = acc_d.get("currency") or base_currency.name
+            if curr not in currencies:
+                raise ValueError(f"Account {name!r} has an unknown currency: {curr!r}")
+            return currencies[curr]
+
+        def is_liquid_of(name: str, acc_d: dict) -> bool:
+            value = acc_d.get("is_liquid", False)
+            if not isinstance(value, bool):
+                raise ValueError(f"Account {name!r} is_liquid must be true or false: {value!r}")  # noqa: TRY004 (a bad config value)
+            return value
+
+        def initial_amount_of(name: str, acc_type: AccountType, acc_d: dict) -> float:
+            if acc_type == AccountType.EQUITY:
+                if "initial_amount" in acc_d:
+                    raise ValueError(f"Equity account {name!r} must not have an initial_amount")
+                return 0.0
+            if "initial_amount" not in acc_d:
+                raise ValueError(f"Account {name!r} must have an initial_amount")
+            value = acc_d["initial_amount"]
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(f"Account {name!r} initial_amount must be a number: {value!r}")  # noqa: TRY004 (a bad config value)
+            return float(value)
+
+        def initial_date_of(name: str, acc_d: dict) -> dt.date | None:
+            value = acc_d.get("initial_date")
+            if value is None or isinstance(value, dt.date):
+                return value
+            try:
+                return dt.date.fromisoformat(str(value))
+            except ValueError:
+                raise ValueError(f"Account {name!r} has an invalid initial date: {value!r}") from None
+
+        accounts = {}
+        for acc_type, at_accounts in data.items():
+            acc_type = AccountType(acc_type)
+            for name, acc_d in at_accounts.items():
+                accounts[name] = Account(
+                    name=name,
+                    description=acc_d["description"],
+                    acc_type=acc_type,
+                    currency=currency_of(name, acc_d),
+                    initial_amount=initial_amount_of(name, acc_type, acc_d),
+                    is_liquid=is_liquid_of(name, acc_d),
+                    initial_date=initial_date_of(name, acc_d),
+                )
+        return accounts
 
 
 @dataclass

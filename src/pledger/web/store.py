@@ -17,7 +17,7 @@ from pandas import DataFrame, read_csv
 
 from pledger.enums import AccountType, MovementType
 from pledger.ledger import Ledger
-from pledger.models import Account, Movement, MovementBase, ResultType
+from pledger.models import Account, Currency, Movement, MovementBase, ResultType
 
 BOM = "﻿"
 
@@ -37,6 +37,7 @@ class Settings:
     accounts_path: Path
     base_movements_path: Path
     ledger_path: Path
+    currencies_path: Path
     currency: str = "$"
 
     @classmethod
@@ -48,6 +49,7 @@ class Settings:
                 os.environ.get("PLEDGER_BASE_MOVEMENTS", "info/result_types.yaml")
             ),
             ledger_path=Path(os.environ.get("PLEDGER_LEDGER", "info/ledger.csv")),
+            currencies_path=Path(os.environ.get("PLEDGER_CURRENCIES", "info/currencies.yaml")),
             currency=os.environ.get("PLEDGER_CURRENCY", "$"),
         )
 
@@ -60,6 +62,11 @@ class Snapshot:
     base_movements: dict[str, MovementBase]
     result_types: dict[int, ResultType]
     rows: DataFrame  # raw CSV rows, all columns as strings
+    currencies: dict[str, Currency]  # the base currency first
+
+    @property
+    def base_currency(self) -> Currency:
+        return next(iter(self.currencies.values()))
 
     def ledger(self, rows: DataFrame | None = None) -> Ledger:
         """Build a Ledger from these rows (all rows by default)."""
@@ -88,7 +95,9 @@ class LedgerStore:
     def load(self) -> Snapshot:
         s = self.settings
         try:
-            accounts = Account.load_yaml(str(s.accounts_path))
+            base_currency, other_currencies = Currency.load_yaml(str(s.currencies_path))
+            currencies = {base_currency.name: base_currency, **other_currencies}
+            accounts = Account.load_yaml(str(s.accounts_path), base_currency, other_currencies)
             base_movements, result_types = MovementBase.load_yaml(
                 str(s.base_movements_path), accounts
             )
@@ -96,7 +105,7 @@ class LedgerStore:
                 s.ledger_path, sep=";", dtype=str, keep_default_na=False,
                 encoding="utf-8-sig",
             )
-            snapshot = Snapshot(accounts, base_movements, result_types, rows)
+            snapshot = Snapshot(accounts, base_movements, result_types, rows, currencies)
             snapshot.ledger()  # validate the whole ledger up front
         except (OSError, KeyError, ValueError, AssertionError) as e:
             raise LedgerDataError(f"{type(e).__name__}: {e}") from e
@@ -122,16 +131,10 @@ class LedgerStore:
         for name in (acc_debit, acc_credit):
             if name not in snapshot.accounts:
                 raise ValueError(f"Unknown account: {name!r}")
-        try:
-            value = float(str(amount).replace(",", "").strip())
-        except ValueError:
-            raise ValueError(f"Invalid amount: {amount!r}") from None
-        if not math.isfinite(value):
-            raise ValueError(f"Invalid amount: {amount!r}")
-        if value < 0:
-            raise ValueError(
-                "The amount cannot be negative; pick the opposite base movement or swap the accounts"
-            )
+        value = _parse_amount(
+            amount, "amount",
+            "The amount cannot be negative; pick the opposite base movement or swap the accounts",
+        )
         if acc_debit == acc_credit:
             raise ValueError("Debit and credit accounts must be different")
 
@@ -163,8 +166,21 @@ class LedgerStore:
         csv_file.lines.append(buf.getvalue())
         self._write_file(csv_file)
 
-    def add_account(self, name: str, acc_type: str, description: str) -> None:
-        """Validate a new account and add it to the accounts YAML."""
+    def add_account(
+        self,
+        name: str,
+        acc_type: str,
+        description: str,
+        initial_amount: str | float,
+        currency: str = "",
+        is_liquid: bool = False,
+        initial_date: str = "",
+    ) -> None:
+        """
+        Validate a new account and add it to the accounts YAML. Without a currency,
+        it is in the base currency; without an initial date, it starts on the
+        first date of the ledger.
+        """
         snapshot = self.load()
         name = _check_name(name, snapshot.accounts, "account")
         try:
@@ -174,10 +190,24 @@ class LedgerStore:
         if acc_type == AccountType.EQUITY:
             raise ValueError("New equity accounts are not supported")
         description = _check_description(description, "account")
-        self._add_yaml_entry(
-            self.settings.accounts_path, (acc_type.value,), name,
-            {"description": description},
-        )
+        currency = currency.strip() or snapshot.base_currency.name
+        if currency not in snapshot.currencies:
+            raise ValueError(f"Unknown currency: {currency!r}")
+        if not str(initial_amount).strip():
+            raise ValueError("The initial amount is required")
+        amount = _parse_amount(initial_amount, "initial amount")
+        fields = {
+            "description": description,
+            "currency": currency,
+            "is_liquid": bool(is_liquid),
+            "initial_amount": amount,
+        }
+        if initial_date.strip():
+            try:
+                fields["initial_date"] = dt.date.fromisoformat(initial_date.strip())
+            except ValueError:
+                raise ValueError(f"Invalid initial date: {initial_date!r}") from None
+        self._add_yaml_entry(self.settings.accounts_path, (acc_type.value,), name, fields)
 
     def add_result_type(self, name: str, long_name: str, description: str) -> None:
         """Validate a new result type and add it, with the next id, to the base movements YAML."""
@@ -315,6 +345,19 @@ def _atomic_write(path: Path, text: str) -> None:
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
+
+
+def _parse_amount(amount: str | float, what: str, negative_error: str | None = None) -> float:
+    """A finite, non-negative amount, from a number or text like '1,234.50'."""
+    try:
+        value = float(str(amount).replace(",", "").strip())
+    except ValueError:
+        raise ValueError(f"Invalid {what}: {amount!r}") from None
+    if not math.isfinite(value):
+        raise ValueError(f"Invalid {what}: {amount!r}")
+    if value < 0:
+        raise ValueError(negative_error or f"The {what} cannot be negative")
+    return value
 
 
 def _check_name(name: str, existing: dict, what: str) -> str:

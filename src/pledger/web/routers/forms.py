@@ -116,14 +116,26 @@ def create_account(
     name: Annotated[str, Form()],
     acc_type: Annotated[str, Form()],
     description: Annotated[str, Form()] = "",
+    # Required, but checked by the store so the form shows a readable error
+    initial_amount: Annotated[str, Form()] = "",
+    currency: Annotated[str, Form()] = "",
+    is_liquid: Annotated[bool, Form()] = False,
+    initial_date: Annotated[str, Form()] = "",
 ):
     try:
-        store.add_account(name, acc_type, description)
+        store.add_account(
+            name, acc_type, description, initial_amount, currency, is_liquid, initial_date
+        )
     except ValueError as e:
-        values = {"acc_type": acc_type, "acc_name": name, "acc_description": description}
+        values = {
+            "acc_type": acc_type, "acc_name": name, "acc_description": description,
+            "acc_currency": currency, "acc_is_liquid": is_liquid,
+            "acc_initial_amount": initial_amount, "acc_initial_date": initial_date,
+        }
         return render_accounts(request, store, values, account_error=str(e))
     return render_accounts(
-        request, store, {"acc_type": acc_type}, account_success=f"Added account {name.strip()}"
+        request, store, {"acc_type": acc_type, "acc_currency": currency},
+        account_success=f"Added account {name.strip()}",
     )
 
 
