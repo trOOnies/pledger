@@ -72,6 +72,52 @@ class TestStore:
         assert len(rows(settings)) == 4
 
 
+class TestInternalBaseMovements:
+    @pytest.fixture
+    def settings(self, settings):
+        # An internal transfer, with one movement at the end of the ledger
+        with settings.base_movements_path.open("a") as f:
+            f.write("  Adjust:\n    description: Set by pledger\n    internal: true\n")
+        with settings.ledger_path.open("a") as f:
+            f.write("2026-01-05;Adjust;Bk;5;Ca;\n")
+        return settings
+
+    def test_cannot_be_added(self, settings, client):
+        with pytest.raises(ValueError, match="internal"):
+            LedgerStore(settings).add("2026-02-01", "Adjust", "Bk", "Ca", "1")
+        body = {
+            "move_date": "2026-02-01", "base_movement": "Adjust",
+            "acc_debit": "Bk", "acc_credit": "Ca", "amount": 1,
+        }
+        assert client.post("/api/movements", json=body).status_code == 422
+        assert len(rows(settings)) == 5
+
+    def test_cannot_be_picked_in_the_form(self, client):
+        r = client.get("/form/bases", params={"move_type": "transfer"})
+        assert "Move" in r.text and "Adjust" not in r.text
+        # Not even when submitted by name
+        data = {"move_date": "2026-02-01", "move_type": "transfer", "base_movement": "Adjust",
+                "acc_debit": "Bk", "acc_credit": "Ca", "amount": "1"}
+        r = client.post("/movements", data=data, headers=HTMX)
+        assert "is internal" in r.text and ">Adjust<" not in r.text
+
+    def test_cannot_be_deleted(self, settings, client):
+        fp = row_fingerprint(rows(settings).iloc[4])
+        with pytest.raises(ValueError, match="cannot be deleted"):
+            LedgerStore(settings).delete(4, fp)
+        assert client.post("/movements/4/delete", data={"fingerprint": fp}).status_code == 422
+        assert client.delete("/api/movements/4").status_code == 422
+        assert len(rows(settings)) == 5
+        # The ledger shows a lock instead of the delete button
+        index = client.get("/").text
+        assert index.count('aria-label="Delete movement"') == 4
+        assert "cannot be deleted by hand" in index
+        assert client.get("/api/base-movements").json()[-1] == {
+            "name": "Adjust", "description": "Set by pledger", "type": "transfer",
+            "result_type": None, "debit": None, "credit": None, "internal": True,
+        }
+
+
 class TestMoney:
     @pytest.mark.parametrize(
         ("value", "currency", "expected"),

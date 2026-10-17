@@ -36,4 +36,6 @@ def delete_movement(
         store.delete(index, fingerprint)
     except StaleRowError as e:
         raise HTTPException(status_code=409, detail=str(e)) from None
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
     return {"ok": True}

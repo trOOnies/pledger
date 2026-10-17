@@ -90,6 +90,8 @@ def delete_movement(store: StoreDep, index: int, fingerprint: Annotated[str, For
         store.delete(index, fingerprint)
     except StaleRowError as e:
         raise HTTPException(status_code=409, detail=str(e)) from None
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
     return Response(status_code=200, headers={"HX-Trigger": "ledger-changed"})
 
 

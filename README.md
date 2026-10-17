@@ -32,8 +32,9 @@ leaving the rest of each file as it was.
 
 Every account but the equity ones must set an `initial_amount` (equity accounts must not).
 Accounts also take optional `currency` (the base currency by default), `is_liquid`
-(`false`) and `initial_date` (the first date of the ledger) keys. Balances and results
-don't use these yet.
+(`false`) and `initial_date` (the first date of the ledger) keys. A base movement with
+`internal: true` is reserved for pledger itself: it can't be picked for a new movement and
+its movements can't be deleted by hand. Balances and results don't use these yet.
 
 Amounts are shown with a `$` currency symbol and two decimals; set `PLEDGER_CURRENCY`
 (e.g. `ARS`) to use another one.

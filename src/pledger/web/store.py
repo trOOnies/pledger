@@ -80,6 +80,10 @@ class Snapshot:
         """Accounts that can be picked on a non-fixed side of a movement."""
         return [a for a in self.accounts.values() if a.acc_type != AccountType.EQUITY]
 
+    def manual_base_movements(self) -> dict[str, MovementBase]:
+        """Base movements that can be picked for a new movement (not internal ones)."""
+        return {n: b for n, b in self.base_movements.items() if not b.internal}
+
 
 def row_fingerprint(row) -> str:
     """Identifies a row's content, to detect edits made after a page was rendered."""
@@ -128,6 +132,8 @@ class LedgerStore:
             raise ValueError(f"Invalid date: {move_date!r}") from None
         if base_movement not in snapshot.base_movements:
             raise ValueError(f"Unknown base movement: {base_movement!r}")
+        if snapshot.base_movements[base_movement].internal:
+            raise ValueError(f"Base movement {base_movement!r} is internal and cannot be added by hand")
         for name in (acc_debit, acc_credit):
             if name not in snapshot.accounts:
                 raise ValueError(f"Unknown account: {name!r}")
@@ -293,14 +299,21 @@ class LedgerStore:
             raise ValueError(f"Could not add {name!r}: {e}") from None
 
     def delete(self, index: int, fingerprint: str | None = None) -> None:
-        """Delete a row by position, optionally checking it is the expected one."""
-        rows = self.load().rows
+        """
+        Delete a row by position, optionally checking it is the expected one.
+        Movements of internal base movements cannot be deleted.
+        """
+        snapshot = self.load()
+        rows = snapshot.rows
         if not 0 <= index < len(rows):
             raise StaleRowError(f"Row {index} does not exist")
         if fingerprint is not None and row_fingerprint(rows.iloc[index]) != fingerprint:
             raise StaleRowError(
                 "The ledger changed since this page was loaded; reload and try again"
             )
+        base_name = rows.iloc[index]["base_movement"]
+        if snapshot.base_movements[base_name].internal:
+            raise ValueError(f"Movements of the internal base movement {base_name!r} cannot be deleted")
         csv_file = self._read_file(len(rows))
         del csv_file.lines[csv_file.row_lines[index]]
         self._write_file(csv_file)

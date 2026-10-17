@@ -262,6 +262,7 @@ class MovementBase:
     acc_debit: Account | None
     acc_credit: Account | None
     result_type: ResultType | None
+    internal: bool = False  # set by pledger itself: cannot be picked or deleted by hand
 
     def __post_init__(self):
         self.move_type = MovementType.from_accounts(
@@ -333,6 +334,7 @@ class MovementBase:
                         accounts, move_type, base_move_d, LedgerSide.CREDIT,
                     ),
                     result_type=result_type,
+                    internal=bool(base_move_d.get("internal", False)),
                 )
 
         return move_bases, result_types

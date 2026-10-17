@@ -180,6 +180,7 @@ class TestMovementBase:
         assert bases["Card fee"].acc_credit is accounts["Cc"]
         assert bases["Withdraw"].move_type == MovementType.TRANSFER
         assert bases["Move"].acc_debit is None and bases["Move"].acc_credit is None
+        assert not any(b.internal for b in bases.values())  # internal defaults to False
 
         assert sorted(result_types) == [1, 2]
         assert result_types[1].name == "Op" and result_types[1].long_name == "Operative"
@@ -214,6 +215,15 @@ class TestMovementBase:
             MovementBase("Food", "", accounts["Eq"], None, None)
         with pytest.raises(ValueError, match="result type"):
             MovementBase("Move", "", None, None, result_types[1])
+
+
+    def test_load_yaml_internal(self, tmp_path, accounts_yaml, base_movements_yaml, currencies_yaml):
+        accounts = Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml))
+        path = tmp_path / "result_types.yaml"
+        text = Path(base_movements_yaml).read_text(encoding="utf-8")
+        path.write_text(text + "  Adjust:\n    description: d\n    internal: true\n", encoding="utf-8")
+        bases, _ = MovementBase.load_yaml(str(path), accounts)
+        assert bases["Adjust"].internal and not bases["Move"].internal
 
 
 class TestResultType:

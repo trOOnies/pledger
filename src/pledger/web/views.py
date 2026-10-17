@@ -36,6 +36,7 @@ def build_view(snapshot: Snapshot, month: str = "", account: str = "") -> dict:
             "credit": move.acc_credit.name,
             "amount": move.amount,
             "comment": row.get("comment", ""),
+            "internal": move.move_base.internal,
         }
         for (ix, row), move in zip(filtered.iterrows(), ledger.movements)
     ]
@@ -108,10 +109,10 @@ def account_fields(snapshot: Snapshot, base_name: str) -> dict:
 
 
 def bases_by_type(snapshot: Snapshot) -> dict[str, list[str]]:
-    """Base movement names grouped by movement type."""
-    names = sorted(snapshot.base_movements)
+    """Names of the base movements that can be picked, grouped by movement type."""
+    bases = snapshot.manual_base_movements()
     return {
-        t.value: [n for n in names if snapshot.base_movements[n].move_type == t]
+        t.value: [n for n in sorted(bases) if bases[n].move_type == t]
         for t in MovementType
     }
 
@@ -123,7 +124,7 @@ def base_fields(snapshot: Snapshot, move_type: str = "", base_movement: str = ""
     defaults to the first type that has base movements.
     """
     by_type = bases_by_type(snapshot)
-    base = snapshot.base_movements.get(base_movement)
+    base = snapshot.manual_base_movements().get(base_movement)
     if move_type not in by_type:
         move_type = (
             base.move_type.value if base

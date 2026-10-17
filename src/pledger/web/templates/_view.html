@@ -22,11 +22,15 @@
           <td>{{ m.credit }}</td>
           <td class="muted">{{ m.comment }}</td>
           <td>
+            {% if m.internal %}
+            <span class="muted" title="Added by pledger itself; it cannot be deleted by hand">🔒</span>
+            {% else %}
             <button class="icon" title="Delete" aria-label="Delete movement"
               hx-post="/movements/{{ m.index }}/delete"
               hx-vals='{{ {"fingerprint": m.fingerprint} | tojson }}'
               hx-confirm="Delete {{ m.date }} {{ m.base }} ({{ m.amount | money }})?"
               hx-swap="none">&times;</button>
+            {% endif %}
           </td>
         </tr>
         {% else %}
