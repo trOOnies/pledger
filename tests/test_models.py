@@ -10,7 +10,9 @@ from pledger.enums import AccountType, InvestmentType, LedgerSide, MovementType
 from pledger.models import (
     INVESTMENT,
     Account,
+    Creditor,
     Currency,
+    DebtAccount,
     Investment,
     InvestmentAccount,
     Movement,
@@ -517,6 +519,101 @@ class TestMovement:
     ):
         with pytest.raises(AssertionError, match=f"{side} account must match"):
             self.make(accounts, base_movements, base, debit, credit)
+
+
+class TestCreditor:
+    @pytest.mark.parametrize(
+        ("amount", "is_creditor", "is_debtor"),
+        [
+            (100.0, True, False),  # we owe them
+            (-50.0, False, True),  # they owe us
+            (0.0, False, False),
+            (1e-12, False, False),
+            (-1e-12, False, False),
+            (0.1 + 0.2 - 0.3, False, False),  # float noise
+        ],
+    )
+    def test_is_creditor_and_is_debtor(self, amount, is_creditor, is_debtor):
+        creditor = Creditor("Dad", amount)
+        assert (creditor.is_creditor, creditor.is_debtor) == (is_creditor, is_debtor)
+
+
+CREDITORS_YAML = """\
+Cc:
+  Dad: 100
+  Mum: -150.5
+  Work: 0
+"""
+
+
+class TestDebtAccount:
+    @pytest.fixture
+    def paths(self, tmp_path, accounts_yaml, currencies_yaml):
+        text = Path(accounts_yaml).read_text(encoding="utf-8")
+        Path(accounts_yaml).write_text(text.replace("    initial_amount: 0\n", ""), encoding="utf-8")
+        creditors = tmp_path / "creditors.yaml"
+        creditors.write_text(CREDITORS_YAML, encoding="utf-8")
+        return accounts_yaml, currencies_yaml, str(creditors)
+
+    def load(self, paths):
+        accounts_yaml, currencies_yaml, creditors_yaml = paths
+        return Account.load_yaml(
+            accounts_yaml, *Currency.load_yaml(currencies_yaml), creditors_path=creditors_yaml
+        )
+
+    def test_get_creditors_and_debtors(self, currencies):
+        debts = DebtAccount(
+            "De", "Debts", AccountType.LIABILITY, currencies["ARS"], 0.0,
+            creditors={n: Creditor(n, a) for n, a in (("Dad", 100.0), ("Mum", -50.0), ("Work", 0.0))},
+        )
+        assert isinstance(debts, Account) and debts.name == "De"
+        assert list(debts.get_creditors()) == ["Dad"]
+        assert list(debts.get_debtors()) == ["Mum"]
+        assert debts.get_creditors()["Dad"] is debts.creditors["Dad"]
+
+    def test_total_can_be_negative(self, currencies):
+        debts = DebtAccount("De", "Debts", AccountType.LIABILITY, currencies["ARS"], 0.0)
+        debts.add(-50.0)
+        debts.add_many([-10.0, 5.0], strict=True)
+        assert debts.total == -55.0
+
+    def test_load_yaml(self, paths):
+        accounts = self.load(paths)
+        cc = accounts["Cc"]
+        assert isinstance(cc, DebtAccount) and cc.acc_type == AccountType.LIABILITY
+        assert cc.creditors == {"Dad": Creditor("Dad", 100.0), "Mum": Creditor("Mum", -150.5), "Work": Creditor("Work", 0.0)}
+        assert cc.initial_amount == -50.5
+        assert not any(isinstance(a, DebtAccount) for n, a in accounts.items() if n != "Cc")
+
+    @pytest.mark.parametrize(
+        ("old", "new", "message"),
+        [
+            ("  Work: 0\n", "  Work: 0\nNope: {}\n", r"creditors YAML has accounts not in the accounts YAML: \['Nope'\]"),
+            ("  Work: 0\n", "  Work: 0\nCa: {}\n", "Debt account 'Ca' must be a liability account"),
+            ("  Dad: 100\n", "  Dad: lots\n", "Creditor 'Dad' of the account 'Cc' amount must be a number"),
+            ("  Dad: 100\n", "  Dad:\n", "Creditor 'Dad' of the account 'Cc' amount must be a number"),
+        ],
+    )
+    def test_load_yaml_rejects_invalid(self, paths, old, new, message):
+        creditors_yaml = paths[2]
+        text = Path(creditors_yaml).read_text(encoding="utf-8")
+        assert old in text
+        Path(creditors_yaml).write_text(text.replace(old, new, 1), encoding="utf-8")
+        with pytest.raises(ValueError, match=message):
+            self.load(paths)
+
+    def test_load_yaml_rejects_initial_amount(self, paths):
+        text = Path(paths[0]).read_text(encoding="utf-8")
+        Path(paths[0]).write_text(text.replace("    description: Credit card\n", "    description: Credit card\n    initial_amount: 0\n"), encoding="utf-8")
+        with pytest.raises(ValueError, match="Debt account 'Cc' must not have an initial_amount"):
+            self.load(paths)
+
+    def test_load_yaml_rejects_investment_and_debt_accounts(self, paths, tmp_path):
+        investments = tmp_path / "investment.yaml"
+        investments.write_text("Cc: {}\n", encoding="utf-8")
+        accounts_yaml, currencies_yaml, creditors_yaml = paths
+        with pytest.raises(ValueError, match=r"both investment and debt accounts: \['Cc'\]"):
+            Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml), str(investments), creditors_yaml)
 
 
 class TestInvestmentSides:

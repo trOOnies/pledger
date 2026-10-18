@@ -829,3 +829,17 @@ class TestInvestmentSides:
     def test_investment_is_not_an_account_name(self, settings):
         with pytest.raises(ValueError, match="'INVESTMENT' is reserved"):
             LedgerStore(settings).add_account("INVESTMENT", "asset", "d", "0")
+
+
+class TestDebtAccounts:
+    def test_debt_accounts_are_loaded(self, settings, tmp_path):
+        text = settings.accounts_path.read_text(encoding="utf-8")
+        settings.accounts_path.write_text(
+            text.replace("    description: Credit card\n    initial_amount: 0\n", "    description: Credit card\n"),
+            encoding="utf-8",
+        )
+        path = tmp_path / "creditors.yaml"
+        path.write_text("Cc:\n  Dad: 10\n", encoding="utf-8")
+        accounts = LedgerStore(replace(settings, creditors_path=path)).load().accounts
+        assert accounts["Cc"].creditors["Dad"].is_creditor
+        assert accounts["Cc"].initial_amount == 10.0

@@ -47,6 +47,7 @@ class Settings:
     ledger_path: Path
     currencies_path: Path
     investments_path: Path | None = None  # None or missing: no investment accounts
+    creditors_path: Path | None = None  # None or missing: no debt accounts
     currency: str = "$"
 
     @classmethod
@@ -60,6 +61,7 @@ class Settings:
             ledger_path=Path(os.environ.get("PLEDGER_LEDGER", "info/ledger.csv")),
             currencies_path=Path(os.environ.get("PLEDGER_CURRENCIES", "info/currencies.yaml")),
             investments_path=Path(os.environ.get("PLEDGER_INVESTMENTS", "info/investment.yaml")),
+            creditors_path=Path(os.environ.get("PLEDGER_CREDITORS", "info/creditors.yaml")),
             currency=os.environ.get("PLEDGER_CURRENCY", "$"),
         )
 
@@ -117,13 +119,9 @@ class LedgerStore:
         try:
             base_currency, other_currencies = Currency.load_yaml(str(s.currencies_path))
             currencies = {base_currency.name: base_currency, **other_currencies}
-            investments_path = (
-                str(s.investments_path)
-                if s.investments_path is not None and s.investments_path.exists()
-                else None
-            )
             accounts = Account.load_yaml(
-                str(s.accounts_path), base_currency, other_currencies, investments_path
+                str(s.accounts_path), base_currency, other_currencies,
+                _existing(s.investments_path), _existing(s.creditors_path),
             )
             base_movements, result_types = MovementBase.load_yaml(
                 str(s.base_movements_path), accounts
@@ -373,6 +371,11 @@ class LedgerStore:
         if csv_file.bom:
             text = BOM + text
         _atomic_write(self.settings.ledger_path, text)
+
+
+def _existing(path: Path | None) -> str | None:
+    """The path of an optional file, if it exists."""
+    return str(path) if path is not None and path.exists() else None
 
 
 def _atomic_write(path: Path, text: str) -> None:

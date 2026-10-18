@@ -186,19 +186,24 @@ class Account:
         base_currency: Currency,
         other_currencies: dict[str, Currency] | None = None,
         investments_path: str | None = None,
+        creditors_path: str | None = None,
     ) -> dict[str, Account]:
         """
         Load Accounts from YAML path. An account without a `currency` is in the
         base currency. Every account must set its `initial_amount`, except equity
-        accounts, which must not (theirs is 0.0), and investment accounts.
+        accounts, which must not (theirs is 0.0), and investment and debt accounts.
 
         Investment accounts are the asset accounts listed in the investments YAML
-        (if given). They must not set an `initial_amount` either: theirs is the sum
-        of the initial amounts of their investments.
+        (if given), and debt accounts the liability accounts listed in the creditors
+        YAML (if given). They must not set an `initial_amount` either: theirs is the
+        sum of the initial amounts of their investments or creditors.
         """
         data = _load_yaml(path)
-        investments_data = _load_yaml(investments_path) if investments_path else {}
-        investments_data = investments_data or {}
+        investments_data = (_load_yaml(investments_path) if investments_path else None) or {}
+        creditors_data = (_load_yaml(creditors_path) if creditors_path else None) or {}
+        both = sorted(set(investments_data) & set(creditors_data))
+        if both:
+            raise ValueError(f"Accounts cannot be both investment and debt accounts: {both}")
         currencies = {base_currency.name: base_currency, **(other_currencies or {})}
 
         def currency_of(name: str, acc_d: dict) -> Currency:
@@ -220,6 +225,12 @@ class Account:
                 if "initial_amount" in acc_d:
                     raise ValueError(f"Investment account {name!r} must not have an initial_amount")
                 return 0.0  # set from its investments
+            if name in creditors_data:
+                if acc_type != AccountType.LIABILITY:
+                    raise ValueError(f"Debt account {name!r} must be a liability account")
+                if "initial_amount" in acc_d:
+                    raise ValueError(f"Debt account {name!r} must not have an initial_amount")
+                return 0.0  # set from its creditors
             if acc_type == AccountType.EQUITY:
                 if "initial_amount" in acc_d:
                     raise ValueError(f"Equity account {name!r} must not have an initial_amount")
@@ -255,18 +266,23 @@ class Account:
                     "is_liquid": is_liquid_of(name, acc_d),
                     "initial_date": initial_date_of(name, acc_d),
                 }
-                if name not in investments_data:
+                if name in investments_data:
+                    investments = InvestmentAccount.investments_from_dict(
+                        name, investments_data[name] or {}
+                    )
+                    fields["initial_amount"] = sum(i["total_amount"] for i in investments.values())
+                    accounts[name] = InvestmentAccount(**fields, investments=investments)
+                elif name in creditors_data:
+                    creditors = DebtAccount.creditors_from_dict(name, creditors_data[name] or {})
+                    fields["initial_amount"] = sum(c.amount for c in creditors.values())
+                    accounts[name] = DebtAccount(**fields, creditors=creditors)
+                else:
                     accounts[name] = Account(**fields)
-                    continue
-                investments = InvestmentAccount.investments_from_dict(
-                    name, investments_data[name] or {}
-                )
-                fields["initial_amount"] = sum(i["total_amount"] for i in investments.values())
-                accounts[name] = InvestmentAccount(**fields, investments=investments)
 
-        unknown = sorted(set(investments_data) - set(accounts))
-        if unknown:
-            raise ValueError(f"The investments YAML has accounts not in the accounts YAML: {unknown}")
+        for what, special_data in (("investments", investments_data), ("creditors", creditors_data)):
+            unknown = sorted(set(special_data) - set(accounts))
+            if unknown:
+                raise ValueError(f"The {what} YAML has accounts not in the accounts YAML: {unknown}")
         return accounts
 
 
@@ -358,6 +374,64 @@ class InvestmentAccount(Account):
                 "total_quantity": number_of(inv_name, inv_d, "quantity"),
             }
         return investments
+
+
+@dataclass
+class Creditor:
+    """
+    Someone we have debts with in a debt account: the amount is positive if we
+    owe them (a creditor) and negative if they owe us (a debtor).
+    """
+
+    name: str
+    amount: float
+
+    @property
+    def is_creditor(self) -> bool:
+        """We owe them."""
+        return self.amount > 1e-9
+
+    @property
+    def is_debtor(self) -> bool:
+        """They owe us."""
+        return self.amount < -1e-9
+
+
+@dataclass
+class DebtAccount(Account):
+    """
+    Liability account that tracks debts with other people, as a dict of each
+    Creditor's name to the Creditor. Its total can be negative: we are owed more
+    than we owe.
+    """
+
+    creditors: dict[str, Creditor] = field(default_factory=dict)
+
+    def __post_init__(self):
+        super().__post_init__()
+        self._check_positivity = lambda _: True
+        self._check_positivity_vect = np.vectorize(self._check_positivity)
+
+    def get_creditors(self) -> dict[str, Creditor]:
+        """The ones we owe."""
+        return {n: c for n, c in self.creditors.items() if c.is_creditor}
+
+    def get_debtors(self) -> dict[str, Creditor]:
+        """The ones that owe us."""
+        return {n: c for n, c in self.creditors.items() if c.is_debtor}
+
+    @staticmethod
+    def creditors_from_dict(acc_name: str, data: dict) -> dict[str, Creditor]:
+        """Creditors of an account from its creditors YAML dict (name: initial debt)."""
+        creditors = {}
+        for name, amount in data.items():
+            name = str(name)  # YAML keys may be numbers
+            if isinstance(amount, bool) or not isinstance(amount, (int, float)):
+                raise ValueError(  # noqa: TRY004 (a bad config value)
+                    f"Creditor {name!r} of the account {acc_name!r} amount must be a number: {amount!r}"
+                )
+            creditors[name] = Creditor(name=name, amount=float(amount))
+        return creditors
 
 
 @dataclass
