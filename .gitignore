@@ -1,11 +1,12 @@
 # Sensitive information
-info/*.csv
-info/*.yaml
-info/currencies/*.csv
+info/
 
 # Local project files
 local/
 .vscode/
+.claude/
+.idea/
+.ruff_cache/
 
 # ----------------------------------------
 
