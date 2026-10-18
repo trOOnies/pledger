@@ -121,7 +121,7 @@ main { padding: 1rem 1.5rem 3rem; max-width: 1400px; width: 100%; margin: 0 auto
 .layout > aside { position: sticky; top: 1rem; }
 .layout.setup { grid-template-columns: 1fr 2fr; }
 .layout .column { display: grid; gap: 1rem; min-width: 0; }
-#view, .layout > .view { display: grid; gap: 1rem; min-width: 0; }
+#view, .layout > .view, main > .view { display: grid; gap: 1rem; min-width: 0; }
 
 .panel {
   background: var(--surface); border: 1px solid var(--border);
@@ -258,6 +258,10 @@ button.icon:hover { color: var(--loss); }
 .grouped-bars [data-group="liquidity"],
 .grouped-bars:has(input[value="liquidity"]:checked) [data-group="currency"] { display: none; }
 .grouped-bars:has(input[value="liquidity"]:checked) [data-group="liquidity"] { display: grid; }
+/* Investments: by type or by account. */
+.grouped-bars [data-group="account"],
+.grouped-bars:has(input[value="account"]:checked) [data-group="type"] { display: none; }
+.grouped-bars:has(input[value="account"]:checked) [data-group="account"] { display: grid; }
 .other summary { cursor: pointer; list-style: none; }
 .other summary::-webkit-details-marker { display: none; }
 .other summary .bar-name::before { content: "▸ "; color: var(--muted); }

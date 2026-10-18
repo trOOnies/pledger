@@ -34,6 +34,14 @@ templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.filters["money"] = money_filter
 
 
+def quantity(value: float) -> str:
+    """Format a quantity with up to 4 decimals and no trailing zeros, e.g. 1,234.5."""
+    return f"{value:,.4f}".rstrip("0").rstrip(".")
+
+
+templates.env.filters["quantity"] = quantity
+
+
 def static_version(path: str) -> int:
     """A version for static URLs that changes with the file, so browsers never use a stale copy."""
     return int((HERE / "static" / path).stat().st_mtime)

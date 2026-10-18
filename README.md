@@ -12,7 +12,9 @@ make lint
 ## Web app
 
 A FastAPI + HTMX UI. The Ledger page lists, adds and deletes movements; Accounts shows
-balances and adds accounts; Setup adds result types and base movements. The Charts page
+balances and adds accounts; Investments lists the investments of the investment accounts
+and their composition by type or by account; Debt lists who we owe and who owes us in the
+debt accounts; Setup adds result types and base movements. The Charts page
 shows the composition of assets and liabilities, gains and losses by result type, a result
 statement, and equity over time. The Help page explains the concepts for everyday users.
 The month filter is shared by Ledger, Accounts and Charts (remembered in a cookie).

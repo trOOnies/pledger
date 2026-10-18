@@ -5,8 +5,8 @@ from __future__ import annotations
 import datetime as dt
 import math
 
-from pledger.enums import AccountType, LedgerSide, MovementType
-from pledger.models import INVESTMENT
+from pledger.enums import AccountType, InvestmentType, LedgerSide, MovementType
+from pledger.models import INVESTMENT, DebtAccount, InvestmentAccount
 from pledger.web.store import Snapshot, row_fingerprint
 
 ACCOUNT_TYPE_ORDER = list(AccountType)
@@ -134,6 +134,114 @@ def build_accounts(snapshot: Snapshot, month: str = "", values: dict | None = No
         "account_types": [t.value for t in ACCOUNT_TYPE_ORDER if t != AccountType.EQUITY],
         "currencies": list(snapshot.currencies.values()),
         "values": values,
+    }
+
+
+INVESTMENT_TYPE_LABELS = {
+    InvestmentType.PUBLIC_BOND: "Public bond",
+    InvestmentType.PRIVATE_BOND: "Private bond",
+    InvestmentType.MUTUAL_FUND: "Mutual fund",
+    InvestmentType.ETF: "ETF",
+    InvestmentType.FOREX: "Forex",
+    InvestmentType.STOCK: "Stock",
+    InvestmentType.DERIVATIVE: "Derivative",
+    InvestmentType.FIXED_TERM: "Fixed term",
+}
+
+
+def build_investments(snapshot: Snapshot) -> dict:
+    """Investments held in each investment account, grouped by type and by account."""
+    accounts = [a for a in snapshot.accounts.values() if isinstance(a, InvestmentAccount)]
+    holdings = [
+        {
+            "account": a.name,
+            "name": name,
+            "type": INVESTMENT_TYPE_LABELS[h["investment"].type],
+            "amount": h["total_amount"],
+            "quantity": h["total_quantity"],
+        }
+        for a in accounts
+        for name, h in a.investments.items()
+    ]
+    total = sum(h["amount"] for h in holdings)
+    for h in holdings:
+        h["share"] = round(100 * h["amount"] / total, 1) + 0.0 if total else 0.0
+
+    # Types and accounts keep their defined order, listing only the ones with
+    # investments. Investment names are only unique within an account.
+    by_type = {
+        t: {f"{h['name']} ({h['account']})": h["amount"] for h in holdings if h["type"] == t}
+        for t in INVESTMENT_TYPE_LABELS.values()
+        if any(h["type"] == t for h in holdings)
+    }
+    by_account = {
+        a.name: {name: h["total_amount"] for name, h in a.investments.items()}
+        for a in accounts
+        if a.investments
+    }
+    return {
+        "accounts": [
+            {
+                "name": a.name,
+                "description": a.description,
+                "currency": a.currency.name,
+                "holdings": len(a.investments),
+                "amount": sum(h["total_amount"] for h in a.investments.values()),
+            }
+            for a in accounts
+        ],
+        "holdings": holdings,
+        "total": total,
+        "groupings": {
+            "type": grouped_composition(by_type),
+            "account": grouped_composition(by_account),
+        },
+    }
+
+
+def build_debts(snapshot: Snapshot) -> dict:
+    """
+    The people in each debt account: the ones we owe (creditors) and the ones
+    that owe us (debtors), with what we owe and are owed as positive amounts.
+    """
+    accounts = [a for a in snapshot.accounts.values() if isinstance(a, DebtAccount)]
+    people = [
+        {
+            "account": a.name,
+            "name": c.name,
+            "role": "Creditor" if c.is_creditor else "Debtor" if c.is_debtor else "Settled",
+            "amount": c.amount,
+        }
+        for a in accounts
+        for c in a.creditors.values()
+    ]
+
+    def by_account(people_of, sign: int) -> list[dict]:
+        return grouped_composition({
+            a.name: {n: sign * c.amount for n, c in people_of(a).items()}
+            for a in accounts
+            if people_of(a)
+        })
+
+    we_owe = sum(c.amount for a in accounts for c in a.get_creditors().values())
+    owed_to_us = -sum(c.amount for a in accounts for c in a.get_debtors().values())
+    return {
+        "accounts": [
+            {
+                "name": a.name,
+                "description": a.description,
+                "currency": a.currency.name,
+                "people": len(a.creditors),
+                "net": sum(c.amount for c in a.creditors.values()),
+            }
+            for a in accounts
+        ],
+        "people": people,
+        "we_owe": we_owe,
+        "owed_to_us": owed_to_us,
+        "net": we_owe - owed_to_us,
+        "creditors": by_account(DebtAccount.get_creditors, 1),
+        "debtors": by_account(DebtAccount.get_debtors, -1),
     }
 
 

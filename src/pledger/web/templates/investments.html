@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% from "_bars.html" import bars with context %}
+{% block title %}Investments · pledger{% endblock %}
+{% block content %}
+{% if not accounts %}
+<div class="panel">
+  <h2>Investments</h2>
+  <p class="muted">No investment accounts yet. List asset accounts in
+    <code>{{ settings.investments_path or "investment.yaml" }}</code>, each with its investments
+    and their type, initial amount and quantity.</p>
+</div>
+{% else %}
+<div class="view">
+  <div class="cards">
+    <div class="card" title="Sum of the amounts of all investments"><span class="label">Invested</span><span class="num {{ 'loss' if total < 0 }}">{{ total | money }}</span></div>
+    <div class="card" title="Number of investments across all investment accounts"><span class="label">Investments</span><span class="num">{{ holdings | length }}</span></div>
+    <div class="card" title="Asset accounts listed in the investments file"><span class="label">Investment accounts</span><span class="num">{{ accounts | length }}</span></div>
+  </div>
+
+  <section class="panel grouped-bars">
+    <div class="panel-head">
+      <h2>Composition</h2>
+      <div class="segmented" role="radiogroup" aria-label="Group investments by">
+        <label><input type="radio" name="investments-group" value="type" checked> By type</label>
+        <label><input type="radio" name="investments-group" value="account"> By account</label>
+      </div>
+    </div>
+    {% for group, comp in groupings.items() %}
+    <div class="composition-pair" data-group="{{ group }}">
+      {{ bars("Investments", comp, "asset", "No investments.", open=True) }}
+    </div>
+    {% endfor %}
+  </section>
+
+  <div class="panel">
+    <h2>Investments</h2>
+    <table data-sortable="investments">
+      <thead><tr><th>Investment</th><th>Type</th><th>Account</th><th class="num">Quantity</th><th class="num">Amount</th><th class="num">Share</th></tr></thead>
+      <tbody>
+      {% for h in holdings %}
+      <tr>
+        <td class="nowrap"><strong>{{ h.name }}</strong></td>
+        <td>{{ h.type }}</td>
+        <td>{{ h.account }}</td>
+        <td class="num" data-sort="{{ h.quantity }}">{{ h.quantity | quantity }}</td>
+        <td class="num {{ 'loss' if h.amount < 0 }}" data-sort="{{ h.amount }}">{{ h.amount | money }}</td>
+        <td class="num muted" data-sort="{{ h.share }}">{{ '%.1f' | format(h.share) }}%</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="6" class="muted">No investments.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="panel">
+    <h2>Investment accounts</h2>
+    <table data-sortable="investment-accounts">
+      <thead><tr><th>Account</th><th>Description</th><th>Currency</th><th class="num">Investments</th><th class="num">Amount</th></tr></thead>
+      <tbody>
+      {% for a in accounts %}
+      <tr>
+        <td class="nowrap"><strong>{{ a.name }}</strong></td>
+        <td class="muted">{{ a.description }}</td>
+        <td>{{ a.currency }}</td>
+        <td class="num">{{ a.holdings }}</td>
+        <td class="num {{ 'loss' if a.amount < 0 }}" data-sort="{{ a.amount }}">{{ a.amount | money }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

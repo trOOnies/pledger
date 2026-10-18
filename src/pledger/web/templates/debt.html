@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% from "_bars.html" import bars with context %}
+{% block title %}Debt · pledger{% endblock %}
+{% block content %}
+{% if not accounts %}
+<div class="panel">
+  <h2>Debt</h2>
+  <p class="muted">No debt accounts yet. List liability accounts in
+    <code>{{ settings.creditors_path or "creditors.yaml" }}</code>, each with the people you have
+    debts with and the amount: positive if you owe them, negative if they owe you.</p>
+</div>
+{% else %}
+<div class="view">
+  <div class="cards">
+    <div class="card" title="What we owe our creditors"><span class="label">We owe</span><span class="num">{{ we_owe | money }}</span></div>
+    <div class="card" title="What our debtors owe us"><span class="label">Owed to us</span><span class="num">{{ owed_to_us | money }}</span></div>
+    <div class="card" title="What we owe minus what we are owed"><span class="label">Net debt</span><span class="num">{{ net | money }}</span></div>
+  </div>
+
+  <section class="panel">
+    <h2>Who</h2>
+    <div class="composition-pair">
+      {{ bars("We owe", creditors, "liability", "We owe no one.", open=True) }}
+      {{ bars("Owed to us", debtors, "asset", "No one owes us.", open=True) }}
+    </div>
+  </section>
+
+  <div class="panel">
+    <h2>People</h2>
+    <table data-sortable="debts">
+      <thead><tr><th>Person</th><th>Role</th><th>Account</th><th class="num">Amount</th></tr></thead>
+      <tbody>
+      {% for p in people %}
+      <tr>
+        <td class="nowrap"><strong>{{ p.name }}</strong></td>
+        <td>{{ p.role }}</td>
+        <td>{{ p.account }}</td>
+        <td class="num {{ 'gain' if p.amount < 0 }}" data-sort="{{ p.amount }}">{{ p.amount | money }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="4" class="muted">No one in the debt accounts.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p class="muted small">Positive amounts are what we owe; negative ones, what we are owed.</p>
+  </div>
+
+  <div class="panel">
+    <h2>Debt accounts</h2>
+    <table data-sortable="debt-accounts">
+      <thead><tr><th>Account</th><th>Description</th><th>Currency</th><th class="num">People</th><th class="num">Net debt</th></tr></thead>
+      <tbody>
+      {% for a in accounts %}
+      <tr>
+        <td class="nowrap"><strong>{{ a.name }}</strong></td>
+        <td class="muted">{{ a.description }}</td>
+        <td>{{ a.currency }}</td>
+        <td class="num">{{ a.people }}</td>
+        <td class="num {{ 'gain' if a.net < 0 }}" data-sort="{{ a.net }}">{{ a.net | money }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

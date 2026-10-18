@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from pledger.models import INVESTMENT
 from pledger.web.app import create_app
 from pledger.web.store import LedgerStore, Settings, _insert_yaml_entry, row_fingerprint
-from pledger.web.templating import money
+from pledger.web.templating import money, quantity
 from pledger.web.views import build_charts, composition, equity_series, nice_ticks
 
 HTMX = {"HX-Request": "true"}
@@ -298,7 +298,7 @@ class TestSetupStore:
 
 
 def card_labels(html: str) -> list[str]:
-    return [c.split(" <small>")[0] for c in html.split('<span class="label">')[1:]]
+    return [c.split("</span>")[0].split(" <small>")[0] for c in html.split('<span class="label">')[1:]]
 
 
 class TestPages:
@@ -483,7 +483,9 @@ class TestPages:
             assert f'<span class="help-num">{n}.</span>' in r.text
             assert f"</span> {title}</h2>" in r.text
 
-    @pytest.mark.parametrize("path", ["/", "/accounts", "/charts", "/setup", "/help"])
+    @pytest.mark.parametrize(
+        "path", ["/", "/accounts", "/investments", "/debt", "/charts", "/setup", "/help"]
+    )
     def test_footer(self, client, path):
         text = client.get(path).text
         assert "&copy; 2026 Pledger by trOOnies" in text
@@ -843,3 +845,104 @@ class TestDebtAccounts:
         accounts = LedgerStore(replace(settings, creditors_path=path)).load().accounts
         assert accounts["Cc"].creditors["Dad"].is_creditor
         assert accounts["Cc"].initial_amount == 10.0
+
+
+class TestInvestmentsPage:
+    @pytest.fixture
+    def settings(self, settings, tmp_path):
+        text = settings.accounts_path.read_text(encoding="utf-8")
+        settings.accounts_path.write_text(
+            text.replace(
+                "liability:\n",
+                "  Br:\n    description: Broker\n  Br2:\n    description: Other broker\nliability:\n",
+            ),
+            encoding="utf-8",
+        )
+        path = tmp_path / "investment.yaml"
+        path.write_text(
+            "Br:\n  T:\n    type: stock\n    amount: 300\n    quantity: 1.5\n"
+            "  AL30:\n    type: public_bond\n    amount: 100\n    quantity: 1000\n"
+            "Br2:\n  T:\n    type: stock\n    amount: 100\n    quantity: 0.25\n"
+            "  QQQ: etf\n",
+            encoding="utf-8",
+        )
+        return replace(settings, investments_path=path)
+
+    @pytest.fixture
+    def client(self, settings):
+        return TestClient(create_app(settings))
+
+    def test_investments(self, client):
+        r = client.get("/investments")
+        assert r.status_code == 200
+        assert 'href="/investments" aria-current="page"' in r.text
+        assert card_labels(r.text) == ["Invested", "Investments", "Investment accounts"]
+        assert '<span class="num ">$500.00</span>' in r.text
+        assert 'data-sortable="investments"' in r.text
+        assert "<td>Public bond</td>" in r.text and "<td>ETF</td>" in r.text
+        assert ">1,000</td>" in r.text and ">1.5</td>" in r.text and ">0.25</td>" in r.text
+        assert ">60.0%</td>" in r.text  # T in Br: 300 of 500
+
+    def test_investments_grouped_by_type_or_account(self, client):
+        r = client.get("/investments")
+        by_type = r.text.split('data-group="type"')[1].split('data-group="account"')[0]
+        by_account = r.text.split('data-group="account"')[1]
+        # Types in their defined order; names qualified by account, as they repeat
+        assert by_type.index('<span class="bar-name">Public bond</span>') < by_type.index(
+            '<span class="bar-name">Stock</span>'
+        )
+        assert '<span class="bar-name">T (Br2)</span>' in by_type
+        assert '<span class="bar-name">Br2</span>' in by_account
+        assert '<span class="bar-name">AL30</span>' in by_account
+
+
+class TestDebtPage:
+    @pytest.fixture
+    def settings(self, settings, tmp_path):
+        text = settings.accounts_path.read_text(encoding="utf-8")
+        settings.accounts_path.write_text(
+            text.replace("    description: Credit card\n    initial_amount: 0\n", "    description: Credit card\n"),
+            encoding="utf-8",
+        )
+        path = tmp_path / "creditors.yaml"
+        path.write_text("Cc:\n  Dad: 100\n  Bank: 50.5\n  Ana: -30\n  Leo: 0\n", encoding="utf-8")
+        return replace(settings, creditors_path=path)
+
+    @pytest.fixture
+    def client(self, settings):
+        return TestClient(create_app(settings))
+
+    def test_debt(self, client):
+        r = client.get("/debt")
+        assert r.status_code == 200
+        assert 'href="/debt" aria-current="page"' in r.text
+        assert card_labels(r.text) == ["We owe", "Owed to us", "Net debt"]
+        cards = r.text.split('<div class="cards">')[1].split("</div>\n  </div>")[0]
+        assert "$150.50" in cards and "$30.00" in cards and "$120.50" in cards
+        assert 'data-sortable="debts"' in r.text
+        for name, role in (("Dad", "Creditor"), ("Ana", "Debtor"), ("Leo", "Settled")):
+            assert f"<strong>{name}</strong></td>\n        <td>{role}</td>" in r.text
+
+    def test_debt_bars_show_positive_amounts(self, client):
+        r = client.get("/debt")
+        owed = r.text.split("Owed to us <span")[1].split("<h2>People</h2>")[0]
+        assert '<span class="bar-name">Ana</span>' in owed and "-$30.00</span>" not in owed
+        we_owe = r.text.split("We owe <span")[1].split("Owed to us <span")[0]
+        assert '<span class="bar-name">Dad</span>' in we_owe
+        assert "Leo" not in we_owe and "Ana" not in we_owe
+
+
+@pytest.mark.parametrize(
+    ("path", "message"),
+    [("/investments", "No investment accounts yet"), ("/debt", "No debt accounts yet")],
+)
+def test_pages_without_special_accounts(client, path, message):
+    r = client.get(path)
+    assert r.status_code == 200 and message in r.text
+
+
+def test_quantity_format():
+    assert quantity(1000) == "1,000"
+    assert quantity(1.5) == "1.5"
+    assert quantity(0.123456) == "0.1235"
+    assert quantity(0) == "0"
