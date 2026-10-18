@@ -1,6 +1,7 @@
 """Tests for pledger.web."""
 
 import datetime as dt
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -77,7 +78,7 @@ class TestInternalBaseMovements:
     def settings(self, settings):
         # An internal transfer, with one movement at the end of the ledger
         with settings.base_movements_path.open("a") as f:
-            f.write("  Adjust:\n    description: Set by pledger\n    internal: true\n")
+            f.write("internal:\n  transfer:\n    Adjust: Set by pledger\n")
         with settings.ledger_path.open("a") as f:
             f.write("2026-01-05;Adjust;Bk;5;Ca;\n")
         return settings
@@ -359,7 +360,7 @@ class TestPages:
         assert client.get("/", params={"month": "<x>"}).status_code == 200
 
     def test_currency_setting(self, settings):
-        client = TestClient(create_app(Settings(*list(vars(settings).values())[:4], "ARS")))
+        client = TestClient(create_app(replace(settings, currency="ARS")))
         assert "ARS 1,000.50" in client.get("/").text
 
     def test_index_partial_for_htmx(self, client):
@@ -741,4 +742,31 @@ class TestApi:
         assert client.post("/api/result-types", json=body).status_code == 201
         assert client.post("/api/result-types", json=body).status_code == 422
         result_types = client.get("/api/result-types").json()
-        assert result_types[-1] == {"id": 3, "name": "Tax", "long_name": "Taxes", "description": "d"}
+        assert result_types[-1] == {
+            "id": 3, "name": "Tax", "long_name": "Taxes", "description": "d", "internal": False,
+        }
+
+
+class TestInternalResultTypes:
+    @pytest.fixture
+    def settings(self, settings):
+        with settings.base_movements_path.open("a") as f:
+            f.write(
+                "internal:\n  Init:\n    id: 3\n    long_name: Initial\n    description: d\n"
+                "    base_movements:\n      gain:\n        Initial (G): Initial balance\n"
+            )
+        return settings
+
+    def test_cannot_get_new_base_movements(self, settings, client):
+        with pytest.raises(ValueError, match="'Init' is internal"):
+            LedgerStore(settings).add_base_movement("X", "gain", "d", result_type="Init")
+        r = client.get("/form/base-sides", params={"move_type": "gain"})
+        assert ">Operative<" in r.text and ">Initial<" not in r.text
+
+    def test_share_ids_with_the_other_result_types(self, settings, client):
+        LedgerStore(settings).add_result_type("New", "New one", "d")
+        result_types = client.get("/api/result-types").json()
+        assert [(rt["id"], rt["name"], rt["internal"]) for rt in result_types] == [
+            (1, "Op", False), (2, "Gifts", False), (3, "Init", True), (4, "New", False),
+        ]
+

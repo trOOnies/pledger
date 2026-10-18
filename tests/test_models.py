@@ -7,7 +7,13 @@ import pandas as pd
 import pytest
 
 from pledger.enums import AccountType, MovementType
-from pledger.models import Account, Currency, Movement, MovementBase, ResultType
+from pledger.models import (
+    Account,
+    Currency,
+    Movement,
+    MovementBase,
+    ResultType,
+)
 
 
 class TestAccount:
@@ -159,6 +165,22 @@ class TestAccount:
             Account.load_yaml(str(tmp_path / "accounts.yml"), *Currency.load_yaml(currencies_yaml))
 
 
+INTERNAL_YAML = """\
+internal:
+  Init:
+    id: 3
+    long_name: Initial
+    description: Account initializations
+    base_movements:
+      gain:
+        Initial (G): Initial balance
+  transfer:
+    Adjust:
+      description: d
+      debit: Cc
+"""
+
+
 class TestMovementBase:
     def test_move_type_and_fixed_flags(self, base_movements):
         salary = base_movements["Salary"]
@@ -221,9 +243,65 @@ class TestMovementBase:
         accounts = Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml))
         path = tmp_path / "result_types.yaml"
         text = Path(base_movements_yaml).read_text(encoding="utf-8")
-        path.write_text(text + "  Adjust:\n    description: d\n    internal: true\n", encoding="utf-8")
-        bases, _ = MovementBase.load_yaml(str(path), accounts)
+        path.write_text(text + INTERNAL_YAML, encoding="utf-8")
+        bases, result_types = MovementBase.load_yaml(str(path), accounts)
         assert bases["Adjust"].internal and not bases["Move"].internal
+        assert bases["Adjust"].acc_debit is accounts["Cc"] and bases["Adjust"].result_type is None
+        initial = bases["Initial (G)"]
+        assert initial.internal and initial.move_type == MovementType.GAIN
+        assert initial.acc_credit is accounts["Eq"]
+        # Internal result types share the ids of the other ones
+        init = initial.result_type
+        assert (init.id, init.name, init.long_name, init.internal) == (3, "Init", "Initial", True)
+        assert result_types[3] is init and not result_types[1].internal
+
+    @pytest.mark.parametrize(
+        ("old", "new", "message"),
+        [
+            ("internal:\n", "  Adjust2:\n    description: d\n    internal: true\ninternal:\n",
+             "must not set 'internal'"),
+            ("  transfer:\n    Adjust:", "  transfer:\n    Move:", "Duplicated base movement name: 'Move'"),
+            ("    id: 3\n", "    id: 2\n", r"ids \(internal ones included\) must be unique and go from 1 to 3"),
+            ("    id: 3\n", "    id: 4\n", r"Values seen: \[1, 2, 4\]"),
+            ("  Init:\n", "  Op:\n", r"both internal and not: \['Op'\]"),
+            ("      gain:\n", "      transfer:\n", "only include 'gain' and 'loss'"),
+        ],
+    )
+    def test_load_yaml_rejects_invalid_internal(
+        self, tmp_path, accounts_yaml, base_movements_yaml, currencies_yaml, old, new, message
+    ):
+        accounts = Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml))
+        path = tmp_path / "result_types.yaml"
+        assert old in INTERNAL_YAML
+        text = Path(base_movements_yaml).read_text(encoding="utf-8")
+        path.write_text(text + INTERNAL_YAML.replace(old, new, 1), encoding="utf-8")
+        with pytest.raises(ValueError, match=message):
+            MovementBase.load_yaml(str(path), accounts)
+
+    def test_load_yaml_description_shorthand(
+        self, tmp_path, accounts_yaml, base_movements_yaml, currencies_yaml
+    ):
+        accounts = Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml))
+        path = tmp_path / "result_types.yaml"
+        text = Path(base_movements_yaml).read_text(encoding="utf-8")
+        text = text.replace("        Food:\n          description: Groceries\n", "        Food: Groceries\n")
+        text = text.replace("  Move:\n    description: Free transfer\n", "  Move: Free transfer\n")
+        path.write_text(text, encoding="utf-8")
+        bases, result_types = MovementBase.load_yaml(str(path), accounts)
+        food, move = bases["Food"], bases["Move"]
+        assert (food.description, food.acc_debit, food.acc_credit) == ("Groceries", accounts["Eq"], None)
+        assert food.result_type is result_types[1] and not food.internal
+        assert (move.description, move.acc_debit, move.acc_credit) == ("Free transfer", None, None)
+
+    def test_internal_iff_its_result_type_is(self, accounts, result_types):
+        init = ResultType(1, "Init", "Initial", "", internal=True)
+        assert MovementBase("Initial (L)", "", accounts["Eq"], None, init, internal=True)
+        with pytest.raises(ValueError, match="internal if and only if"):
+            MovementBase("Initial (L)", "", accounts["Eq"], None, init)
+        with pytest.raises(ValueError, match="internal if and only if"):
+            MovementBase("Food", "", accounts["Eq"], None, result_types[1], internal=True)
+        with pytest.raises(ValueError, match="result type"):
+            MovementBase("Initial (L)", "", accounts["Eq"], None, None, internal=True)
 
 
 class TestResultType:
@@ -316,3 +394,4 @@ class TestMovement:
     ):
         with pytest.raises(AssertionError, match=f"{side} account must match"):
             self.make(accounts, base_movements, base, debit, credit)
+

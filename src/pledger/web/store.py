@@ -257,11 +257,13 @@ class LedgerStore:
         if move_type == MovementType.TRANSFER:
             section = (MovementType.TRANSFER.value,)
         else:
-            names = {rt.name for rt in snapshot.result_types.values()}
+            result_types = {rt.name: rt for rt in snapshot.result_types.values()}
             if not result_type:
                 raise ValueError("Gains and losses require a result type")
-            if result_type not in names:
+            if result_type not in result_types:
                 raise ValueError(f"Unknown result type: {result_type!r}")
+            if result_types[result_type].internal:
+                raise ValueError(f"Result type {result_type!r} is internal and cannot get new base movements")
             section = ("result_types", result_type, "base_movements", move_type.value)
         # Gains always credit equity and losses always debit it.
         if move_type == MovementType.GAIN:

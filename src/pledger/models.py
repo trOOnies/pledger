@@ -247,6 +247,7 @@ class ResultType:
     name: str
     long_name: str
     description: str
+    internal: bool = False  # set by pledger itself, with ids of their own
 
     def __post_init__(self):
         if self.id <= 0:
@@ -272,10 +273,15 @@ class MovementBase:
         self.debit_fixed = self.acc_debit is not None
         self.credit_fixed = self.acc_credit is not None
 
+
         if (self.move_type == MovementType.TRANSFER) != (self.result_type is None):
             raise ValueError(
                 f"Base movement '{self.name}' must have a result type if and only if "
                 f"it is a gain or a loss (it is a {self.move_type.value})"
+            )
+        if self.result_type is not None and self.result_type.internal != self.internal:
+            raise ValueError(
+                f"Base movement '{self.name}' must be internal if and only if its result type is"
             )
 
     @classmethod
@@ -284,46 +290,80 @@ class MovementBase:
         path: str,
         accounts: dict[str, Account],
     ) -> tuple[dict[str, MovementBase], dict[int, ResultType]]:
-        """Load MovementBases and ResultTypes from YAML path."""
-        data = _load_yaml(path)
+        """
+        Load MovementBases and ResultTypes from YAML path. A base movement is either
+        a dict or just its description (a str), with no fixed accounts.
 
-        # Create ResultTypes
-        result_types = {
-            rt_dict["id"]: ResultType(
-                id=rt_dict["id"],
-                name=name,
-                long_name=rt_dict["long_name"],
-                description=rt_dict["description"],
-            )
-            for name, rt_dict in data["result_types"].items()
-        }
-        ids = sorted(rt["id"] for rt in data["result_types"].values())
+        The top-level `internal` key has the same structure (result types next to a
+        `transfer` dict): those base movements and result types are internal, reserved
+        for pledger itself. Result type ids are shared by internal and other ones.
+        """
+        data = _load_yaml(path)
+        internal = dict(data.get("internal") or {})
+
+        def result_types_of(rt_dicts: dict, is_internal: bool) -> dict[int, ResultType]:
+            return {
+                rt_dict["id"]: ResultType(
+                    id=rt_dict["id"],
+                    name=name,
+                    long_name=rt_dict["long_name"],
+                    description=rt_dict["description"],
+                    internal=is_internal,
+                )
+                for name, rt_dict in rt_dicts.items()
+            }
+
+        def sections_of(rt_dicts: dict, result_types: dict[int, ResultType]) -> list[tuple]:
+            """Gains and losses, grouped by ResultType."""
+            sections = [
+                (result_types[rt["id"]], move_type, mt_base_moves)
+                for rt in rt_dicts.values()
+                for move_type, mt_base_moves in (rt.get("base_movements") or {}).items()
+            ]
+            if any(
+                move_type not in {MovementType.GAIN.value, MovementType.LOSS.value}
+                for _, move_type, _ in sections
+            ):
+                raise ValueError(
+                    "Result types base_movements must only include 'gain' and 'loss' dicts"
+                )
+            return sections
+
+        internal_transfers = internal.pop(MovementType.TRANSFER.value, None)
+        repeated = sorted(set(data["result_types"]) & set(internal))
+        if repeated:
+            raise ValueError(f"Result type names are both internal and not: {repeated}")
+        ids = sorted(rt["id"] for rt in [*data["result_types"].values(), *internal.values()])
         if ids != list(range(1, len(ids) + 1)):
             raise ValueError(
-                f"ResultType ids must be unique and go from 1 to {len(ids)}. Values seen: {ids}"
+                "ResultType ids (internal ones included) must be unique and go from 1 to "
+                f"{len(ids)}. Values seen: {ids}"
             )
+        result_types = {
+            **result_types_of(data["result_types"], is_internal=False),
+            **result_types_of(internal, is_internal=True),
+        }
 
-        # Gains and losses, grouped by ResultType; then transfers
         sections = [
-            (result_types[rt["id"]], move_type, mt_base_moves)
-            for rt in data["result_types"].values()
-            for move_type, mt_base_moves in (rt.get("base_movements") or {}).items()
+            *((rt, mt, bms, False) for rt, mt, bms in sections_of(data["result_types"], result_types)),
+            (None, MovementType.TRANSFER.value, data.get("transfer"), False),
+            *((rt, mt, bms, True) for rt, mt, bms in sections_of(internal, result_types)),
+            (None, MovementType.TRANSFER.value, internal_transfers, True),
         ]
-        if any(
-            move_type not in {MovementType.GAIN.value, MovementType.LOSS.value}
-            for _, move_type, _ in sections
-        ):
-            raise ValueError(
-                "Result types base_movements must only include 'gain' and 'loss' dicts"
-            )
-        sections.append((None, MovementType.TRANSFER.value, data.get("transfer")))
 
         move_bases = {}
-        for result_type, move_type, mt_base_moves in sections:
+        for result_type, move_type, mt_base_moves, is_internal in sections:
             move_type = MovementType(move_type)
             for name, base_move_d in (mt_base_moves or {}).items():
                 if name in move_bases:
                     raise ValueError(f"Duplicated base movement name: {name!r}")
+                if isinstance(base_move_d, str):
+                    base_move_d = {"description": base_move_d}
+                if "internal" in base_move_d:
+                    raise ValueError(
+                        f"Base movement {name!r} must not set 'internal': "
+                        "list it under the top-level 'internal' key instead"
+                    )
                 move_bases[name] = MovementBase(
                     name=name,
                     description=base_move_d["description"],
@@ -334,7 +374,7 @@ class MovementBase:
                         accounts, move_type, base_move_d, LedgerSide.CREDIT,
                     ),
                     result_type=result_type,
-                    internal=bool(base_move_d.get("internal", False)),
+                    internal=is_internal,
                 )
 
         return move_bases, result_types

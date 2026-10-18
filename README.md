@@ -33,9 +33,13 @@ leaving the rest of each file as it was.
 Every account but the equity ones must set an `initial_amount` (equity accounts must not).
 Accounts also take optional `currency` (the base currency by default), `is_liquid`
 (`false`) and `initial_date` (the first date of the ledger) keys; the
-Accounts tab groups their balances by currency or by liquidity. A base movement with
-`internal: true` is reserved for pledger itself: it can't be picked for a new movement and
-its movements can't be deleted by hand. Balances and results don't use these yet.
+Accounts tab groups their balances by currency or by liquidity.
+
+A base movement is a dict (`description` and optional fixed `debit`/`credit` accounts) or
+just its description. The top-level `internal` key mirrors the rest of the file (result
+types, sharing their ids with the other ones, next to a `transfer` section); its base
+movements are reserved for pledger itself: they can't be picked for a new movement and
+their movements can't be deleted by hand, and its result types can't get new base movements. Balances and results don't use these yet.
 
 Amounts are shown with a `$` currency symbol and two decimals; set `PLEDGER_CURRENCY`
 (e.g. `ARS`) to use another one.
