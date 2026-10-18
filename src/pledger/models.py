@@ -24,6 +24,10 @@ def _load_yaml(path: str) -> dict:
     return data
 
 
+# A base movement side set to this takes any investment account (not a fixed one)
+INVESTMENT = "INVESTMENT"
+
+
 def _coalesce_mt_account(
     accounts: dict,
     move_type: MovementType,
@@ -42,7 +46,7 @@ def _coalesce_mt_account(
         accounts["Eq"]
         if move_type == equity_side
         else accounts[base_move_d[ls_value]]
-        if ls_value in base_move_d
+        if base_move_d.get(ls_value) not in {None, INVESTMENT}
         else None
     )
     if (move_type == MovementType.TRANSFER) and (acc is not None):
@@ -240,6 +244,8 @@ class Account:
         for acc_type, at_accounts in data.items():
             acc_type = AccountType(acc_type)
             for name, acc_d in at_accounts.items():
+                if name == INVESTMENT:
+                    raise ValueError(f"{INVESTMENT!r} is reserved and cannot be an account name")
                 fields = {
                     "name": name,
                     "description": acc_d["description"],
@@ -379,6 +385,8 @@ class MovementBase:
     acc_credit: Account | None
     result_type: ResultType | None
     internal: bool = False  # set by pledger itself: cannot be picked or deleted by hand
+    debit_investment: bool = False  # the debit side takes any investment account
+    credit_investment: bool = False  # the credit side takes any investment account
 
     def __post_init__(self):
         self.move_type = MovementType.from_accounts(
@@ -388,6 +396,11 @@ class MovementBase:
         self.debit_fixed = self.acc_debit is not None
         self.credit_fixed = self.acc_credit is not None
 
+        if (self.debit_fixed and self.debit_investment) or (self.credit_fixed and self.credit_investment):
+            raise ValueError(
+                f"Base movement '{self.name}' cannot have both a fixed account "
+                f"and {INVESTMENT} on the same side"
+            )
 
         if (self.move_type == MovementType.TRANSFER) != (self.result_type is None):
             raise ValueError(
@@ -398,6 +411,17 @@ class MovementBase:
             raise ValueError(
                 f"Base movement '{self.name}' must be internal if and only if its result type is"
             )
+
+    def side(self, ledger_side: LedgerSide) -> str | None:
+        """
+        What a side takes: its fixed account name, INVESTMENT (any investment
+        account) or None (any account).
+        """
+        if ledger_side == LedgerSide.DEBIT:
+            acc, investment = self.acc_debit, self.debit_investment
+        else:
+            acc, investment = self.acc_credit, self.credit_investment
+        return acc.name if acc is not None else INVESTMENT if investment else None
 
     @classmethod
     def load_yaml(
@@ -479,17 +503,18 @@ class MovementBase:
                         f"Base movement {name!r} must not set 'internal': "
                         "list it under the top-level 'internal' key instead"
                     )
+                acc_debit = _coalesce_mt_account(accounts, move_type, base_move_d, LedgerSide.DEBIT)
+                acc_credit = _coalesce_mt_account(accounts, move_type, base_move_d, LedgerSide.CREDIT)
                 move_bases[name] = MovementBase(
                     name=name,
                     description=base_move_d["description"],
-                    acc_debit=_coalesce_mt_account(
-                        accounts, move_type, base_move_d, LedgerSide.DEBIT,
-                    ),
-                    acc_credit=_coalesce_mt_account(
-                        accounts, move_type, base_move_d, LedgerSide.CREDIT,
-                    ),
+                    acc_debit=acc_debit,
+                    acc_credit=acc_credit,
                     result_type=result_type,
                     internal=is_internal,
+                    # Ignored on the equity side of gains and losses, like fixed accounts
+                    debit_investment=acc_debit is None and base_move_d.get("debit") == INVESTMENT,
+                    credit_investment=acc_credit is None and base_move_d.get("credit") == INVESTMENT,
                 )
 
         return move_bases, result_types
@@ -547,6 +572,15 @@ class Movement:
                 )
         else:
             raise ValueError(f"Unknown movement type: {self.move_type}")
+
+        for ledger_side, input_acc, investment in (
+            (LedgerSide.DEBIT, self.input_acc_debit, self.move_base.debit_investment),
+            (LedgerSide.CREDIT, self.input_acc_credit, self.move_base.credit_investment),
+        ):
+            assert not investment or isinstance(input_acc, InvestmentAccount), (
+                f"{ledger_side.value.capitalize()} account must be an investment account: "
+                f"{input_acc.name} is not ({self.move_date})"
+            )
 
         self.acc_debit = self.input_acc_debit
         self.acc_credit = self.input_acc_credit

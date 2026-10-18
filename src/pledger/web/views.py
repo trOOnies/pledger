@@ -5,7 +5,8 @@ from __future__ import annotations
 import datetime as dt
 import math
 
-from pledger.enums import AccountType, MovementType
+from pledger.enums import AccountType, LedgerSide, MovementType
+from pledger.models import INVESTMENT
 from pledger.web.store import Snapshot, row_fingerprint
 
 ACCOUNT_TYPE_ORDER = list(AccountType)
@@ -137,15 +138,24 @@ def build_accounts(snapshot: Snapshot, month: str = "", values: dict | None = No
 
 
 def account_fields(snapshot: Snapshot, base_name: str) -> dict:
-    """Which debit/credit accounts are fixed or selectable for a base movement."""
+    """
+    Which debit/credit accounts are fixed or selectable for a base movement: any
+    non-equity account, or only investment accounts on an INVESTMENT side.
+    """
     base = snapshot.base_movements.get(base_name)
     free = [a.name for a in snapshot.free_accounts()]
     if base is None:
-        return {"debit_fixed": None, "credit_fixed": None, "free": free, "type": ""}
+        return {
+            "debit_fixed": None, "credit_fixed": None, "debit_options": free,
+            "credit_options": free, "debit_investment": False, "credit_investment": False, "type": "",
+        }
     return {
         "debit_fixed": base.acc_debit.name if base.acc_debit else None,
         "credit_fixed": base.acc_credit.name if base.acc_credit else None,
-        "free": free,
+        "debit_options": [a.name for a in snapshot.side_accounts(base, LedgerSide.DEBIT)],
+        "credit_options": [a.name for a in snapshot.side_accounts(base, LedgerSide.CREDIT)],
+        "debit_investment": base.debit_investment,
+        "credit_investment": base.credit_investment,
         "type": base.move_type.value,
     }
 
@@ -192,6 +202,7 @@ def base_sides(snapshot: Snapshot, move_type: str) -> dict:
         "debit_fixed": equity if move_type == MovementType.LOSS.value else None,
         "credit_fixed": equity if move_type == MovementType.GAIN.value else None,
         "free": [a.name for a in snapshot.free_accounts()],
+        "investment": INVESTMENT,
         # Gains and losses are filed under a (non-internal) result type; transfers have none.
         "result_types": (
             []

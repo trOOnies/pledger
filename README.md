@@ -43,7 +43,8 @@ just to their type (with both at 0). The type is one of `public_bond`, `private_
 initial amount is the sum of those amounts. A quantity can't go below 0.
 
 A base movement is a dict (`description` and optional fixed `debit`/`credit` accounts) or
-just its description. The top-level `internal` key mirrors the rest of the file (result
+just its description. A side set to `INVESTMENT` (a reserved name) takes any investment
+account instead of a fixed one, and the New movement form only offers those there. The top-level `internal` key mirrors the rest of the file (result
 types, sharing their ids with the other ones, next to a `transfer` section); its base
 movements are reserved for pledger itself: they can't be picked for a new movement and
 their movements can't be deleted by hand, and its result types can't get new base movements. Balances and results don't use these yet.

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 
+from pledger.enums import LedgerSide
 from pledger.web.dependencies import StoreDep
 from pledger.web.schemas import BaseMovementIn
 
@@ -18,8 +19,8 @@ def list_base_movements(store: StoreDep):
             "description": b.description,
             "type": b.move_type.value,
             "result_type": b.result_type.name if b.result_type else None,
-            "debit": b.acc_debit.name if b.acc_debit else None,
-            "credit": b.acc_credit.name if b.acc_credit else None,
+            "debit": b.side(LedgerSide.DEBIT),
+            "credit": b.side(LedgerSide.CREDIT),
             "internal": b.internal,
         }
         for b in store.load().base_movements.values()

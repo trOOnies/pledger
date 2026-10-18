@@ -77,8 +77,9 @@
       <tr>
         <td><strong>{{ b.name }}</strong></td>
         {% if type != "transfer" %}<td>{{ b.result_type.long_name }}</td>{% endif %}
-        <td>{% if b.acc_debit %}{{ b.acc_debit.name }}{% else %}<span class="muted" title="Any account">-</span>{% endif %}</td>
-        <td>{% if b.acc_credit %}{{ b.acc_credit.name }}{% else %}<span class="muted" title="Any account">-</span>{% endif %}</td>
+        {% for acc, investment in ((b.acc_debit, b.debit_investment), (b.acc_credit, b.credit_investment)) %}
+        <td>{% if acc %}{{ acc.name }}{% elif investment %}<span class="muted" title="Any investment account">Investment</span>{% else %}<span class="muted" title="Any account">-</span>{% endif %}</td>
+        {% endfor %}
         <td class="muted">{{ b.description }}</td>
       </tr>
       {% endfor %}

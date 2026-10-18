@@ -8,6 +8,7 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
+from pledger.models import INVESTMENT
 from pledger.web.app import create_app
 from pledger.web.store import LedgerStore, Settings, _insert_yaml_entry, row_fingerprint
 from pledger.web.templating import money
@@ -783,3 +784,48 @@ class TestInternalResultTypes:
             (1, "Op", False), (2, "Gifts", False), (3, "Init", True), (4, "New", False),
         ]
 
+
+class TestInvestmentSides:
+    @pytest.fixture
+    def settings(self, settings, tmp_path):
+        text = settings.accounts_path.read_text(encoding="utf-8")
+        settings.accounts_path.write_text(
+            text.replace("liability:\n", "  Br:\n    description: Broker\nliability:\n"), encoding="utf-8"
+        )
+        path = tmp_path / "investment.yaml"
+        path.write_text("Br:\n  T: stock\n", encoding="utf-8")
+        with settings.base_movements_path.open("a") as f:
+            f.write("  Buy:\n    description: Buy investments\n    debit: INVESTMENT\n")
+        return replace(settings, investments_path=path)
+
+    @pytest.fixture
+    def client(self, settings):
+        return TestClient(create_app(settings))
+
+    def test_add_movement(self, settings, client):
+        store = LedgerStore(settings)
+        with pytest.raises(ValueError, match="Debit account must be an investment account: Bk is not"):
+            store.add("2026-02-01", "Buy", "Bk", "Ca", "1")
+        store.add("2026-02-01", "Buy", "Br", "Ca", "1")
+        assert rows(settings).iloc[-1]["acc_debit"] == "Br"
+
+    def test_form_offers_only_investment_accounts(self, client):
+        r = client.get("/form/accounts", params={"base_movement": "Buy"})
+        debit, credit = r.text.split('name="acc_credit"')
+        assert "(investment account)" in debit and "<option >Br</option>" in debit
+        assert "<option >Bk</option>" not in debit and "<option >Bk</option>" in credit
+
+    def test_add_base_movement(self, settings, client):
+        LedgerStore(settings).add_base_movement("Sell", "transfer", "d", credit=INVESTMENT)
+        LedgerStore(settings).add_base_movement("Swap", "transfer", "d", INVESTMENT, INVESTMENT)
+        bases = {b["name"]: b for b in client.get("/api/base-movements").json()}
+        assert (bases["Buy"]["debit"], bases["Buy"]["credit"]) == ("INVESTMENT", None)
+        assert (bases["Sell"]["debit"], bases["Sell"]["credit"]) == (None, "INVESTMENT")
+        assert (bases["Swap"]["debit"], bases["Swap"]["credit"]) == ("INVESTMENT", "INVESTMENT")
+        r = client.get("/form/base-sides", params={"move_type": "transfer"})
+        assert '<option value="INVESTMENT" >Any investment account</option>' in r.text
+        assert 'title="Any investment account">Investment<' in client.get("/setup").text
+
+    def test_investment_is_not_an_account_name(self, settings):
+        with pytest.raises(ValueError, match="'INVESTMENT' is reserved"):
+            LedgerStore(settings).add_account("INVESTMENT", "asset", "d", "0")

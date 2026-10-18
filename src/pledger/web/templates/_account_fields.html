@@ -1,12 +1,12 @@
-{% macro side(name, label, fixed) %}
-<label>{{ label }}
+{% macro side(name, label, fixed, options, investment) %}
+<label><span>{{ label }}{% if investment %} <em class="optional">(investment account)</em>{% endif %}</span>
   {% if fixed %}
   <input value="{{ fixed }}" readonly tabindex="-1" class="fixed">
   <input type="hidden" name="{{ name }}" value="{{ fixed }}">
   {% else %}
   <select name="{{ name }}" required>
     <option value="">Choose…</option>
-    {% for acc in fields.free %}
+    {% for acc in options %}
     <option {% if acc == values[name] %}selected{% endif %}>{{ acc }}</option>
     {% endfor %}
   </select>
@@ -14,6 +14,6 @@
 </label>
 {% endmacro %}
 <div class="pair">
-  {{ side("acc_debit", "Debit", fields.debit_fixed) }}
-  {{ side("acc_credit", "Credit", fields.credit_fixed) }}
+  {{ side("acc_debit", "Debit", fields.debit_fixed, fields.debit_options, fields.debit_investment) }}
+  {{ side("acc_credit", "Credit", fields.credit_fixed, fields.credit_options, fields.credit_investment) }}
 </div>
