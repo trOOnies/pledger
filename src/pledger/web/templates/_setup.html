@@ -77,8 +77,9 @@
       <tr>
         <td><strong>{{ b.name }}</strong></td>
         {% if type != "transfer" %}<td>{{ b.result_type.long_name }}</td>{% endif %}
-        {% for acc, investment in ((b.acc_debit, b.debit_investment), (b.acc_credit, b.credit_investment)) %}
-        <td>{% if acc %}{{ acc.name }}{% elif investment %}<span class="muted" title="Any investment account">Investment</span>{% else %}<span class="muted" title="Any account">-</span>{% endif %}</td>
+        {% for acc, special in ((b.acc_debit, b.debit_special), (b.acc_credit, b.credit_special)) %}
+        {% set special_label = sides.specials[special] if special %}
+        <td>{% if acc %}{{ acc.name }}{% elif special %}<span class="muted" title="Any {{ special_label | lower }} account">{{ special_label }}</span>{% else %}<span class="muted" title="Any account">-</span>{% endif %}</td>
         {% endfor %}
         <td class="muted">{{ b.description }}</td>
       </tr>

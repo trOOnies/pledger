@@ -75,7 +75,7 @@
       {% for type, accs in accounts_by_type.items() if accs %}
       <h3>{{ type | capitalize }}</h3>
       <table data-sortable="balances-{{ type }}">
-        <thead><tr><th>Account</th><th>Description</th><th>Currency</th><th>Liquid</th><th class="num">Balance</th></tr></thead>
+        <thead><tr><th>Account</th><th>Description</th><th>Currency</th><th>Liquid</th><th>Special</th><th class="num">Balance</th></tr></thead>
         <tbody>
         {% for a in accs %}
         <tr>
@@ -83,6 +83,7 @@
           <td class="muted">{{ a.description }}</td>
           <td>{{ a.currency }}</td>
           <td data-sort="{{ 1 if a.is_liquid else 0 }}">{{ "Yes" if a.is_liquid else "No" }}</td>
+          <td {% if a.special == "-" %}class="muted"{% endif %}>{{ a.special }}</td>
           <td class="num {{ 'loss' if a.balance < 0 and type != 'equity' }}" data-sort="{{ a.balance }}">{{ a.balance | money }}</td>
         </tr>
         {% endfor %}

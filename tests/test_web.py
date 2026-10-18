@@ -8,7 +8,7 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from pledger.models import INVESTMENT
+from pledger.models import DEBT, INVESTMENT
 from pledger.web.app import create_app
 from pledger.web.store import LedgerStore, Settings, _insert_yaml_entry, row_fingerprint
 from pledger.web.templating import money, quantity
@@ -828,9 +828,66 @@ class TestInvestmentSides:
         assert '<option value="INVESTMENT" >Any investment account</option>' in r.text
         assert 'title="Any investment account">Investment<' in client.get("/setup").text
 
-    def test_investment_is_not_an_account_name(self, settings):
-        with pytest.raises(ValueError, match="'INVESTMENT' is reserved"):
-            LedgerStore(settings).add_account("INVESTMENT", "asset", "d", "0")
+    @pytest.mark.parametrize("name", [INVESTMENT, DEBT])
+    def test_is_not_an_account_name(self, settings, name):
+        with pytest.raises(ValueError, match=f"'{name}' is reserved"):
+            LedgerStore(settings).add_account(name, "asset", "d", "0")
+
+
+class TestDebtSides:
+    @pytest.fixture
+    def settings(self, settings, tmp_path):
+        text = settings.accounts_path.read_text(encoding="utf-8")
+        settings.accounts_path.write_text(
+            text.replace("equity:\n", "  De:\n    description: Debts\nequity:\n"), encoding="utf-8"
+        )
+        path = tmp_path / "creditors.yaml"
+        path.write_text("De:\n  Dad: 0\n", encoding="utf-8")
+        with settings.base_movements_path.open("a") as f:
+            f.write("  Borrow:\n    description: Borrow money\n    credit: DEBT\n")
+        return replace(settings, creditors_path=path)
+
+    @pytest.fixture
+    def client(self, settings):
+        return TestClient(create_app(settings))
+
+    def test_add_movement(self, settings):
+        store = LedgerStore(settings)
+        with pytest.raises(ValueError, match="Credit account must be a debt account: Cc is not"):
+            store.add("2026-02-01", "Borrow", "Ca", "Cc", "1")
+        store.add("2026-02-01", "Borrow", "Ca", "De", "1")
+        assert rows(settings).iloc[-1]["acc_credit"] == "De"
+
+    def test_form_offers_only_debt_accounts(self, client):
+        r = client.get("/form/accounts", params={"base_movement": "Borrow"})
+        debit, credit = r.text.split("<span>Credit")
+        assert "(debt account)" in credit and "<option >De</option>" in credit
+        assert "<option >Cc</option>" not in credit and "<option >Cc</option>" in debit
+
+    def test_add_base_movement(self, settings, client):
+        LedgerStore(settings).add_base_movement("Repay", "transfer", "d", debit=DEBT)
+        bases = {b["name"]: b for b in client.get("/api/base-movements").json()}
+        assert (bases["Borrow"]["debit"], bases["Borrow"]["credit"]) == (None, "DEBT")
+        assert (bases["Repay"]["debit"], bases["Repay"]["credit"]) == ("DEBT", None)
+        r = client.get("/form/base-sides", params={"move_type": "transfer"})
+        assert '<option value="DEBT" >Any debt account</option>' in r.text
+        assert 'title="Any debt account">Debt<' in client.get("/setup").text
+
+    def test_accounts_special_column(self, settings, tmp_path):
+        text = settings.accounts_path.read_text(encoding="utf-8")
+        settings.accounts_path.write_text(
+            text.replace("liability:\n", "  Br:\n    description: Broker\nliability:\n"), encoding="utf-8"
+        )
+        path = tmp_path / "investment.yaml"
+        path.write_text("Br:\n  T: stock\n", encoding="utf-8")
+        r = TestClient(create_app(replace(settings, investments_path=path))).get("/accounts")
+        assert "<th>Liquid</th><th>Special</th>" in r.text
+        specials = {
+            row.split("<strong>")[1].split("</strong>")[0]: row.split("</td>")[4].split(">")[-1]
+            for row in r.text.split("<tbody>", 1)[1].split("<tr>")[1:]
+            if "<strong>" in row
+        }
+        assert specials == {"Ca": "-", "Bk": "-", "Br": "Investment", "Cc": "-", "De": "Debt", "Eq": "-"}
 
 
 class TestDebtAccounts:

@@ -50,8 +50,9 @@ negative if they owe us. The account's initial amount is their sum, and its bala
 go below 0 (we are owed more than we owe).
 
 A base movement is a dict (`description` and optional fixed `debit`/`credit` accounts) or
-just its description. A side set to `INVESTMENT` (a reserved name) takes any investment
-account instead of a fixed one, and the New movement form only offers those there. The top-level `internal` key mirrors the rest of the file (result
+just its description. A side set to `INVESTMENT` or `DEBT` (reserved names) takes any
+investment or debt account instead of a fixed one, and the New movement form only offers
+those there; the Accounts tab marks these accounts in its Special column. The top-level `internal` key mirrors the rest of the file (result
 types, sharing their ids with the other ones, next to a `transfer` section); its base
 movements are reserved for pledger itself: they can't be picked for a new movement and
 their movements can't be deleted by hand, and its result types can't get new base movements. Balances and results don't use these yet.

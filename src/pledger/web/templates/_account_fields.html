@@ -1,5 +1,5 @@
-{% macro side(name, label, fixed, options, investment) %}
-<label><span>{{ label }}{% if investment %} <em class="optional">(investment account)</em>{% endif %}</span>
+{% macro side(name, label, fixed, options, special) %}
+<label><span>{{ label }}{% if special %} <em class="optional">({{ special | lower }} account)</em>{% endif %}</span>
   {% if fixed %}
   <input value="{{ fixed }}" readonly tabindex="-1" class="fixed">
   <input type="hidden" name="{{ name }}" value="{{ fixed }}">
@@ -14,6 +14,6 @@
 </label>
 {% endmacro %}
 <div class="pair">
-  {{ side("acc_debit", "Debit", fields.debit_fixed, fields.debit_options, fields.debit_investment) }}
-  {{ side("acc_credit", "Credit", fields.credit_fixed, fields.credit_options, fields.credit_investment) }}
+  {{ side("acc_debit", "Debit", fields.debit_fixed, fields.debit_options, fields.debit_special) }}
+  {{ side("acc_credit", "Credit", fields.credit_fixed, fields.credit_options, fields.credit_special) }}
 </div>

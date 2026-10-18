@@ -16,7 +16,9 @@
   --loss-bg: #fbe7e5;
   --transfer-bg: #eceef1;
   --series-asset: #2a78d6;
+  --series-asset-nested: #74a9ea;
   --series-liability: #eb6834;
+  --series-liability-nested: #f4a17f;
   --track: #f0f1f4;
   --radius: 8px;
   color-scheme: light;
@@ -41,7 +43,9 @@
     --loss-bg: #3a1c1a;
     --transfer-bg: #262b33;
     --series-asset: #3987e5;
+    --series-asset-nested: #b3d1f5;
     --series-liability: #d95926;
+    --series-liability-nested: #f5c2aa;
     --track: #222730;
     color-scheme: dark;
   }
@@ -241,9 +245,11 @@ button.icon:hover { color: var(--loss); }
 .bar.liability { background: var(--series-liability); }
 .bar.gain { background: var(--gain); }
 .bar.loss { background: var(--loss); }
-/* A result type's base movements: a lighter step of the same hue. */
+/* A group's rows (a result type's base movements, a currency's accounts...): a lighter step of the same hue. */
 .other-rows.children .bar.gain { background: var(--gain-nested); }
 .other-rows.children .bar.loss { background: var(--loss-nested); }
+.other-rows.children .bar.asset { background: var(--series-asset-nested); }
+.other-rows.children .bar.liability { background: var(--series-liability-nested); }
 .share { font-size: .8rem; }
 
 /* Accounts: one set of bars per grouping; the toggle shows one of them. */

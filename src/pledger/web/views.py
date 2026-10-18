@@ -6,7 +6,7 @@ import datetime as dt
 import math
 
 from pledger.enums import AccountType, InvestmentType, LedgerSide, MovementType
-from pledger.models import INVESTMENT, DebtAccount, InvestmentAccount
+from pledger.models import SPECIAL_LABELS, DebtAccount, InvestmentAccount, special_of
 from pledger.web.store import Snapshot, row_fingerprint
 
 ACCOUNT_TYPE_ORDER = list(AccountType)
@@ -86,6 +86,7 @@ def build_accounts(snapshot: Snapshot, month: str = "", values: dict | None = No
                 "description": a.description,
                 "currency": a.currency.name,
                 "is_liquid": a.is_liquid,
+                "special": SPECIAL_LABELS.get(special_of(a), "-"),
                 "balance": balances.get(a.name, 0.0),
             }
             for a in snapshot.accounts.values()
@@ -248,22 +249,23 @@ def build_debts(snapshot: Snapshot) -> dict:
 def account_fields(snapshot: Snapshot, base_name: str) -> dict:
     """
     Which debit/credit accounts are fixed or selectable for a base movement: any
-    non-equity account, or only investment accounts on an INVESTMENT side.
+    non-equity account, or only investment or debt accounts on an INVESTMENT or
+    DEBT side (with that side's label, e.g. "Investment").
     """
     base = snapshot.base_movements.get(base_name)
     free = [a.name for a in snapshot.free_accounts()]
     if base is None:
         return {
             "debit_fixed": None, "credit_fixed": None, "debit_options": free,
-            "credit_options": free, "debit_investment": False, "credit_investment": False, "type": "",
+            "credit_options": free, "debit_special": None, "credit_special": None, "type": "",
         }
     return {
         "debit_fixed": base.acc_debit.name if base.acc_debit else None,
         "credit_fixed": base.acc_credit.name if base.acc_credit else None,
         "debit_options": [a.name for a in snapshot.side_accounts(base, LedgerSide.DEBIT)],
         "credit_options": [a.name for a in snapshot.side_accounts(base, LedgerSide.CREDIT)],
-        "debit_investment": base.debit_investment,
-        "credit_investment": base.credit_investment,
+        "debit_special": SPECIAL_LABELS.get(base.debit_special),
+        "credit_special": SPECIAL_LABELS.get(base.credit_special),
         "type": base.move_type.value,
     }
 
@@ -310,7 +312,7 @@ def base_sides(snapshot: Snapshot, move_type: str) -> dict:
         "debit_fixed": equity if move_type == MovementType.LOSS.value else None,
         "credit_fixed": equity if move_type == MovementType.GAIN.value else None,
         "free": [a.name for a in snapshot.free_accounts()],
-        "investment": INVESTMENT,
+        "specials": SPECIAL_LABELS,
         # Gains and losses are filed under a (non-internal) result type; transfers have none.
         "result_types": (
             []

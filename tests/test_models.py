@@ -8,6 +8,7 @@ import pytest
 
 from pledger.enums import AccountType, InvestmentType, LedgerSide, MovementType
 from pledger.models import (
+    DEBT,
     INVESTMENT,
     Account,
     Creditor,
@@ -18,6 +19,7 @@ from pledger.models import (
     Movement,
     MovementBase,
     ResultType,
+    special_of,
 )
 
 
@@ -616,43 +618,74 @@ class TestDebtAccount:
             Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml), str(investments), creditors_yaml)
 
 
-class TestInvestmentSides:
+class TestSpecialSides:
     @pytest.fixture
     def broker(self, currencies) -> InvestmentAccount:
         return InvestmentAccount("Br", "Broker", AccountType.ASSET, currencies["ARS"], 0.0)
+
+    @pytest.fixture
+    def debts(self, currencies) -> DebtAccount:
+        return DebtAccount("De", "Debts", AccountType.LIABILITY, currencies["ARS"], 0.0)
 
     def test_load_yaml(self, tmp_path, accounts_yaml, base_movements_yaml, currencies_yaml):
         accounts = Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml))
         path = tmp_path / "result_types.yaml"
         text = Path(base_movements_yaml).read_text(encoding="utf-8")
         text += "  Buy:\n    description: d\n    debit: INVESTMENT\n    credit: Ca\n"
+        text += "  Lend:\n    description: d\n    debit: DEBT\n    credit: INVESTMENT\n"
         text = text.replace("        Gift:\n", "        Gains:\n          description: d\n          debit: INVESTMENT\n        Gift:\n")
+        text = text.replace("        Food:\n", "        Forgiven:\n          description: d\n          credit: DEBT\n        Food:\n")
         path.write_text(text, encoding="utf-8")
         bases, _ = MovementBase.load_yaml(str(path), accounts)
-        buy, gains = bases["Buy"], bases["Gains"]
-        assert buy.acc_debit is None and not buy.debit_fixed and buy.debit_investment
-        assert buy.acc_credit is accounts["Ca"] and not buy.credit_investment
+        buy, lend, gains, forgiven = bases["Buy"], bases["Lend"], bases["Gains"], bases["Forgiven"]
+        assert buy.acc_debit is None and not buy.debit_fixed and buy.debit_special == INVESTMENT
+        assert buy.acc_credit is accounts["Ca"] and buy.credit_special is None
         assert buy.side(LedgerSide.DEBIT) == INVESTMENT and buy.side(LedgerSide.CREDIT) == "Ca"
-        assert gains.move_type == MovementType.GAIN and gains.debit_investment
+        assert lend.side(LedgerSide.DEBIT) == DEBT and lend.side(LedgerSide.CREDIT) == INVESTMENT
+        assert gains.move_type == MovementType.GAIN and gains.debit_special == INVESTMENT
+        assert forgiven.move_type == MovementType.LOSS and forgiven.credit_special == DEBT
         assert bases["Move"].side(LedgerSide.DEBIT) is None
-        assert not any(b.debit_investment or b.credit_investment for n, b in bases.items() if n not in {"Buy", "Gains"})
+        specials = {"Buy", "Lend", "Gains", "Forgiven"}
+        assert not any(b.debit_special or b.credit_special for n, b in bases.items() if n not in specials)
 
     def test_movement_requires_an_investment_account(self, accounts, broker):
-        buy = MovementBase("Buy", "", None, accounts["Ca"], None, debit_investment=True)
+        buy = MovementBase("Buy", "", None, accounts["Ca"], None, debit_special=INVESTMENT)
         move = Movement("2026-01-01", buy, broker, accounts["Ca"], 1.0)
         assert move.acc_debit is broker
         with pytest.raises(AssertionError, match="Debit account must be an investment account: Bk is not"):
             Movement("2026-01-01", buy, accounts["Bk"], accounts["Ca"], 1.0)
-        sell = MovementBase("Sell", "", None, None, None, credit_investment=True)
+        sell = MovementBase("Sell", "", None, None, None, credit_special=INVESTMENT)
         with pytest.raises(AssertionError, match="Credit account must be an investment account: Cc is not"):
             Movement("2026-01-01", sell, accounts["Ca"], accounts["Cc"], 1.0)
 
-    def test_cannot_be_both_fixed_and_investment(self, accounts):
-        with pytest.raises(ValueError, match="both a fixed account and INVESTMENT"):
-            MovementBase("Buy", "", accounts["Ca"], None, None, debit_investment=True)
+    def test_movement_requires_a_debt_account(self, accounts, broker, debts):
+        borrow = MovementBase("Borrow", "", None, None, None, credit_special=DEBT)
+        move = Movement("2026-01-01", borrow, accounts["Ca"], debts, 1.0)
+        assert move.acc_credit is debts
+        with pytest.raises(AssertionError, match="Credit account must be a debt account: Cc is not"):
+            Movement("2026-01-01", borrow, accounts["Ca"], accounts["Cc"], 1.0)
+        lend = MovementBase("Lend", "", None, None, None, debit_special=DEBT, credit_special=INVESTMENT)
+        assert Movement("2026-01-01", lend, debts, broker, 1.0).acc_debit is debts
+        with pytest.raises(AssertionError, match="Debit account must be a debt account: Br is not"):
+            Movement("2026-01-01", lend, broker, broker, 1.0)
 
-    def test_investment_is_not_an_account_name(self, tmp_path, currencies_yaml):
+    @pytest.mark.parametrize("special", [INVESTMENT, DEBT])
+    def test_cannot_be_both_fixed_and_special(self, accounts, special):
+        with pytest.raises(ValueError, match=f"both a fixed account and {special}"):
+            MovementBase("Buy", "", accounts["Ca"], None, None, debit_special=special)
+
+    def test_unknown_special(self):
+        with pytest.raises(ValueError, match="unknown special side: 'NOPE'"):
+            MovementBase("Buy", "", None, None, None, debit_special="NOPE")
+
+    @pytest.mark.parametrize("name", [INVESTMENT, DEBT])
+    def test_is_not_an_account_name(self, tmp_path, currencies_yaml, name):
         path = tmp_path / "accounts.yaml"
-        path.write_text("asset:\n  INVESTMENT:\n    description: d\n    initial_amount: 0\n", encoding="utf-8")
-        with pytest.raises(ValueError, match="'INVESTMENT' is reserved"):
+        path.write_text(f"asset:\n  {name}:\n    description: d\n    initial_amount: 0\n", encoding="utf-8")
+        with pytest.raises(ValueError, match=f"'{name}' is reserved"):
             Account.load_yaml(str(path), *Currency.load_yaml(currencies_yaml))
+
+    def test_special_of(self, accounts, broker, debts):
+        assert special_of(broker) == INVESTMENT
+        assert special_of(debts) == DEBT
+        assert special_of(accounts["Ca"]) is None

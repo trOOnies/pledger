@@ -18,10 +18,9 @@ from pandas import DataFrame, read_csv
 from pledger.enums import AccountType, LedgerSide, MovementType
 from pledger.ledger import Ledger
 from pledger.models import (
-    INVESTMENT,
+    SPECIAL_SIDES,
     Account,
     Currency,
-    InvestmentAccount,
     Movement,
     MovementBase,
     ResultType,
@@ -94,8 +93,9 @@ class Snapshot:
 
     def side_accounts(self, base: MovementBase, ledger_side: LedgerSide) -> list[Account]:
         """Accounts that can be picked on a non-fixed side of a base movement."""
-        if base.side(ledger_side) == INVESTMENT:
-            return [a for a in self.accounts.values() if isinstance(a, InvestmentAccount)]
+        special = SPECIAL_SIDES.get(base.side(ledger_side))
+        if special:
+            return [a for a in self.accounts.values() if isinstance(a, special)]
         return self.free_accounts()
 
     def manual_base_movements(self) -> dict[str, MovementBase]:
@@ -210,8 +210,8 @@ class LedgerStore:
         """
         snapshot = self.load()
         name = _check_name(name, snapshot.accounts, "account")
-        if name == INVESTMENT:
-            raise ValueError(f"{INVESTMENT!r} is reserved and cannot be an account name")
+        if name in SPECIAL_SIDES:
+            raise ValueError(f"{name!r} is reserved and cannot be an account name")
         try:
             acc_type = AccountType(acc_type)
         except ValueError:
@@ -269,7 +269,7 @@ class LedgerStore:
         """
         Validate a new base movement and add it to the base movements YAML: gains
         and losses under their result type, transfers in the `transfer` section.
-        A side set to INVESTMENT takes any investment account.
+        A side set to INVESTMENT or DEBT takes any investment or debt account.
         """
         snapshot = self.load()
         name = _check_name(name, snapshot.base_movements, "base movement")
@@ -296,9 +296,9 @@ class LedgerStore:
             debit = ""
         free = {a.name for a in snapshot.free_accounts()}
         for acc in (debit, credit):
-            if acc and acc != INVESTMENT and acc not in free:
+            if acc and acc not in SPECIAL_SIDES and acc not in free:
                 raise ValueError(f"Unknown or non-selectable account: {acc!r}")
-        if debit and debit != INVESTMENT and debit == credit:
+        if debit and debit not in SPECIAL_SIDES and debit == credit:
             raise ValueError("Debit and credit accounts must be different")
 
         fields = {"description": description}

@@ -5,7 +5,9 @@
   {% else %}
   <select name="{{ name }}">
     <option value="" title="Any account">-</option>
-    <option value="{{ sides.investment }}" {% if values[name] == sides.investment %}selected{% endif %}>Any investment account</option>
+    {% for special, special_label in sides.specials.items() %}
+    <option value="{{ special }}" {% if values[name] == special %}selected{% endif %}>Any {{ special_label | lower }} account</option>
+    {% endfor %}
     {% for acc in sides.free %}
     <option {% if acc == values[name] %}selected{% endif %}>{{ acc }}</option>
     {% endfor %}

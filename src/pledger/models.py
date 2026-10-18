@@ -24,8 +24,10 @@ def _load_yaml(path: str) -> dict:
     return data
 
 
-# A base movement side set to this takes any investment account (not a fixed one)
+# A base movement side set to one of these (reserved names) takes any investment
+# or debt account instead of a fixed one. See SPECIAL_SIDES.
 INVESTMENT = "INVESTMENT"
+DEBT = "DEBT"
 
 
 def _coalesce_mt_account(
@@ -46,7 +48,7 @@ def _coalesce_mt_account(
         accounts["Eq"]
         if move_type == equity_side
         else accounts[base_move_d[ls_value]]
-        if base_move_d.get(ls_value) not in {None, INVESTMENT}
+        if base_move_d.get(ls_value) not in {None, INVESTMENT, DEBT}
         else None
     )
     if (move_type == MovementType.TRANSFER) and (acc is not None):
@@ -57,6 +59,14 @@ def _coalesce_mt_account(
             )
 
     return acc
+
+
+def _special_side(acc: Account | None, value: str | None) -> str | None:
+    """
+    INVESTMENT or DEBT if a side is set to it. Ignored on the equity side of
+    gains and losses, like fixed accounts.
+    """
+    return value if acc is None and value in {INVESTMENT, DEBT} else None
 
 
 # * ---------------------------------------
@@ -255,8 +265,8 @@ class Account:
         for acc_type, at_accounts in data.items():
             acc_type = AccountType(acc_type)
             for name, acc_d in at_accounts.items():
-                if name == INVESTMENT:
-                    raise ValueError(f"{INVESTMENT!r} is reserved and cannot be an account name")
+                if name in {INVESTMENT, DEBT}:
+                    raise ValueError(f"{name!r} is reserved and cannot be an account name")
                 fields = {
                     "name": name,
                     "description": acc_d["description"],
@@ -434,6 +444,16 @@ class DebtAccount(Account):
         return creditors
 
 
+# The kind of account each special side takes, with its display name.
+SPECIAL_SIDES: dict[str, type[Account]] = {INVESTMENT: InvestmentAccount, DEBT: DebtAccount}
+SPECIAL_LABELS = {INVESTMENT: "Investment", DEBT: "Debt"}
+
+
+def special_of(account: Account) -> str | None:
+    """INVESTMENT or DEBT for investment and debt accounts, else None."""
+    return next((s for s, cls in SPECIAL_SIDES.items() if isinstance(account, cls)), None)
+
+
 @dataclass
 class ResultType:
     """Ledger hierarchical result type."""
@@ -459,8 +479,8 @@ class MovementBase:
     acc_credit: Account | None
     result_type: ResultType | None
     internal: bool = False  # set by pledger itself: cannot be picked or deleted by hand
-    debit_investment: bool = False  # the debit side takes any investment account
-    credit_investment: bool = False  # the credit side takes any investment account
+    debit_special: str | None = None  # INVESTMENT or DEBT: the debit side takes any such account
+    credit_special: str | None = None  # INVESTMENT or DEBT: the credit side takes any such account
 
     def __post_init__(self):
         self.move_type = MovementType.from_accounts(
@@ -470,11 +490,14 @@ class MovementBase:
         self.debit_fixed = self.acc_debit is not None
         self.credit_fixed = self.acc_credit is not None
 
-        if (self.debit_fixed and self.debit_investment) or (self.credit_fixed and self.credit_investment):
-            raise ValueError(
-                f"Base movement '{self.name}' cannot have both a fixed account "
-                f"and {INVESTMENT} on the same side"
-            )
+        for fixed, special in ((self.debit_fixed, self.debit_special), (self.credit_fixed, self.credit_special)):
+            if special is not None and special not in SPECIAL_SIDES:
+                raise ValueError(f"Base movement '{self.name}' has an unknown special side: {special!r}")
+            if fixed and special:
+                raise ValueError(
+                    f"Base movement '{self.name}' cannot have both a fixed account "
+                    f"and {special} on the same side"
+                )
 
         if (self.move_type == MovementType.TRANSFER) != (self.result_type is None):
             raise ValueError(
@@ -488,14 +511,14 @@ class MovementBase:
 
     def side(self, ledger_side: LedgerSide) -> str | None:
         """
-        What a side takes: its fixed account name, INVESTMENT (any investment
-        account) or None (any account).
+        What a side takes: its fixed account name, INVESTMENT or DEBT (any
+        investment or debt account) or None (any account).
         """
         if ledger_side == LedgerSide.DEBIT:
-            acc, investment = self.acc_debit, self.debit_investment
+            acc, special = self.acc_debit, self.debit_special
         else:
-            acc, investment = self.acc_credit, self.credit_investment
-        return acc.name if acc is not None else INVESTMENT if investment else None
+            acc, special = self.acc_credit, self.credit_special
+        return acc.name if acc is not None else special
 
     @classmethod
     def load_yaml(
@@ -586,9 +609,8 @@ class MovementBase:
                     acc_credit=acc_credit,
                     result_type=result_type,
                     internal=is_internal,
-                    # Ignored on the equity side of gains and losses, like fixed accounts
-                    debit_investment=acc_debit is None and base_move_d.get("debit") == INVESTMENT,
-                    credit_investment=acc_credit is None and base_move_d.get("credit") == INVESTMENT,
+                    debit_special=_special_side(acc_debit, base_move_d.get("debit")),
+                    credit_special=_special_side(acc_credit, base_move_d.get("credit")),
                 )
 
         return move_bases, result_types
@@ -647,13 +669,16 @@ class Movement:
         else:
             raise ValueError(f"Unknown movement type: {self.move_type}")
 
-        for ledger_side, input_acc, investment in (
-            (LedgerSide.DEBIT, self.input_acc_debit, self.move_base.debit_investment),
-            (LedgerSide.CREDIT, self.input_acc_credit, self.move_base.credit_investment),
+        for ledger_side, input_acc, special in (
+            (LedgerSide.DEBIT, self.input_acc_debit, self.move_base.debit_special),
+            (LedgerSide.CREDIT, self.input_acc_credit, self.move_base.credit_special),
         ):
-            assert not investment or isinstance(input_acc, InvestmentAccount), (
-                f"{ledger_side.value.capitalize()} account must be an investment account: "
-                f"{input_acc.name} is not ({self.move_date})"
+            if not special:
+                continue
+            kind = SPECIAL_LABELS[special].lower()
+            assert isinstance(input_acc, SPECIAL_SIDES[special]), (
+                f"{ledger_side.value.capitalize()} account must be "
+                f"{'an' if kind[0] in 'aeiou' else 'a'} {kind} account: {input_acc.name} is not ({self.move_date})"
             )
 
         self.acc_debit = self.input_acc_debit
