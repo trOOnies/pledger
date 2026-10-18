@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import isclose
 
 import numpy as np
@@ -13,7 +13,7 @@ import pandas as pd
 from yaml import safe_load
 
 from pledger.code.models import assert_accounts
-from pledger.enums import AccountType, LedgerSide, MovementType
+from pledger.enums import AccountType, InvestmentType, LedgerSide, MovementType
 
 
 def _load_yaml(path: str) -> dict:
@@ -181,13 +181,20 @@ class Account:
         path: str,
         base_currency: Currency,
         other_currencies: dict[str, Currency] | None = None,
+        investments_path: str | None = None,
     ) -> dict[str, Account]:
         """
         Load Accounts from YAML path. An account without a `currency` is in the
         base currency. Every account must set its `initial_amount`, except equity
-        accounts, which must not (theirs is 0.0).
+        accounts, which must not (theirs is 0.0), and investment accounts.
+
+        Investment accounts are the asset accounts listed in the investments YAML
+        (if given). They must not set an `initial_amount` either: theirs is the sum
+        of the initial amounts of their investments.
         """
         data = _load_yaml(path)
+        investments_data = _load_yaml(investments_path) if investments_path else {}
+        investments_data = investments_data or {}
         currencies = {base_currency.name: base_currency, **(other_currencies or {})}
 
         def currency_of(name: str, acc_d: dict) -> Currency:
@@ -203,6 +210,12 @@ class Account:
             return value
 
         def initial_amount_of(name: str, acc_type: AccountType, acc_d: dict) -> float:
+            if name in investments_data:
+                if acc_type != AccountType.ASSET:
+                    raise ValueError(f"Investment account {name!r} must be an asset account")
+                if "initial_amount" in acc_d:
+                    raise ValueError(f"Investment account {name!r} must not have an initial_amount")
+                return 0.0  # set from its investments
             if acc_type == AccountType.EQUITY:
                 if "initial_amount" in acc_d:
                     raise ValueError(f"Equity account {name!r} must not have an initial_amount")
@@ -227,16 +240,118 @@ class Account:
         for acc_type, at_accounts in data.items():
             acc_type = AccountType(acc_type)
             for name, acc_d in at_accounts.items():
-                accounts[name] = Account(
-                    name=name,
-                    description=acc_d["description"],
-                    acc_type=acc_type,
-                    currency=currency_of(name, acc_d),
-                    initial_amount=initial_amount_of(name, acc_type, acc_d),
-                    is_liquid=is_liquid_of(name, acc_d),
-                    initial_date=initial_date_of(name, acc_d),
+                fields = {
+                    "name": name,
+                    "description": acc_d["description"],
+                    "acc_type": acc_type,
+                    "currency": currency_of(name, acc_d),
+                    "initial_amount": initial_amount_of(name, acc_type, acc_d),
+                    "is_liquid": is_liquid_of(name, acc_d),
+                    "initial_date": initial_date_of(name, acc_d),
+                }
+                if name not in investments_data:
+                    accounts[name] = Account(**fields)
+                    continue
+                investments = InvestmentAccount.investments_from_dict(
+                    name, investments_data[name] or {}
                 )
+                fields["initial_amount"] = sum(i["total_amount"] for i in investments.values())
+                accounts[name] = InvestmentAccount(**fields, investments=investments)
+
+        unknown = sorted(set(investments_data) - set(accounts))
+        if unknown:
+            raise ValueError(f"The investments YAML has accounts not in the accounts YAML: {unknown}")
         return accounts
+
+
+@dataclass
+class Investment:
+    """An investment (a bond, a stock, a fund...) held in an investment account."""
+
+    name: str
+    type: InvestmentType
+
+    def __post_init__(self):
+        self.type = InvestmentType(self.type)
+
+
+@dataclass
+class InvestmentAccount(Account):
+    """
+    Asset account that holds investments: a dict of investment name to its
+    `investment` (Investment), `total_amount` ($) and `total_quantity` (float).
+    A `total_quantity` never drops below 0.0.
+    """
+
+    investments: dict[str, dict] = field(default_factory=dict)
+
+    def __post_init__(self):
+        super().__post_init__()
+        for name, holding in self.investments.items():
+            holding["total_quantity"] = self._checked_quantity(name, holding["total_quantity"])
+
+    def _checked_quantity(self, name: str, quantity: float) -> float:
+        if quantity < -1e-9:
+            raise ValueError(
+                f"The quantity of {name!r} in the account '{self.name}' cannot be negative: {quantity}"
+            )
+        return max(float(quantity), 0.0)
+
+    def add_investment(self, investment: Investment, amount: float, quantity: float) -> None:
+        """
+        Adds an amount ($) and a quantity (negative to take out) to an investment,
+        which is added to the account if new.
+        """
+        holding = self.investments.get(investment.name)
+        if holding is None:
+            holding = {"investment": investment, "total_amount": 0.0, "total_quantity": 0.0}
+        elif holding["investment"].type != investment.type:
+            raise ValueError(
+                f"Investment {investment.name!r} in the account '{self.name}' is a "
+                f"{holding['investment'].type.value}, not a {investment.type.value}"
+            )
+        new_quantity = self._checked_quantity(
+            investment.name, holding["total_quantity"] + quantity
+        )
+        holding["total_amount"] += amount
+        holding["total_quantity"] = new_quantity
+        self.investments[investment.name] = holding
+
+    @staticmethod
+    def investments_from_dict(acc_name: str, data: dict) -> dict[str, dict]:
+        """
+        Investments of an account from its investments YAML dict. An investment is
+        either a dict or just its type (a str), with no initial amount or quantity.
+        """
+
+        def number_of(inv_name: str, inv_d: dict, key: str) -> float:
+            value = inv_d.get(key)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise ValueError(  # noqa: TRY004 (a bad config value)
+                    f"Investment {inv_name!r} of the account {acc_name!r} {key} must be a number: {value!r}"
+                )
+            return float(value)
+
+        investments = {}
+        for inv_name, inv_d in data.items():
+            inv_name = str(inv_name)  # YAML keys may be numbers
+            if isinstance(inv_d, str):
+                inv_d = {"type": inv_d, "amount": 0.0, "quantity": 0.0}
+            if not isinstance(inv_d, dict) or not inv_d.get("type"):
+                raise ValueError(f"Investment {inv_name!r} of the account {acc_name!r} must have a type")
+            try:
+                inv_type = InvestmentType(inv_d["type"])
+            except ValueError:
+                raise ValueError(
+                    f"Investment {inv_name!r} of the account {acc_name!r} has an unknown type: "
+                    f"{inv_d['type']!r} (must be one of {[t.value for t in InvestmentType]})"
+                ) from None
+            investments[inv_name] = {
+                "investment": Investment(name=inv_name, type=inv_type),
+                "total_amount": number_of(inv_name, inv_d, "amount"),
+                "total_quantity": number_of(inv_name, inv_d, "quantity"),
+            }
+        return investments
 
 
 @dataclass

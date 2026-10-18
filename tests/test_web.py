@@ -747,6 +747,19 @@ class TestApi:
         }
 
 
+class TestInvestments:
+    def test_investment_accounts_are_loaded(self, settings, tmp_path):
+        text = settings.accounts_path.read_text(encoding="utf-8")
+        settings.accounts_path.write_text(
+            text.replace("liability:\n", "  Br:\n    description: Broker\nliability:\n"), encoding="utf-8"
+        )
+        path = tmp_path / "investment.yaml"
+        path.write_text("Br:\n  T:\n    type: stock\n    amount: 10\n    quantity: 1\n", encoding="utf-8")
+        accounts = LedgerStore(replace(settings, investments_path=path)).load().accounts
+        assert accounts["Br"].investments["T"]["total_quantity"] == 1.0
+        assert accounts["Br"].initial_amount == 10.0
+
+
 class TestInternalResultTypes:
     @pytest.fixture
     def settings(self, settings):

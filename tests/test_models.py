@@ -6,10 +6,12 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from pledger.enums import AccountType, MovementType
+from pledger.enums import AccountType, InvestmentType, MovementType
 from pledger.models import (
     Account,
     Currency,
+    Investment,
+    InvestmentAccount,
     Movement,
     MovementBase,
     ResultType,
@@ -302,6 +304,126 @@ class TestMovementBase:
             MovementBase("Food", "", accounts["Eq"], None, result_types[1], internal=True)
         with pytest.raises(ValueError, match="result type"):
             MovementBase("Initial (L)", "", accounts["Eq"], None, None, internal=True)
+
+
+INVESTMENTS_YAML = """\
+Br:
+  BOND:
+    type: private_bond
+    amount: 1000.5
+    quantity: 10
+  T:
+    type: stock
+    amount: 200
+    quantity: 2.5
+  EUR: forex
+"""
+
+
+class TestInvestmentAccount:
+    @pytest.fixture
+    def paths(self, tmp_path, accounts_yaml, currencies_yaml):
+        text = Path(accounts_yaml).read_text(encoding="utf-8")
+        text = text.replace("liability:\n", "  Br:\n    description: Broker\nliability:\n")
+        Path(accounts_yaml).write_text(text, encoding="utf-8")
+        investments = tmp_path / "investment.yaml"
+        investments.write_text(INVESTMENTS_YAML, encoding="utf-8")
+        return accounts_yaml, currencies_yaml, str(investments)
+
+    @pytest.fixture
+    def broker(self, currencies) -> InvestmentAccount:
+        return InvestmentAccount(
+            "Br", "Broker", AccountType.ASSET, currencies["ARS"], 0.0,
+            investments={
+                "T": {"investment": Investment("T", "stock"), "total_amount": 200.0, "total_quantity": 2.5},
+            },
+        )
+
+    def test_load_yaml(self, paths):
+        accounts_yaml, currencies_yaml, investments_yaml = paths
+        accounts = Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml), investments_yaml)
+        br = accounts["Br"]
+        assert isinstance(br, InvestmentAccount) and br.acc_type == AccountType.ASSET
+        assert br.initial_amount == 1200.5
+        assert br.investments["BOND"] == {
+            "investment": Investment("BOND", "private_bond"), "total_amount": 1000.5, "total_quantity": 10.0,
+        }
+        assert br.investments["T"]["investment"].type is InvestmentType.STOCK
+        assert br.investments["EUR"] == {
+            "investment": Investment("EUR", InvestmentType.FOREX), "total_amount": 0.0, "total_quantity": 0.0,
+        }
+        assert not any(isinstance(a, InvestmentAccount) for n, a in accounts.items() if n != "Br")
+
+    def test_load_yaml_without_investments(self, paths):
+        accounts_yaml, currencies_yaml, _ = paths
+        with pytest.raises(ValueError, match="'Br' must have an initial_amount"):
+            Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml))
+
+    @pytest.mark.parametrize(
+        ("old", "new", "message"),
+        [
+            ("  EUR: forex\n", "  EUR: forex\nNope: {}\n", r"not in the accounts YAML: \['Nope'\]"),
+            ("  EUR: forex\n", "  EUR: forex\nCc: {}\n", "'Cc' must be an asset account"),
+            ("    quantity: 10\n", "    quantity: -1\n", "cannot be negative"),
+            ("    quantity: 10\n", "    quantity: ten\n", "quantity must be a number"),
+            ("    amount: 200\n", "", "amount must be a number"),
+            ("    type: stock\n", "", "'T' of the account 'Br' must have a type"),
+            ("    type: stock\n", "    type: crypto\n", "'T' of the account 'Br' has an unknown type: 'crypto'"),
+            ("  EUR: forex\n", "  EUR: cash\n", "'EUR' of the account 'Br' has an unknown type: 'cash'"),
+        ],
+    )
+    def test_load_yaml_rejects_invalid(self, paths, old, new, message):
+        accounts_yaml, currencies_yaml, investments_yaml = paths
+        text = Path(investments_yaml).read_text(encoding="utf-8")
+        assert old in text
+        Path(investments_yaml).write_text(text.replace(old, new, 1), encoding="utf-8")
+        with pytest.raises(ValueError, match=message):
+            Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml), investments_yaml)
+
+    def test_load_yaml_rejects_initial_amount(self, paths):
+        accounts_yaml, currencies_yaml, investments_yaml = paths
+        text = Path(accounts_yaml).read_text(encoding="utf-8")
+        text = text.replace("    description: Broker\n", "    description: Broker\n    initial_amount: 5\n")
+        Path(accounts_yaml).write_text(text, encoding="utf-8")
+        with pytest.raises(ValueError, match="Investment account 'Br' must not have an initial_amount"):
+            Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml), investments_yaml)
+
+    def test_add_investment(self, broker):
+        broker.add_investment(Investment("T", "stock"), 100.0, 1.5)
+        assert broker.investments["T"]["total_amount"] == 300.0
+        assert broker.investments["T"]["total_quantity"] == 4.0
+        broker.add_investment(Investment("T", "stock"), -300.0, -4.0)
+        assert broker.investments["T"]["total_quantity"] == 0.0
+
+        broker.add_investment(Investment("BOND", "private_bond"), 50.0, 5.0)
+        assert broker.investments["BOND"] == {
+            "investment": Investment("BOND", "private_bond"), "total_amount": 50.0, "total_quantity": 5.0,
+        }
+
+    def test_quantity_never_drops_below_zero(self, broker, currencies):
+        with pytest.raises(ValueError, match="cannot be negative"):
+            broker.add_investment(Investment("T", "stock"), -1.0, -2.6)
+        assert broker.investments["T"]["total_quantity"] == 2.5  # unchanged
+        with pytest.raises(ValueError, match="cannot be negative"):
+            broker.add_investment(Investment("NEW", "stock"), 0.0, -1.0)
+        assert "NEW" not in broker.investments
+        broker.add_investment(Investment("T", "stock"), 0.0, -2.5 - 1e-12)  # float noise
+        assert broker.investments["T"]["total_quantity"] == 0.0
+        with pytest.raises(ValueError, match="cannot be negative"):
+            InvestmentAccount(
+                "Br", "Broker", AccountType.ASSET, currencies["ARS"], 0.0,
+                investments={"T": {"investment": Investment("T", "stock"),
+                                   "total_amount": 0.0, "total_quantity": -1.0}},
+            )
+
+    def test_investment_type_is_an_enum(self):
+        assert Investment("T", "stock").type is InvestmentType.STOCK
+        with pytest.raises(ValueError, match="'crypto' is not a valid InvestmentType"):
+            Investment("T", "crypto")
+
+    def test_investment_type_must_match(self, broker):
+        with pytest.raises(ValueError, match="is a stock, not a mutual_fund"):
+            broker.add_investment(Investment("T", "mutual_fund"), 1.0, 1.0)
 
 
 class TestResultType:

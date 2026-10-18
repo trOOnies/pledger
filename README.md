@@ -21,19 +21,26 @@ The month filter is shared by Ledger, Accounts and Charts (remembered in a cooki
 make serve     # http://127.0.0.1:8000 (API docs at /docs)
 ```
 
-It reads `info/accounts.yaml`, `info/result_types.yaml`, `info/ledger.csv` and
+It reads `info/accounts.yaml`, `info/result_types.yaml`, `info/ledger.csv`,
 `info/currencies.yaml` (with each other currency's rates in `info/currencies/<NAME>.csv`)
-from the current directory. Override with `PLEDGER_ACCOUNTS`, `PLEDGER_BASE_MOVEMENTS`,
-`PLEDGER_LEDGER` and `PLEDGER_CURRENCIES`. The CSV stays the source of truth: adding a movement appends one line,
+and, if present, `info/investment.yaml` from the current directory. Override with
+`PLEDGER_ACCOUNTS`, `PLEDGER_BASE_MOVEMENTS`, `PLEDGER_LEDGER`, `PLEDGER_CURRENCIES` and
+`PLEDGER_INVESTMENTS`. The CSV stays the source of truth: adding a movement appends one line,
 deleting removes one line, and the rest of the file is left byte-for-byte as it was.
 New accounts and base movements are inserted at the end of their section in the YAML files
 (gains and losses under their result type, transfers under `transfer`),
 leaving the rest of each file as it was.
 
-Every account but the equity ones must set an `initial_amount` (equity accounts must not).
+Every account but the equity and investment ones must set an `initial_amount` (those must not).
 Accounts also take optional `currency` (the base currency by default), `is_liquid`
 (`false`) and `initial_date` (the first date of the ledger) keys; the
 Accounts tab groups their balances by currency or by liquidity.
+
+Investment accounts are the asset accounts listed as top-level keys in `investment.yaml`,
+each mapping its investments to their `type`, initial `amount` and initial `quantity`, or
+just to their type (with both at 0). The type is one of `public_bond`, `private_bond`,
+`mutual_fund`, `etf`, `forex`, `stock`, `derivative` and `fixed_term`. The account's
+initial amount is the sum of those amounts. A quantity can't go below 0.
 
 A base movement is a dict (`description` and optional fixed `debit`/`credit` accounts) or
 just its description. The top-level `internal` key mirrors the rest of the file (result

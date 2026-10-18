@@ -19,6 +19,18 @@ class AccountType(str, Enum):
     EQUITY = "equity"
 
 
+class InvestmentType(str, Enum):
+    """Type of investment."""
+    PUBLIC_BOND = "public_bond"
+    PRIVATE_BOND = "private_bond"
+    MUTUAL_FUND = "mutual_fund"
+    ETF = "etf"
+    FOREX = "forex"
+    STOCK = "stock"
+    DERIVATIVE = "derivative"
+    FIXED_TERM = "fixed_term"
+
+
 class MovementType(str, Enum):
     """Type of movement based on equity side."""
     GAIN = "gain"
