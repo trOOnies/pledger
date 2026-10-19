@@ -19,7 +19,7 @@ shows the composition of assets and liabilities, gains and losses by result type
 statement, equity over time and, at each month end, debt (the liabilities) over equity, net
 liquidity (liquid assets minus liquid liabilities) over equity, and the share of each
 currency in the assets. The Work tab charts the gross and net salary of each month (0 for
-the months without a job). The Help page explains the concepts for everyday users.
+the months without a job), each in its own color. The Help page explains the concepts for everyday users.
 The month filter is shared by Ledger, Accounts and Charts (remembered in a cookie).
 
 ```sh
@@ -49,14 +49,27 @@ just to their type (with both at 0). The type is one of `public_bond`, `private_
 initial amount is the sum of those amounts. A quantity can't go below 0.
 
 Debt accounts are the liability accounts listed as top-level keys in `creditors.yaml`, each
-mapping the people we have debts with to the initial amount: positive if we owe them,
-negative if they owe us. The account's initial amount is their sum, and its balance can
-go below 0 (we are owed more than we owe). The ledger movements with a debt account on
-either side add to the person named in their `comment` (as a whole word, ignoring case;
+with up to three sections, `people`, `services` and `companies`, mapping who we have debts
+with to the initial amount: positive if we owe them, negative if they owe us. A name can
+only be in one section of an account.
+
+```yaml
+De:
+  people:
+    Dad: 0.00
+  services:
+    Rent: 0.00
+  companies: null
+```
+
+Every company of `work.csv` is a company of every debt account, with an initial amount of
+0 unless its `companies` section sets one (it can also list companies not in the work
+history). The account's initial amount is the sum of its initial amounts, and its balance
+can go below 0 (we are owed more than we owe). The ledger movements with a debt account on
+either side add to whoever is named in their `comment` (as a whole word, ignoring case;
 the earliest name there, and the longest one if several start there): a credit is more
-that we owe them, a debit less. The Debt tab shows the movements naming no one as
-unassigned. The companies of the Work tab are added to every debt account (with 0) when
-the app starts and when a month with a new company is saved.
+that we owe them, a debit less. The Debt tab lists people, services and companies apart,
+and the movements naming no one as unassigned.
 
 A base movement is a dict (`description` and optional fixed `debit`/`credit` accounts) or
 just its description. A side set to `INVESTMENT` or `DEBT` (reserved names) takes any

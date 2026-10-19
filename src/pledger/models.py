@@ -14,7 +14,13 @@ import pandas as pd
 from yaml import safe_load
 
 from pledger.code.models import assert_accounts
-from pledger.enums import AccountType, InvestmentType, LedgerSide, MovementType
+from pledger.enums import (
+    AccountType,
+    CreditorKind,
+    InvestmentType,
+    LedgerSide,
+    MovementType,
+)
 
 
 def _load_yaml(path: str) -> dict:
@@ -198,6 +204,7 @@ class Account:
         other_currencies: dict[str, Currency] | None = None,
         investments_path: str | None = None,
         creditors_path: str | None = None,
+        companies: list[str] | None = None,
     ) -> dict[str, Account]:
         """
         Load Accounts from YAML path. An account without a `currency` is in the
@@ -207,7 +214,9 @@ class Account:
         Investment accounts are the asset accounts listed in the investments YAML
         (if given), and debt accounts the liability accounts listed in the creditors
         YAML (if given). They must not set an `initial_amount` either: theirs is the
-        sum of the initial amounts of their investments or creditors.
+        sum of the initial amounts of their investments or creditors. Every debt
+        account has the `companies` (of the work history), with no initial debt
+        unless its `companies` section sets one.
         """
         data = _load_yaml(path)
         investments_data = (_load_yaml(investments_path) if investments_path else None) or {}
@@ -284,7 +293,7 @@ class Account:
                     fields["initial_amount"] = sum(i["total_amount"] for i in investments.values())
                     accounts[name] = InvestmentAccount(**fields, investments=investments)
                 elif name in creditors_data:
-                    creditors = DebtAccount.creditors_from_dict(name, creditors_data[name] or {})
+                    creditors = DebtAccount.creditors_from_dict(name, creditors_data[name] or {}, companies)
                     fields["initial_amount"] = sum(c.amount for c in creditors.values())
                     accounts[name] = DebtAccount(**fields, creditors=creditors)
                 else:
@@ -396,6 +405,7 @@ class Creditor:
 
     name: str
     amount: float
+    kind: CreditorKind = CreditorKind.PERSON
 
     @property
     def is_creditor(self) -> bool:
@@ -454,17 +464,52 @@ class DebtAccount(Account):
         """The ones that owe us."""
         return {n: c for n, c in self.creditors.items() if c.is_debtor}
 
+    def get_kind(self, kind: CreditorKind) -> dict[str, Creditor]:
+        """The people, services or companies."""
+        return {n: c for n, c in self.creditors.items() if c.kind == kind}
+
     @staticmethod
-    def creditors_from_dict(acc_name: str, data: dict) -> dict[str, Creditor]:
-        """Creditors of an account from its creditors YAML dict (name: initial debt)."""
+    def creditors_from_dict(
+        acc_name: str, data: dict, companies: list[str] | None = None
+    ) -> dict[str, Creditor]:
+        """
+        Creditors of an account from its creditors YAML dict, a section per kind
+        (`people`, `services`, `companies`) of name: initial debt. The `companies`
+        missing from its section are added with no initial debt.
+        """
+        if not isinstance(data, dict):
+            raise ValueError(f"The creditors of the account {acc_name!r} must be a mapping")  # noqa: TRY004 (a bad config value)
+        unknown = sorted(str(k) for k in set(data) - {k.value for k in CreditorKind})
+        if unknown:
+            raise ValueError(
+                f"The creditors of the account {acc_name!r} have unknown sections {unknown} "
+                f"(must be {[k.value for k in CreditorKind]})"
+            )
         creditors = {}
-        for name, amount in data.items():
-            name = str(name)  # YAML keys may be numbers
-            if isinstance(amount, bool) or not isinstance(amount, (int, float)):
-                raise ValueError(  # noqa: TRY004 (a bad config value)
-                    f"Creditor {name!r} of the account {acc_name!r} amount must be a number: {amount!r}"
+        for kind in CreditorKind:
+            section = data.get(kind.value) or {}
+            if not isinstance(section, dict):
+                raise ValueError(f"The {kind.value} of the account {acc_name!r} must be a mapping of name: amount")  # noqa: TRY004 (a bad config value)
+            for name, amount in section.items():
+                name = str(name)  # YAML keys may be numbers
+                if isinstance(amount, bool) or not isinstance(amount, (int, float)):
+                    raise ValueError(  # noqa: TRY004 (a bad config value)
+                        f"Creditor {name!r} of the account {acc_name!r} amount must be a number: {amount!r}"
+                    )
+                if name in creditors:
+                    raise ValueError(
+                        f"Creditor {name!r} of the account {acc_name!r} is in both "
+                        f"{creditors[name].kind.value} and {kind.value}"
+                    )
+                creditors[name] = Creditor(name=name, amount=float(amount), kind=kind)
+        for name in companies or []:
+            if name not in creditors:
+                creditors[name] = Creditor(name=name, amount=0.0, kind=CreditorKind.COMPANY)
+            elif creditors[name].kind != CreditorKind.COMPANY:
+                raise ValueError(
+                    f"Creditor {name!r} of the account {acc_name!r} is a company of the work "
+                    f"history, but it is in {creditors[name].kind.value}"
                 )
-            creditors[name] = Creditor(name=name, amount=float(amount))
         return creditors
 
 

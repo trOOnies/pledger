@@ -324,7 +324,7 @@ section.panel > .msg, .panel > .msg.warn { margin-bottom: .75rem; }
 .line-chart svg * { vector-effect: non-scaling-stroke; }
 .line-chart .grid { stroke: var(--border); stroke-width: 1; }
 .line-chart .axis { stroke: var(--muted); stroke-width: 1; opacity: .5; }
-.line-chart .line { fill: none; stroke: var(--series-asset); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.line-chart .line { fill: none; stroke: var(--line, var(--series-asset)); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .line-chart .crosshair { stroke: var(--muted); stroke-width: 1; }
 .line-chart .area { stroke: var(--surface); stroke-width: 2; stroke-linejoin: round; }
 .tip-rows { font-size: .8rem; }
@@ -333,7 +333,7 @@ section.panel > .msg, .panel > .msg.warn { margin-bottom: .75rem; }
 .legend .swatch { width: 10px; height: 10px; border-radius: 2px; }
 .line-chart .dot {
   position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%;
-  background: var(--series-asset); border: 2px solid var(--surface); pointer-events: none;
+  background: var(--line, var(--series-asset)); border: 2px solid var(--surface); pointer-events: none;
 }
 .line-chart .crosshair, .line-chart .hover-dot, .line-chart .tooltip { visibility: hidden; }
 .line-chart.hover .crosshair, .line-chart.hover .hover-dot, .line-chart.hover .tooltip { visibility: visible; }
@@ -347,7 +347,7 @@ section.panel > .msg, .panel > .msg.warn { margin-bottom: .75rem; }
 .tip-value { font-weight: 600; }
 .tip-change { font-size: .8rem; }
 .statement tbody tr:hover { background: var(--bg); }
-.statement tfoot th { position: static; color: var(--text); border-top: 2px solid var(--border); font-size: inherit; }
+tfoot th { position: static; color: var(--text); border-top: 2px solid var(--border); font-size: inherit; }
 .chart-table { margin-top: .75rem; }
 .chart-table summary { cursor: pointer; color: var(--muted); }
 .chart-table .table-wrap { max-height: 50vh; margin-top: .5rem; }

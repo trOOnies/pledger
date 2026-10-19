@@ -873,7 +873,7 @@ class TestInternalResultTypes:
         text = settings.accounts_path.read_text()
         settings.accounts_path.write_text(text.replace("equity:\n", "  Db:\n    description: Debts\nequity:\n"))
         path = tmp_path / "creditors.yaml"
-        path.write_text("Db:\n  Ann: 50\n  Bob: -80\n")
+        path.write_text("Db:\n  people:\n    Ann: 50\n    Bob: -80\n")
         settings = replace(settings, creditors_path=path)
         assert self.initial_rows(settings)[1:] == [(-2, "2026-01-01", "Initial (G)", "Db", "30.0", "Eq")]
 
@@ -991,7 +991,7 @@ class TestDebtSides:
             text.replace("equity:\n", "  De:\n    description: Debts\nequity:\n"), encoding="utf-8"
         )
         path = tmp_path / "creditors.yaml"
-        path.write_text("De:\n  Dad: 0\n", encoding="utf-8")
+        path.write_text("De:\n  people:\n    Dad: 0\n", encoding="utf-8")
         with settings.base_movements_path.open("a") as f:
             f.write("  Borrow:\n    description: Borrow money\n    credit: DEBT\n")
         return replace(settings, creditors_path=path)
@@ -1047,7 +1047,7 @@ class TestDebtAccounts:
             encoding="utf-8",
         )
         path = tmp_path / "creditors.yaml"
-        path.write_text("Cc:\n  Dad: 10\n", encoding="utf-8")
+        path.write_text("Cc:\n  people:\n    Dad: 10\n", encoding="utf-8")
         accounts = LedgerStore(replace(settings, creditors_path=path)).load().accounts
         assert accounts["Cc"].creditors["Dad"].is_creditor
         assert accounts["Cc"].initial_amount == 10.0
@@ -1111,7 +1111,10 @@ class TestDebtPage:
             encoding="utf-8",
         )
         path = tmp_path / "creditors.yaml"
-        path.write_text("Cc:\n  Dad: 100\n  Bank: 50.5\n  Ana: -30\n  Leo: 0\n", encoding="utf-8")
+        path.write_text(
+            "Cc:\n  people:\n    Dad: 100\n    Ana: -30\n    Leo: 0\n  services:\n    Bank: 50.5\n  companies:\n",
+            encoding="utf-8",
+        )
         return replace(settings, creditors_path=path)
 
     @pytest.fixture
@@ -1125,7 +1128,7 @@ class TestDebtPage:
         assert card_labels(r.text) == ["We owe", "Owed to us", "Net debt"]
         cards = r.text.split('<div class="cards">')[1].split("</div>\n  </div>")[0]
         assert "$150.50" in cards and "$30.00" in cards and "$120.50" in cards
-        assert 'data-sortable="debts"' in r.text
+        assert 'data-sortable="debts-people"' in r.text and 'data-sortable="debts-services"' in r.text
         for name, role in (("Dad", "Creditor"), ("Ana", "Debtor"), ("Leo", "Settled")):
             assert f"<strong>{name}</strong></td>\n        <td>{role}</td>" in r.text
 
@@ -1156,7 +1159,8 @@ class TestDebtPage:
         assert card_labels(r.text) == ["We owe", "Owed to us", "Unassigned", "Net debt"]
         cards = r.text.split('<div class="cards">')[1].split("</div>\n  </div>")[0]
         assert "$120.00" in cards and "$1,020.00" in cards and "-$5.00" in cards and "-$905.00" in cards
-        assert "<strong>(no one)</strong></td>\n        <td>Unassigned</td>" in r.text
+        accounts = r.text.split("<h2>Debt accounts</h2>")[1]
+        assert 'data-sort="-5.0">-$5.00</td>' in accounts
         assert "<strong>Bank</strong></td>\n        <td>Debtor</td>" in r.text
 
 
@@ -1401,54 +1405,63 @@ def test_salary_charts(settings, tmp_path):
     ]
     assert gross[2]["change_text"] == "No job" and gross[0]["change_text"] == "Acme · Acme Jr"
     assert gross[2]["y"] == 100  # the no-job month is at 0, on the axis
+    # Each salary in its own color
+    assert re.findall(r'style="--line: var\((--series-\d)\)"', r.text) == ["--series-1", "--series-2"]
 
 
 def test_no_salary_charts_without_months(client):
     assert "Gross salary <small>" not in client.get("/work").text
 
 
-class TestWorkCreditors:
+class TestDebtKinds:
     @pytest.fixture
     def settings(self, settings, tmp_path):
         text = settings.accounts_path.read_text(encoding="utf-8")
         settings.accounts_path.write_text(
-            text.replace("    description: Credit card\n    initial_amount: 0\n", "    description: Credit card\n")
-            .replace("equity:\n", "  De:\n    description: Debts\nequity:\n"),
+            text.replace("    description: Credit card\n    initial_amount: 0\n", "    description: Credit card\n"),
             encoding="utf-8",
         )
         creditors = tmp_path / "creditors.yaml"
-        creditors.write_text("# people\nCc:\n  Dad: 100\n  Acme: -5\nDe:\n", encoding="utf-8")
+        creditors.write_text(
+            "Cc:\n  people:\n    Dad: 100\n  services:\n    Gas: 20\n  companies:\n    Acme: -5\n    Old Co: 3\n",
+            encoding="utf-8",
+        )
         work = tmp_path / "work.csv"
         work.write_text(WORK_CSV, encoding="utf-8")
         return replace(settings, creditors_path=creditors, work_path=work)
 
-    def text(self, settings):
-        return settings.creditors_path.read_text(encoding="utf-8")
+    def test_companies_come_from_the_work_history(self, settings):
+        before = settings.creditors_path.read_text(encoding="utf-8")
+        cc = LedgerStore(settings).load().accounts["Cc"]
+        assert {n: (c.kind.value, c.amount) for n, c in cc.creditors.items()} == {
+            "Dad": ("people", 100), "Gas": ("services", 20),
+            "Acme": ("companies", -5), "Old Co": ("companies", 3), "Globex": ("companies", 0),
+        }
+        assert cc.initial_amount == 118
+        assert settings.creditors_path.read_text(encoding="utf-8") == before  # never written
 
-    def test_companies_are_added_at_startup(self, settings):
-        with TestClient(create_app(settings)) as client:
-            assert client.get("/debt").status_code == 200
-        assert self.text(settings) == (
-            "# people\nCc:\n  Dad: 100\n  Acme: -5\n  Globex: 0.0\nDe:\n  Globex: 0.0\n  Acme: 0.0\n"
-        )
-        with TestClient(create_app(settings)):  # nothing missing now
-            pass
-        assert self.text(settings).count("Globex") == 2
-
-    def test_startup_without_creditors_or_with_broken_files(self, settings):
-        settings.ledger_path.write_text("nope", encoding="utf-8")
-        before = self.text(settings)
-        with TestClient(create_app(settings)):
-            pass
-        assert self.text(settings) == before
-        with TestClient(create_app(replace(settings, creditors_path=None))):
-            pass
-
-    def test_new_companies_are_added(self, settings):
+    def test_new_companies_of_the_work_history(self, settings):
         store = LedgerStore(settings)
-        assert store.add_creditors(["Acme"]) == [("De", "Acme")]
         store.save_month("2026-02", "Initech", "Dev", "10", "8")
-        store.save_month("2026-03", "Initech", "Dev", "10", "8")
-        assert self.text(settings).count("Initech: 0.0") == 2
-        accounts = store.load().accounts
-        assert accounts["Cc"].creditors["Initech"].amount == 0 and "Initech" in accounts["De"].creditors
+        with settings.ledger_path.open("a", encoding="utf-8") as f:
+            f.write("2026-02-05;Card fee;Eq;7;Cc;initech bonus\n")
+        assert store.load().accounts["Cc"].creditors["Initech"].amount == 7
+
+    def test_a_company_cannot_be_another_kind(self, settings):
+        text = settings.creditors_path.read_text(encoding="utf-8")
+        settings.creditors_path.write_text(text.replace("    Gas: 20\n", "    Gas: 20\n    Globex: 1\n"), encoding="utf-8")
+        with pytest.raises(LedgerDataError, match="'Globex' of the account 'Cc' is a company of the work history"):
+            LedgerStore(settings).load()
+
+    def test_debt_page_by_kind(self, settings):
+        r = TestClient(create_app(settings)).get("/debt")
+        assert r.status_code == 200
+        for title, count in (("People", 1), ("Services", 1), ("Companies", 3)):
+            assert f"<h2>{title} <small>{count}</small></h2>" in r.text
+        companies = r.text.split("<h2>Companies")[1].split("</table>")[0]
+        assert "<strong>Globex</strong></td>\n        <td>Settled</td>" in companies
+        assert "<strong>Dad</strong>" not in companies
+        we_owe = r.text.split("We owe <span")[1].split("Owed to us <span")[0]
+        assert '<span class="bar-name">Services</span>' in we_owe and '<span class="bar-name">Gas</span>' in we_owe
+        owed = r.text.split("Owed to us <span")[1].split("<h2>People")[0]
+        assert '<span class="bar-name">Companies</span>' in owed and "People</span>" not in owed

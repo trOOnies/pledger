@@ -180,6 +180,7 @@ class LedgerStore:
             accounts = Account.load_yaml(
                 str(s.accounts_path), base_currency, other_currencies,
                 _existing(s.investments_path), _existing(s.creditors_path),
+                list(self.load_work().companies),
             )
             base_movements, result_types = MovementBase.load_yaml(
                 str(s.base_movements_path), accounts
@@ -377,24 +378,6 @@ class LedgerStore:
             fields["credit"] = credit
         self._add_yaml_entry(self.settings.base_movements_path, section, name, fields)
 
-    def add_creditors(self, names) -> list[tuple[str, str]]:
-        """
-        Add the people missing from each debt account to the creditors YAML, with
-        no debt (0). Returns the (account, name) pairs added.
-        """
-        path = self.settings.creditors_path
-        if not _existing(path):
-            return []
-        accounts = [a for a in self.load().accounts.values() if isinstance(a, DebtAccount)]
-        added = [(a.name, name) for a in accounts for name in dict.fromkeys(names) if name not in a.creditors]
-        if added:
-            self._add_yaml_entries(path, [((acc,), name, 0.0) for acc, name in added])
-        return added
-
-    def sync_work_creditors(self) -> list[tuple[str, str]]:
-        """Add the companies of the work history to each debt account, if missing."""
-        return self.add_creditors(self.load_work().companies)
-
     def _add_yaml_entry(
         self, path: Path, section: tuple[str, ...], name: str, fields: dict
     ) -> None:
@@ -403,21 +386,13 @@ class LedgerStore:
         rest of the file (comments, extra keys, ordering) is left as is. Rolls
         back if the files no longer load.
         """
-        self._add_yaml_entries(path, [(section, name, fields)])
-
-    def _add_yaml_entries(self, path: Path, entries: list[tuple[tuple[str, ...], str, object]]) -> None:
-        """Insert many entries like _add_yaml_entry, all of them or none."""
         before = path.read_bytes().decode("utf-8")
-        text = before
-        for section, name, fields in entries:
-            text = _insert_yaml_entry(text, section, name, fields)
-        _atomic_write(path, text)
+        _atomic_write(path, _insert_yaml_entry(before, section, name, fields))
         try:
             self.load()
         except LedgerDataError as e:
             _atomic_write(path, before)
-            names = ", ".join(repr(name) for _, name, _ in entries)
-            raise ValueError(f"Could not add {names}: {e}") from None
+            raise ValueError(f"Could not add {name!r}: {e}") from None
 
     def load_work(self) -> Work:
         """
@@ -452,8 +427,7 @@ class LedgerStore:
         Save a month of the work history: replacing it if it is already there, else
         adding it right after the last month or right before the first one, so there
         are no missing months. Without a company, it is a gap (no job). Returns
-        whether the month is new. Creates the work CSV if missing. A new company is
-        added to each debt account.
+        whether the month is new. Creates the work CSV if missing.
         """
         path = self.settings.work_path
         if path is None:
@@ -476,7 +450,6 @@ class LedgerStore:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(";".join(WORK_COLUMNS) + "\n", encoding="utf-8")
             work = self.load_work()
-        new_company = entry.company is not None and entry.company not in work.companies
         months = [m.month for m in work.months]
         if entry.month in months:
             index = months.index(entry.month)
@@ -525,11 +498,6 @@ class LedgerStore:
         except LedgerDataError as e:
             _atomic_write(path, before)
             raise ValueError(f"Could not save {entry.month}: {e}") from None
-        if new_company:
-            try:
-                self.add_creditors([entry.company])
-            except (LedgerDataError, ValueError):
-                pass  # the month is saved; the company is added at the next startup
         return not old_row
 
     def delete_month(self, index: int, fingerprint: str | None = None) -> None:
@@ -677,7 +645,7 @@ def _initial_rows(
 
 def _apply_debts(accounts: dict[str, Account], rows: DataFrame) -> None:
     """
-    Add the CSV movements of the debt accounts to the people named in their comments:
+    Add the CSV movements of the debt accounts to whoever is named in their comments:
     a credit is more that we owe them, a debit less. The initial movements are left
     out, as the initial amounts already come from the creditors YAML.
     """

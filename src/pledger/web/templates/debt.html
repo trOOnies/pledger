@@ -6,8 +6,9 @@
 <div class="panel">
   <h2>Debt</h2>
   <p class="muted">No debt accounts yet. List liability accounts in
-    <code>{{ settings.creditors_path or "creditors.yaml" }}</code>, each with the people you have
-    debts with and the amount: positive if you owe them, negative if they owe you.</p>
+    <code>{{ settings.creditors_path or "creditors.yaml" }}</code>, each with the <code>people</code>,
+    <code>services</code> and <code>companies</code> you have debts with and the amount: positive if you
+    owe them, negative if they owe you.</p>
 </div>
 {% else %}
 <div class="view">
@@ -21,45 +22,54 @@
   </div>
 
   <section class="panel">
-    <h2>Who</h2>
+    <h2>Who <small>by people, services and companies</small></h2>
     <div class="composition-pair">
       {{ bars("We owe", creditors, "liability", "We owe no one.", open=True) }}
       {{ bars("Owed to us", debtors, "asset", "No one owes us.", open=True) }}
     </div>
   </section>
 
+  <div class="charts-grid">
+  {% for k in kinds %}
   <div class="panel">
-    <h2>People</h2>
-    <table data-sortable="debts">
-      <thead><tr><th>Person</th><th>Role</th><th>Account</th><th class="num">Amount</th></tr></thead>
+    <h2>{{ k.title }} <small>{{ k.rows | length }}</small></h2>
+    <table data-sortable="debts-{{ k.kind }}">
+      <thead><tr><th>Name</th><th>Role</th>{% if multiple_accounts %}<th>Account</th>{% endif %}<th class="num">Amount</th></tr></thead>
       <tbody>
-      {% for p in people %}
+      {% for p in k.rows %}
       <tr>
         <td class="nowrap"><strong>{{ p.name }}</strong></td>
         <td>{{ p.role }}</td>
-        <td>{{ p.account }}</td>
+        {% if multiple_accounts %}<td>{{ p.account }}</td>{% endif %}
         <td class="num money {{ 'gain' if p.amount < 0 }}" data-sort="{{ p.amount }}">{{ p.amount | money }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="4" class="muted">No one in the debt accounts.</td></tr>
+      <tr><td colspan="{{ 4 if multiple_accounts else 3 }}" class="muted">No {{ k.title | lower }} in the debt accounts.</td></tr>
       {% endfor %}
       </tbody>
+      {% if k.rows %}
+      <tfoot><tr><th colspan="{{ 3 if multiple_accounts else 2 }}">Net</th><th class="num money {{ 'gain' if k.net < 0 }}">{{ k.net | money }}</th></tr></tfoot>
+      {% endif %}
     </table>
-    <p class="muted small">Positive amounts are what we owe; negative ones, what we are owed. The movements
-      of a debt account add to the person named in their comment; the ones naming no one are unassigned.</p>
+    {% if k.kind == "companies" %}<p class="muted small">The companies of the Work tab, at no initial debt unless set in <code>{{ settings.creditors_path.name if settings.creditors_path else "creditors.yaml" }}</code>.</p>{% endif %}
   </div>
+  {% endfor %}
+  </div>
+  <p class="muted small">Positive amounts are what we owe; negative ones, what we are owed. The movements
+    of a debt account add to whoever is named in their comment; the ones naming no one are unassigned.</p>
 
   <div class="panel">
     <h2>Debt accounts</h2>
     <table data-sortable="debt-accounts">
-      <thead><tr><th>Account</th><th>Description</th><th>Currency</th><th class="num">People</th><th class="num">Net debt</th></tr></thead>
+      <thead><tr><th>Account</th><th>Description</th><th>Currency</th>{% for title in accounts[0].counts %}<th class="num">{{ title }}</th>{% endfor %}<th class="num" title="Debt of the movements whose comment names no one">Unassigned</th><th class="num">Net debt</th></tr></thead>
       <tbody>
       {% for a in accounts %}
       <tr>
         <td class="nowrap"><strong>{{ a.name }}</strong></td>
         <td class="muted">{{ a.description }}</td>
         <td>{{ a.currency }}</td>
-        <td class="num">{{ a.people }}</td>
+        {% for n in a.counts.values() %}<td class="num">{{ n }}</td>{% endfor %}
+        <td class="num money {{ 'muted' if not a.unassigned }}" data-sort="{{ a.unassigned }}">{{ a.unassigned | money }}</td>
         <td class="num money {{ 'gain' if a.net < 0 }}" data-sort="{{ a.net }}">{{ a.net | money }}</td>
       </tr>
       {% endfor %}

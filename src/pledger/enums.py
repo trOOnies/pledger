@@ -31,6 +31,13 @@ class InvestmentType(str, Enum):
     FIXED_TERM = "fixed_term"
 
 
+class CreditorKind(str, Enum):
+    """Kind of creditor or debtor in a debt account: its section in the creditors YAML."""
+    PERSON = "people"
+    SERVICE = "services"
+    COMPANY = "companies"
+
+
 class MovementType(str, Enum):
     """Type of movement based on equity side."""
     GAIN = "gain"

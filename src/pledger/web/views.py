@@ -5,7 +5,13 @@ from __future__ import annotations
 import datetime as dt
 import math
 
-from pledger.enums import AccountType, InvestmentType, LedgerSide, MovementType
+from pledger.enums import (
+    AccountType,
+    CreditorKind,
+    InvestmentType,
+    LedgerSide,
+    MovementType,
+)
 from pledger.models import (
     SPECIAL_LABELS,
     DebtAccount,
@@ -188,34 +194,44 @@ def build_investments(snapshot: Snapshot) -> dict:
     }
 
 
+CREDITOR_KIND_LABELS = {
+    CreditorKind.PERSON: "People", CreditorKind.SERVICE: "Services", CreditorKind.COMPANY: "Companies",
+}
+
+
 def build_debts(snapshot: Snapshot) -> dict:
     """
-    The people in each debt account: the ones we owe (creditors) and the ones
-    that owe us (debtors), with what we owe and are owed as positive amounts,
-    plus the debt of the movements whose comment names no one (unassigned).
+    The people, services and companies in each debt account: the ones we owe
+    (creditors) and the ones that owe us (debtors), with what we owe and are owed
+    as positive amounts, plus the debt of the movements whose comment names no
+    one (unassigned).
     """
     accounts = [a for a in snapshot.accounts.values() if isinstance(a, DebtAccount)]
-    people = [
-        {
-            "account": a.name,
-            "name": c.name,
-            "role": "Creditor" if c.is_creditor else "Debtor" if c.is_debtor else "Settled",
-            "amount": c.amount,
-        }
-        for a in accounts
-        for c in a.creditors.values()
-    ] + [
-        {"account": a.name, "name": "(no one)", "role": "Unassigned", "amount": a.unassigned}
-        for a in accounts
-        if not math.isclose(a.unassigned, 0.0, abs_tol=1e-9)
-    ]
 
-    def by_account(people_of, sign: int) -> list[dict]:
+    def label(a: DebtAccount, name: str) -> str:
+        # Names are only unique within an account.
+        return f"{name} ({a.name})" if len(accounts) > 1 else name
+
+    def by_kind(people_of, sign: int) -> list[dict]:
         return grouped_composition({
-            a.name: {n: sign * c.amount for n, c in people_of(a).items()}
-            for a in accounts
-            if people_of(a)
+            title: {label(a, n): sign * c.amount for a in accounts for n, c in people_of(a).items() if c.kind == kind}
+            for kind, title in CREDITOR_KIND_LABELS.items()
+            if any(c.kind == kind for a in accounts for c in people_of(a).values())
         })
+
+    kinds = []
+    for kind, title in CREDITOR_KIND_LABELS.items():
+        rows = [
+            {
+                "account": a.name,
+                "name": c.name,
+                "role": "Creditor" if c.is_creditor else "Debtor" if c.is_debtor else "Settled",
+                "amount": c.amount,
+            }
+            for a in accounts
+            for c in a.get_kind(kind).values()
+        ]
+        kinds.append({"kind": kind.value, "title": title, "rows": rows, "net": sum(r["amount"] for r in rows)})
 
     we_owe = sum(c.amount for a in accounts for c in a.get_creditors().values())
     owed_to_us = -sum(c.amount for a in accounts for c in a.get_debtors().values())
@@ -226,18 +242,20 @@ def build_debts(snapshot: Snapshot) -> dict:
                 "name": a.name,
                 "description": a.description,
                 "currency": a.currency.name,
-                "people": len(a.creditors),
+                "counts": {title: len(a.get_kind(kind)) for kind, title in CREDITOR_KIND_LABELS.items()},
+                "unassigned": a.unassigned,
                 "net": sum(c.amount for c in a.creditors.values()) + a.unassigned,
             }
             for a in accounts
         ],
-        "people": people,
+        "kinds": kinds,
+        "multiple_accounts": len(accounts) > 1,
         "we_owe": we_owe,
         "owed_to_us": owed_to_us,
         "unassigned": unassigned,
         "net": we_owe - owed_to_us + unassigned,
-        "creditors": by_account(DebtAccount.get_creditors, 1),
-        "debtors": by_account(DebtAccount.get_debtors, -1),
+        "creditors": by_kind(DebtAccount.get_creditors, 1),
+        "debtors": by_kind(DebtAccount.get_debtors, -1),
     }
 
 

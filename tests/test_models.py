@@ -6,7 +6,13 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from pledger.enums import AccountType, InvestmentType, LedgerSide, MovementType
+from pledger.enums import (
+    AccountType,
+    CreditorKind,
+    InvestmentType,
+    LedgerSide,
+    MovementType,
+)
 from pledger.models import (
     DEBT,
     INVESTMENT,
@@ -546,9 +552,12 @@ class TestCreditor:
 
 CREDITORS_YAML = """\
 Cc:
-  Dad: 100
-  Mum: -150.5
-  Work: 0
+  people:
+    Dad: 100
+    Mum: -150.5
+  services:
+    Work: 0
+  companies:
 """
 
 
@@ -617,17 +626,24 @@ class TestDebtAccount:
         accounts = self.load(paths)
         cc = accounts["Cc"]
         assert isinstance(cc, DebtAccount) and cc.acc_type == AccountType.LIABILITY
-        assert cc.creditors == {"Dad": Creditor("Dad", 100.0), "Mum": Creditor("Mum", -150.5), "Work": Creditor("Work", 0.0)}
+        assert cc.creditors == {
+            "Dad": Creditor("Dad", 100.0), "Mum": Creditor("Mum", -150.5),
+            "Work": Creditor("Work", 0.0, CreditorKind.SERVICE),
+        }
+        assert list(cc.get_kind(CreditorKind.SERVICE)) == ["Work"]
         assert cc.initial_amount == -50.5
         assert not any(isinstance(a, DebtAccount) for n, a in accounts.items() if n != "Cc")
 
     @pytest.mark.parametrize(
         ("old", "new", "message"),
         [
-            ("  Work: 0\n", "  Work: 0\nNope: {}\n", r"creditors YAML has accounts not in the accounts YAML: \['Nope'\]"),
-            ("  Work: 0\n", "  Work: 0\nCa: {}\n", "Debt account 'Ca' must be a liability account"),
-            ("  Dad: 100\n", "  Dad: lots\n", "Creditor 'Dad' of the account 'Cc' amount must be a number"),
-            ("  Dad: 100\n", "  Dad:\n", "Creditor 'Dad' of the account 'Cc' amount must be a number"),
+            ("  companies:\n", "  companies:\nNope: {}\n", r"creditors YAML has accounts not in the accounts YAML: \['Nope'\]"),
+            ("  companies:\n", "  companies:\nCa: {}\n", "Debt account 'Ca' must be a liability account"),
+            ("    Dad: 100\n", "    Dad: lots\n", "Creditor 'Dad' of the account 'Cc' amount must be a number"),
+            ("    Dad: 100\n", "    Dad:\n", "Creditor 'Dad' of the account 'Cc' amount must be a number"),
+            ("  companies:\n", "  pets:\n", r"unknown sections \['pets'\]"),
+            ("  companies:\n", "  companies: 3\n", "The companies of the account 'Cc' must be a mapping"),
+            ("    Work: 0\n", "    Work: 0\n    Dad: 1\n", "'Dad' of the account 'Cc' is in both people and services"),
         ],
     )
     def test_load_yaml_rejects_invalid(self, paths, old, new, message):

@@ -1,7 +1,8 @@
-{# A line chart from views.line_chart. Each point of `points` adds its tooltip texts:
-   `label`, `value_text` and `change_text` (colored as a gain or loss if `change` is set). #}
-{% macro line_chart(chart, points, aria, money=True, change_money=True) %}
-<div class="line-chart" data-points='{{ points | tojson }}'>
+{# A line chart from views.line_chart, in the color of a categorical `series` slot. Each
+   point of `points` adds its tooltip texts: `label`, `value_text` and `change_text`
+   (colored as a gain or loss if `change` is set). #}
+{% macro line_chart(chart, points, aria, money=True, change_money=True, series=1) %}
+<div class="line-chart" data-points='{{ points | tojson }}' style="--line: var(--series-{{ series }})">
   <div class="y-axis" aria-hidden="true">
     {% for t in chart.y_ticks %}<span class="{{ 'money' if money }}" style="top: {{ t.y }}%">{{ t.label }}</span>{% endfor %}
   </div>

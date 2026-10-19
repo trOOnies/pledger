@@ -21,7 +21,7 @@
             "change_text": "No job" if p.month.is_gap else p.month.company ~ " · " ~ p.month.position,
           }] %}
         {% endfor %}
-        {{ line_chart(chart, ns.points, title ~ " per month from " ~ chart.points[0].month.month ~ " to " ~ chart.last.month.month ~ ", ending at " ~ (chart.last.value | money), change_money=False) }}
+        {{ line_chart(chart, ns.points, title ~ " per month from " ~ chart.points[0].month.month ~ " to " ~ chart.last.month.month ~ ", ending at " ~ (chart.last.value | money), change_money=False, series=loop.index) }}
       </section>
       {% endfor %}
     </div>
