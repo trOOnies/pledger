@@ -17,6 +17,7 @@ from pledger.models import (
     DebtAccount,
     InvestmentAccount,
     next_month,
+    rounds_to_zero,
     special_of,
 )
 from pledger.web.store import (
@@ -263,17 +264,18 @@ def build_debts(snapshot: Snapshot, month: str = "") -> dict:
                 "amount": a.unassigned,
                 "comments": sorted(
                     ((c or "(no comment)", v) for c, v in a.unassigned_comments.items()
-                     if not math.isclose(v, 0.0, abs_tol=1e-9)),
+                     if not rounds_to_zero(v)),
                     key=lambda cv: -abs(cv[1]),
                 ),
             }
             for a in accounts
-            if not math.isclose(a.unassigned, 0.0, abs_tol=1e-9)
+            if not rounds_to_zero(a.unassigned)
         ],
         "multiple_accounts": len(accounts) > 1,
         "we_owe": we_owe,
         "owed_to_us": owed_to_us,
         "unassigned": unassigned,
+        "has_unassigned": not rounds_to_zero(unassigned),
         "net": we_owe - owed_to_us + unassigned,
         "creditors": by_kind(DebtAccount.get_creditors, 1),
         "debtors": by_kind(DebtAccount.get_debtors, -1),

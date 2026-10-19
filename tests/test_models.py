@@ -690,6 +690,9 @@ class TestDebtAccount:
             (None, 5, True), (None, -5, True),
             (DebtRole.CREDITOR, 5, True), (DebtRole.CREDITOR, 0, True), (DebtRole.CREDITOR, -5, False),
             (DebtRole.DEBTOR, -5, True), (DebtRole.DEBTOR, 0, True), (DebtRole.DEBTOR, 5, False),
+            # Float residues showing as 0.00 are settled; a cent is not
+            (DebtRole.DEBTOR, 1.862645149230957e-09, True), (DebtRole.DEBTOR, 0.004, True),
+            (DebtRole.CREDITOR, -0.004, True), (DebtRole.DEBTOR, 0.01, False), (DebtRole.CREDITOR, -0.01, False),
         ],
     )
     def test_meets_expected(self, expected, amount, met):

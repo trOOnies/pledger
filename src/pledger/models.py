@@ -397,6 +397,11 @@ class InvestmentAccount(Account):
         return investments
 
 
+def rounds_to_zero(amount: float) -> bool:
+    """Whether an amount shows as 0.00: sums of many amounts leave tiny float residues."""
+    return round(amount, 2) == 0
+
+
 @dataclass
 class Creditor:
     """
@@ -411,13 +416,13 @@ class Creditor:
 
     @property
     def is_creditor(self) -> bool:
-        """We owe them."""
-        return self.amount > 1e-9
+        """We owe them (at least a cent)."""
+        return self.amount > 0 and not rounds_to_zero(self.amount)
 
     @property
     def is_debtor(self) -> bool:
-        """They owe us."""
-        return self.amount < -1e-9
+        """They owe us (at least a cent)."""
+        return self.amount < 0 and not rounds_to_zero(self.amount)
 
     @property
     def meets_expected(self) -> bool:
