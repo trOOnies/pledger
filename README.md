@@ -56,6 +56,9 @@ those there; the Accounts tab marks these accounts in its Special column. The to
 types, sharing their ids with the other ones, next to a `transfer` section); its base
 movements are reserved for pledger itself: they can't be picked for a new movement and
 their movements can't be deleted by hand, and its result types can't get new base movements. Balances and results don't use these yet.
+The internal gain `Initial (G)` and loss `Initial (L)` are required (with no fixed debit or
+credit account, respectively): a new asset or liability account records its initial amount
+with them, on its initial date.
 
 Amounts are shown with a `$` currency symbol and two decimals; set `PLEDGER_CURRENCY`
 (e.g. `ARS`) to use another one.

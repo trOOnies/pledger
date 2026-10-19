@@ -1,6 +1,7 @@
 """Tests for pledger.web."""
 
 import datetime as dt
+import re
 from dataclasses import replace
 from pathlib import Path
 
@@ -10,15 +11,31 @@ from fastapi.testclient import TestClient
 
 from pledger.models import DEBT, INVESTMENT
 from pledger.web.app import create_app
-from pledger.web.store import LedgerStore, Settings, _insert_yaml_entry, row_fingerprint
+from pledger.web.store import (
+    LedgerDataError,
+    LedgerStore,
+    Settings,
+    _insert_yaml_entry,
+    row_fingerprint,
+)
 from pledger.web.templating import money, quantity
 from pledger.web.views import build_charts, composition, equity_series, nice_ticks
 
 HTMX = {"HX-Request": "true"}
 
+# The internal base movements required to load the ledger
+INITIAL_YAML = (
+    "internal:\n  Init:\n    id: 3\n    long_name: Initial\n    description: d\n"
+    "    base_movements:\n      gain:\n        Initial (G): Initial balance\n"
+    "      loss:\n        Initial (L): Initial balance\n"
+)
+
 
 @pytest.fixture
 def settings(accounts_yaml, base_movements_yaml, ledger_csv, currencies_yaml) -> Settings:
+    # At the top, so that later appends extend the `transfer` section
+    path = Path(base_movements_yaml)
+    path.write_text(INITIAL_YAML + path.read_text())
     return Settings(
         Path(accounts_yaml), Path(base_movements_yaml), Path(ledger_csv), Path(currencies_yaml)
     )
@@ -78,8 +95,8 @@ class TestInternalBaseMovements:
     @pytest.fixture
     def settings(self, settings):
         # An internal transfer, with one movement at the end of the ledger
-        with settings.base_movements_path.open("a") as f:
-            f.write("internal:\n  transfer:\n    Adjust: Set by pledger\n")
+        path = settings.base_movements_path
+        path.write_text(path.read_text().replace("internal:\n", "internal:\n  transfer:\n    Adjust: Set by pledger\n", 1))
         with settings.ledger_path.open("a") as f:
             f.write("2026-01-05;Adjust;Bk;5;Ca;\n")
         return settings
@@ -252,10 +269,10 @@ class TestSetupStore:
         store = LedgerStore(settings)
         store.add_result_type(" Tax ", "Taxes", "Taxes paid")
         result_types = store.load().result_types
-        assert (result_types[3].name, result_types[3].long_name) == ("Tax", "Taxes")
+        assert (result_types[4].name, result_types[4].long_name) == ("Tax", "Taxes")
         data = yaml.safe_load(settings.base_movements_path.read_text())
         assert data["result_types"]["Tax"] == {
-            "id": 3, "long_name": "Taxes", "description": "Taxes paid",
+            "id": 4, "long_name": "Taxes", "description": "Taxes paid",
         }
         # Base movements can then be added under it
         store.add_base_movement("Income tax", "loss", "Income tax", result_type="Tax")
@@ -612,7 +629,7 @@ class TestCharts:
         losses = charts["losses"][0]["children"]
         assert [r["name"] for r in losses] == ["Food", "Card fee"]  # definition order, not size
         gains = charts["gains"]
-        assert [r["name"] for r in gains] == ["Operative", "Gifts"]  # result type id order
+        assert [r["name"] for r in gains] == ["Operative", "Gifts", "Initial"]  # result type id order
 
     def test_charts_list_everything_even_at_zero(self, settings):
         with settings.ledger_path.open("a") as f:
@@ -622,28 +639,28 @@ class TestCharts:
         assert [r["name"] for r in charts["assets"]] == ["Ca", "Bk"]
         assert [r["name"] for r in charts["liabilities"]] == ["Cc"]
         gains = charts["gains"]
-        assert [(r["name"], r["value"]) for r in gains] == [("Operative", 0), ("Gifts", 0)]
+        assert [(r["name"], r["value"]) for r in gains] == [("Operative", 0), ("Gifts", 0), ("Initial", 0)]
         assert [c["name"] for c in gains[0]["children"]] == ["Salary"]
         assert [c["name"] for c in gains[1]["children"]] == ["Gift"]
         losses = charts["losses"]
-        assert [r["name"] for r in losses] == ["Operative", "Gifts"]
+        assert [r["name"] for r in losses] == ["Operative", "Gifts", "Initial"]
         assert [(c["name"], c["value"]) for c in losses[0]["children"]] == [("Food", 100), ("Card fee", 0)]
         assert losses[1]["children"] == []  # Gifts has no loss base movements
 
     def test_gains_and_losses_by_result_type(self, settings):
         charts = build_charts(LedgerStore(settings).load())
         gains = {r["name"]: r for r in charts["gains"]}
-        assert set(gains) == {"Operative", "Gifts"}
+        assert set(gains) == {"Operative", "Gifts", "Initial"}
         assert gains["Operative"]["value"] == pytest.approx(1000.5)
         assert [c["name"] for c in gains["Operative"]["children"]] == ["Salary"]
         # Children are drawn on the parent's scale
         gift = gains["Gifts"]["children"][0]
         assert gift["share"] == pytest.approx(gains["Gifts"]["share"])
         assert gift["width"] == pytest.approx(gains["Gifts"]["width"])
-        assert [r["name"] for r in charts["losses"]] == ["Operative", "Gifts"]  # Gifts at zero
+        assert [r["name"] for r in charts["losses"]] == ["Operative", "Gifts", "Initial"]  # at zero
 
         statement = charts["statement"]
-        assert [r["name"] for r in statement] == ["Operative", "Gifts"]  # id order
+        assert [r["name"] for r in statement] == ["Operative", "Gifts", "Initial"]  # id order
         assert statement[0]["gains"] == pytest.approx(1000.5)
         assert statement[0]["losses"] == pytest.approx(-50.25)
         assert statement[0]["net"] == pytest.approx(950.25)
@@ -740,13 +757,13 @@ class TestApi:
         assert client.post("/api/base-movements", json=body).status_code == 422
 
     def test_result_types(self, client):
-        assert [rt["name"] for rt in client.get("/api/result-types").json()] == ["Op", "Gifts"]
+        assert [rt["name"] for rt in client.get("/api/result-types").json()] == ["Op", "Gifts", "Init"]
         body = {"name": "Tax", "long_name": "Taxes", "description": "d"}
         assert client.post("/api/result-types", json=body).status_code == 201
         assert client.post("/api/result-types", json=body).status_code == 422
         result_types = client.get("/api/result-types").json()
         assert result_types[-1] == {
-            "id": 3, "name": "Tax", "long_name": "Taxes", "description": "d", "internal": False,
+            "id": 4, "name": "Tax", "long_name": "Taxes", "description": "d", "internal": False,
         }
 
 
@@ -764,14 +781,39 @@ class TestInvestments:
 
 
 class TestInternalResultTypes:
-    @pytest.fixture
-    def settings(self, settings):
-        with settings.base_movements_path.open("a") as f:
-            f.write(
-                "internal:\n  Init:\n    id: 3\n    long_name: Initial\n    description: d\n"
-                "    base_movements:\n      gain:\n        Initial (G): Initial balance\n"
-            )
-        return settings
+    def test_new_asset_records_its_initial_amount(self, settings):
+        LedgerStore(settings).add_account("Sv", "asset", "Savings", "1,234.5", "USD", False, "2026-01-15")
+        assert settings.ledger_path.read_text().splitlines()[-1] == "2026-01-15;Initial (G);Sv;1,234.50;Eq;"
+        assert LedgerStore(settings).load().ledger().balances()["Sv"] == 1234.5
+
+    def test_new_liability_records_its_initial_amount_on_the_first_date(self, settings):
+        LedgerStore(settings).add_account("Lo", "liability", "Loan", 300)
+        assert settings.ledger_path.read_text().splitlines()[-1] == "2026-01-01;Initial (L);Eq;300.00;Lo;"
+        assert LedgerStore(settings).load().ledger().balances()["Lo"] == 300.0
+
+    @pytest.mark.parametrize(
+        ("old", "new", "missing"),
+        [
+            ("        Initial (G): Initial balance\n", "", "Initial (G)"),
+            ("        Initial (L): Initial balance\n", "", "Initial (L)"),
+            ("      gain:\n        Initial (G)", "      loss:\n        Initial (G)", "Initial (G)"),  # a loss
+            ("        Initial (G): Initial balance\n",
+             "        Initial (G):\n          description: d\n          debit: Ca\n", "Initial (G)"),
+        ],
+    )
+    def test_are_required_to_load(self, settings, client, old, new, missing):
+        path = settings.base_movements_path
+        assert old in path.read_text()
+        path.write_text(path.read_text().replace(old, new, 1))
+        with pytest.raises(LedgerDataError, match=re.escape(f"base movement {missing!r} is required")):
+            LedgerStore(settings).load()
+        r = client.get("/")
+        assert r.status_code == 500 and f"{missing!r} is required" in r.text.replace("&#39;", "'")
+
+    def test_new_account_without_initial_amount_records_nothing(self, settings):
+        before = settings.ledger_path.read_text()
+        LedgerStore(settings).add_account("Sv", "asset", "Savings", 0)
+        assert settings.ledger_path.read_text() == before
 
     def test_cannot_get_new_base_movements(self, settings, client):
         with pytest.raises(ValueError, match="'Init' is internal"):
