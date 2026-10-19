@@ -1,4 +1,5 @@
 {% from "_bars.html" import bars with context %}
+{% from "_line.html" import line_chart, stacked_chart with context %}
 <div class="charts-grid">
   <section class="panel grouped-bars">
     <div class="panel-head">
@@ -69,36 +70,12 @@
   {% set ns = namespace(points=[]) %}
   {% for p in equity.points %}
     {% set ns.points = ns.points + [{
-      "x": p.x, "y": p.y, "date": p.date, "change": p.change,
+      "x": p.x, "y": p.y, "label": p.date, "change": p.change,
       "value_text": p.value | money,
       "change_text": ("+" if p.change >= 0 else "") ~ (p.change | money) ~ " that day",
     }] %}
   {% endfor %}
-  <div class="line-chart" data-points='{{ ns.points | tojson }}'>
-    <div class="y-axis" aria-hidden="true">
-      {% for t in equity.y_ticks %}<span class="money" style="top: {{ t.y }}%">{{ t.label }}</span>{% endfor %}
-    </div>
-    <div class="plot">
-      <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img"
-        aria-label="Equity from {{ equity_series[0].date }} to {{ equity.last.date }}, ending at {{ equity.last.value | money }}">
-        {% for t in equity.y_ticks %}
-        <line class="{{ 'axis' if loop.first else 'grid' }}" x1="0" x2="100" y1="{{ t.y }}" y2="{{ t.y }}"/>
-        {% endfor %}
-        <path class="line" d="{{ equity.path }}"/>
-        <line class="crosshair" x1="0" x2="0" y1="0" y2="100"/>
-      </svg>
-      <span class="dot end-dot" style="left: {{ equity.last.x }}%; top: {{ equity.last.y }}%"></span>
-      <span class="dot hover-dot"></span>
-      <div class="tooltip" aria-hidden="true">
-        <div class="tip-date muted"></div>
-        <div class="tip-value money"></div>
-        <div class="tip-change money"></div>
-      </div>
-    </div>
-    <div class="x-axis" aria-hidden="true">
-      {% for t in equity.x_ticks %}<span style="left: {{ t.x }}%">{{ t.label }}</span>{% endfor %}
-    </div>
-  </div>
+  {{ line_chart(equity, ns.points, "Equity from " ~ equity_series[0].date ~ " to " ~ equity.last.date ~ ", ending at " ~ (equity.last.value | money)) }}
   <details class="chart-table">
     <summary>Show table</summary>
     <div class="table-wrap">
@@ -118,5 +95,75 @@
   </details>
   {% else %}
   <p class="muted">No gains or losses in this period.</p>
+  {% endif %}
+</section>
+
+{% set upto = ("up to " ~ month) if month else "all time" %}
+<div class="charts-grid">
+  {% for key, title, what, chart, series in (
+    ("debt-ratio", "Debt over equity", "Liabilities", debt_ratio, debt_series),
+    ("liquidity-ratio", "Net liquidity over equity", "Liquid assets minus liquid liabilities", liquidity_ratio, liquidity_series),
+  ) %}
+  <section class="panel">
+    <h2>{{ title }} <small>{{ upto }}, at each month end</small></h2>
+    {% if chart %}
+    <p class="equity-headline">
+      <span class="num-lg">{{ "%.1f" | format(100 * chart.last.value) }}%</span>
+      <span class="muted">in {{ chart.last.month }}</span>
+    </p>
+    {% set ns = namespace(points=[]) %}
+    {% for p in chart.points %}
+      {% set ns.points = ns.points + [{
+        "x": p.x, "y": p.y, "label": p.month,
+        "value_text": "%.1f%%" | format(100 * p.value),
+        "change_text": (p.amount | money) ~ " / " ~ (p.equity | money),
+      }] %}
+    {% endfor %}
+    {{ line_chart(chart, ns.points, title ~ " from " ~ series[0].month ~ " to " ~ chart.last.month ~ ", ending at " ~ ("%.1f" | format(100 * chart.last.value)) ~ "%", money=False) }}
+    <p class="muted small">{{ what }} over equity (assets minus liabilities); months without positive equity are left out.</p>
+    <details class="chart-table">
+      <summary>Show table</summary>
+      <div class="table-wrap">
+        <table data-sortable="{{ key }}">
+          <thead><tr><th>Month</th><th class="num">{{ what }}</th><th class="num">Equity</th><th class="num">Ratio</th></tr></thead>
+          <tbody>
+          {% for p in series | reverse %}
+          <tr>
+            <td class="nowrap">{{ p.month }}</td>
+            <td class="num money" data-sort="{{ p.amount }}">{{ p.amount | money }}</td>
+            <td class="num money" data-sort="{{ p.equity }}">{{ p.equity | money }}</td>
+            <td class="num" data-sort="{{ p.value if p.value is not none else '' }}">{{ ("%.1f%%" | format(100 * p.value)) if p.value is not none else "-" }}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+    {% else %}
+    <p class="muted">No month with positive equity in this period.</p>
+    {% endif %}
+  </section>
+  {% endfor %}
+</div>
+
+<section class="panel">
+  <h2>Currencies over time <small>{{ upto }}, share of the assets at each month end</small></h2>
+  {% if currency_shares %}
+  {{ stacked_chart(currency_shares, "Share of each currency in the assets from " ~ currency_shares.first ~ " to " ~ currency_shares.last) }}
+  <details class="chart-table">
+    <summary>Show table</summary>
+    <div class="table-wrap">
+      <table data-sortable="currencies">
+        <thead><tr><th>Month</th>{% for a in currency_shares.areas | reverse %}<th class="num">{{ a.name }}</th>{% endfor %}</tr></thead>
+        <tbody>
+        {% for p in currency_shares.points | reverse %}
+        <tr><td class="nowrap">{{ p.date }}</td>{% for r in p.rows %}<td class="num">{{ r[1] }}</td>{% endfor %}</tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% else %}
+  <p class="muted">No assets in this period.</p>
   {% endif %}
 </section>

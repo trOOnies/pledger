@@ -1,3 +1,4 @@
+{% from "_line.html" import line_chart with context %}
 <div class="layout">
   <aside class="panel">{% include "_work_form.html" %}</aside>
 
@@ -7,6 +8,24 @@
       <div class="card" title="Gross salaries of the months of this year"><span class="label">Gross <small>{{ year }}</small></span><span class="num money">{{ gross | money }}</span></div>
       <div class="card" title="Net salaries of the months of this year"><span class="label">Net <small>{{ year }}</small></span><span class="num money">{{ net | money }}</span></div>
     </div>
+
+    {% if gross_chart %}
+    <div class="charts-grid">
+      {% for title, chart in (("Gross salary", gross_chart), ("Net salary", net_chart)) %}
+      <section class="panel">
+        <h2>{{ title }} <small>per month, 0 without a job</small></h2>
+        {% set ns = namespace(points=[]) %}
+        {% for p in chart.points %}
+          {% set ns.points = ns.points + [{
+            "x": p.x, "y": p.y, "label": p.month.month, "value_text": p.value | money,
+            "change_text": "No job" if p.month.is_gap else p.month.company ~ " · " ~ p.month.position,
+          }] %}
+        {% endfor %}
+        {{ line_chart(chart, ns.points, title ~ " per month from " ~ chart.points[0].month.month ~ " to " ~ chart.last.month.month ~ ", ending at " ~ (chart.last.value | money), change_money=False) }}
+      </section>
+      {% endfor %}
+    </div>
+    {% endif %}
 
     <div class="panel">
       <h2>Companies</h2>

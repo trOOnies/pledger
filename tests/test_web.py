@@ -1,6 +1,8 @@
 """Tests for pledger.web."""
 
 import datetime as dt
+import html
+import json
 import re
 from dataclasses import replace
 from pathlib import Path
@@ -701,6 +703,40 @@ class TestCharts:
         assert build_charts(snapshot, "2025-12")["equity"] is None
         assert build_charts(snapshot, "2025-12", initial=True)["equity"]["change"] == pytest.approx(100.5)
 
+    def test_month_end_charts(self, settings):
+        with settings.ledger_path.open("a") as f:
+            f.write("2026-03-01;Card fee;Eq;60.75;Cc;\n")  # no movements in February
+        snapshot = LedgerStore(settings).load()
+        charts = build_charts(snapshot)
+        # Liabilities over equity: none until Cc's fee
+        assert [(p["month"], p["value"]) for p in charts["debt_series"]] == [
+            ("2025-12", 0), ("2026-01", 0), ("2026-02", 0), ("2026-03", pytest.approx(60.75 / 1000)),
+        ]
+        # Liquid assets (Bk, Ca) minus liquid liabilities (none: Cc isn't liquid)
+        assert charts["liquidity_series"][-1]["value"] == pytest.approx(1060.75 / 1000)
+        assert charts["debt_ratio"]["y_ticks"][-1]["label"] == "8%"
+        shares = charts["currency_shares"]
+        assert [a["name"] for a in shares["areas"]] == ["ARS", "USD"]  # base first, at the bottom
+        assert [p["rows"] for p in shares["points"]][:2] == [
+            [["USD", "100.0%"], ["ARS", "0.0%"]], [["USD", "84.9%"], ["ARS", "15.1%"]],
+        ]
+        assert shares["areas"][1]["last"] == pytest.approx(901 / 1060.75)
+        # Up to the month picked
+        assert [p["month"] for p in build_charts(snapshot, "2026-01")["debt_series"]] == ["2025-12", "2026-01"]
+
+    def test_ratios_without_positive_equity(self, settings):
+        LedgerStore(settings).add("2026-02-01", "Card fee", "Eq", "Cc", "2000")
+        charts = build_charts(LedgerStore(settings).load())
+        assert charts["debt_series"][-1]["value"] is None
+        assert "M" in charts["debt_ratio"]["path"] and charts["debt_ratio"]["last"]["month"] == "2026-01"
+
+    def test_month_end_charts_render(self, client):
+        r = client.get("/charts")
+        for title in ("Debt over equity", "Net liquidity over equity", "Currencies over time"):
+            assert f"<h2>{title} <small>all time, " in r.text
+        assert 'class="line-chart stacked"' in r.text and "var(--series-2)" in r.text
+        assert 'data-sortable="currencies"' in r.text
+
 
 class TestApi:
     def test_summary(self, client):
@@ -1350,6 +1386,25 @@ def test_work_file_is_created_when_adding(settings, tmp_path):
         "Month;Company;Position;Gross salary;Net salary;Received payment date\n"
         "2025-01;Acme;Dev;10.00;8.00;2025-02-01\n"
     )
+
+
+def test_salary_charts(settings, tmp_path):
+    path = tmp_path / "work.csv"
+    path.write_text(WORK_CSV, encoding="utf-8")
+    r = TestClient(create_app(replace(settings, work_path=path))).get("/work")
+    for title in ("Gross salary", "Net salary"):
+        assert f"<h2>{title} <small>per month, 0 without a job</small></h2>" in r.text
+    points = [json.loads(html.unescape(p)) for p in re.findall(r"data-points='([^']*)'", r.text)]
+    gross, net = points
+    assert [(p["label"], p["value_text"]) for p in net] == [
+        ("2025-10", "$800.00"), ("2025-11", "$1,200.00"), ("2025-12", "$0.00"), ("2026-01", "$1,600.00"),
+    ]
+    assert gross[2]["change_text"] == "No job" and gross[0]["change_text"] == "Acme · Acme Jr"
+    assert gross[2]["y"] == 100  # the no-job month is at 0, on the axis
+
+
+def test_no_salary_charts_without_months(client):
+    assert "Gross salary <small>" not in client.get("/work").text
 
 
 class TestWorkCreditors:

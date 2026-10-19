@@ -16,7 +16,10 @@ balances and adds accounts; Investments lists the investments of the investment 
 and their composition by type or by account; Debt lists who we owe and who owes us in the
 debt accounts; Work lists the salary, company and job position of each month; Setup adds result types and base movements. The Charts page
 shows the composition of assets and liabilities, gains and losses by result type, a result
-statement, and equity over time. The Help page explains the concepts for everyday users.
+statement, equity over time and, at each month end, debt (the liabilities) over equity, net
+liquidity (liquid assets minus liquid liabilities) over equity, and the share of each
+currency in the assets. The Work tab charts the gross and net salary of each month (0 for
+the months without a job). The Help page explains the concepts for everyday users.
 The month filter is shared by Ledger, Accounts and Charts (remembered in a cookie).
 
 ```sh

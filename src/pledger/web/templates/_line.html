@@ -1,0 +1,57 @@
+{# A line chart from views.line_chart. Each point of `points` adds its tooltip texts:
+   `label`, `value_text` and `change_text` (colored as a gain or loss if `change` is set). #}
+{% macro line_chart(chart, points, aria, money=True, change_money=True) %}
+<div class="line-chart" data-points='{{ points | tojson }}'>
+  <div class="y-axis" aria-hidden="true">
+    {% for t in chart.y_ticks %}<span class="{{ 'money' if money }}" style="top: {{ t.y }}%">{{ t.label }}</span>{% endfor %}
+  </div>
+  <div class="plot">
+    <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="{{ aria }}">
+      {% for t in chart.y_ticks %}
+      <line class="{{ 'axis' if loop.first else 'grid' }}" x1="0" x2="100" y1="{{ t.y }}" y2="{{ t.y }}"/>
+      {% endfor %}
+      <path class="line" d="{{ chart.path }}"/>
+      <line class="crosshair" x1="0" x2="0" y1="0" y2="100"/>
+    </svg>
+    <span class="dot end-dot" style="left: {{ chart.last.x }}%; top: {{ chart.last.y }}%"></span>
+    <span class="dot hover-dot"></span>
+    <div class="tooltip" aria-hidden="true">
+      <div class="tip-date muted"></div>
+      <div class="tip-value {{ 'money' if money }}"></div>
+      <div class="tip-change {{ 'money' if change_money }}"></div>
+    </div>
+  </div>
+  <div class="x-axis" aria-hidden="true">
+    {% for t in chart.x_ticks %}<span style="left: {{ t.x }}%">{{ t.label }}</span>{% endfor %}
+  </div>
+</div>
+{% endmacro %}
+
+{# A 100% stacked area chart from views.stacked_chart, with its legend. #}
+{% macro stacked_chart(chart, aria) %}
+<ul class="legend">
+  {% for a in chart.areas | reverse %}
+  <li><span class="swatch" style="background: var(--series-{{ a.slot }})"></span>{{ a.name }} <span class="muted">{{ "%.1f" | format(100 * a.last) }}%</span></li>
+  {% endfor %}
+</ul>
+<div class="line-chart stacked" data-points='{{ chart.points | tojson }}'>
+  <div class="y-axis" aria-hidden="true">
+    {% for t in chart.y_ticks %}<span style="top: {{ t.y }}%">{{ t.label }}</span>{% endfor %}
+  </div>
+  <div class="plot">
+    <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="{{ aria }}">
+      {% for a in chart.areas %}
+      <path class="area" style="fill: var(--series-{{ a.slot }})" d="{{ a.path }}"><title>{{ a.name }}</title></path>
+      {% endfor %}
+      <line class="crosshair" x1="0" x2="0" y1="0" y2="100"/>
+    </svg>
+    <div class="tooltip" aria-hidden="true">
+      <div class="tip-date muted"></div>
+      <div class="tip-rows"></div>
+    </div>
+  </div>
+  <div class="x-axis" aria-hidden="true">
+    {% for t in chart.x_ticks %}<span style="left: {{ t.x }}%">{{ t.label }}</span>{% endfor %}
+  </div>
+</div>
+{% endmacro %}

@@ -299,6 +299,22 @@ def build_work(work: Work, form: dict | None = None) -> dict:
         "gross": sum(m.gross for m in this_year),
         "net": sum(m.net for m in this_year),
         "form": form or work_form(work),
+        **salary_charts(work),
+    }
+
+
+def salary_charts(work: Work) -> dict:
+    """The gross and net salary of every month, with the months without a job at 0."""
+    def series(key: str) -> list[dict]:
+        return [
+            {"date": f"{m.month}-01", "month": m, "value": getattr(m, key) or 0.0}
+            for m in work.months
+        ]
+
+    gross, net = series("gross"), series("net")
+    return {
+        "gross_chart": line_chart(gross),
+        "net_chart": line_chart(net),
     }
 
 
@@ -487,28 +503,52 @@ def equity_series(snapshot: Snapshot, month: str = "", initial: bool = False) ->
     return series
 
 
-def equity_chart(series: list[dict]) -> dict | None:
+def line_chart(series: list[dict], tick_label=compact) -> dict | None:
     """
-    Points, path and axes to draw the equity line. Coordinates are percentages
-    of the plot area, so HTML labels and the SVG line share them.
+    Points, path and axes to draw a line of {date, value} points (a None value
+    breaks the line). Coordinates are percentages of the plot area, so HTML
+    labels and the SVG line share them.
     """
-    if not series:
+    shown = [p for p in series if p["value"] is not None]
+    if not shown:
         return None
-    dates = [dt.date.fromisoformat(p["date"]) for p in series]
-    ticks = nice_ticks(min(p["value"] for p in series), max(p["value"] for p in series))
+    ticks = nice_ticks(min(p["value"] for p in shown), max(p["value"] for p in shown))
     y_lo, y_hi = ticks[0], ticks[-1]
-    first, last = dates[0], dates[-1]
-    span = max((last - first).days, 1)
-
-    def x(d: dt.date) -> float:
-        return 50.0 if first == last else round(100 * (d - first).days / span, 2)
 
     def y(v: float) -> float:
         return round(100 * (1 - (v - y_lo) / (y_hi - y_lo)), 2)
 
-    points = [{**p, "x": x(d), "y": y(p["value"])} for p, d in zip(series, dates)]
+    x, x_ticks = time_axis([dt.date.fromisoformat(p["date"]) for p in series])
+    points, path, joined = [], [], False
+    for p in series:
+        if p["value"] is None:
+            joined = False
+            continue
+        point = {**p, "x": x(p["date"]), "y": y(p["value"])}
+        points.append(point)
+        path.append(f"{'L' if joined else 'M'}{point['x']},{point['y']}")
+        joined = True
+    return {
+        "path": " ".join(path),
+        "points": points,
+        "y_ticks": [{"y": y(t), "label": tick_label(t)} for t in ticks],
+        "x_ticks": x_ticks,
+        "last": points[-1],
+    }
 
-    # Tick the start of each month, or the first and last day within a single month.
+
+def time_axis(dates: list[dt.date]) -> tuple:
+    """
+    The x of an ISO date (a percentage, from the first to the last date) and the
+    ticks: the start of each month, or the first and last day within a single month.
+    """
+    first, last = dates[0], dates[-1]
+    span = max((last - first).days, 1)
+
+    def x(d: dt.date | str) -> float:
+        d = dt.date.fromisoformat(d) if isinstance(d, str) else d
+        return 50.0 if first == last else round(100 * (d - first).days / span, 2)
+
     month_starts = [
         dt.date(yr, mo, 1)
         for yr in range(first.year, last.year + 1)
@@ -520,12 +560,96 @@ def equity_chart(series: list[dict]) -> dict | None:
         x_ticks = [{"x": x(m), "label": m.strftime("%b %Y")} for m in month_starts[::every]]
     else:
         x_ticks = [{"x": x(d), "label": d.strftime("%b %d")} for d in sorted({first, last})]
+    return x, x_ticks
+
+
+def percent(value: float) -> str:
+    """Axis label of a ratio, e.g. 0.25 -> 25%."""
+    return f"{100 * value:.3g}%"
+
+
+def month_end_balances(snapshot: Snapshot, month: str = "") -> list[tuple[str, dict[str, float]]]:
+    """
+    The balance of every account at the end of each month, from the first month of the
+    ledger to the last one (or to `month`), signed like Ledger.balances.
+    """
+    moves = sorted(snapshot.ledger().movements, key=lambda m: str(m.move_date))
+    if not moves:
+        return []
+    last = month or str(moves[-1].move_date)[:7]
+    balances: dict[str, float] = {}
+    out, i, cur = [], 0, str(moves[0].move_date)[:7]
+    while cur <= last:
+        while i < len(moves) and str(moves[i].move_date)[:7] <= cur:
+            move = moves[i]
+            for acc, sign in ((move.acc_debit, 1), (move.acc_credit, -1)):
+                if acc.acc_type != AccountType.ASSET:
+                    sign = -sign
+                balances[acc.name] = balances.get(acc.name, 0.0) + sign * move.amount
+            i += 1
+        out.append((cur, dict(balances)))
+        cur = next_month(cur)
+    return out
+
+
+def ratio_series(snapshot: Snapshot, monthly: list[tuple[str, dict[str, float]]], numerator) -> list[dict]:
+    """
+    A ratio over equity (assets minus liabilities) at the end of each month, from
+    the month's `numerator(balances)`. None while equity isn't positive.
+    """
+    def total(balances: dict[str, float], acc_type: AccountType, liquid: bool | None = None) -> float:
+        return sum(
+            balances.get(a.name, 0.0) for a in snapshot.accounts.values()
+            if a.acc_type == acc_type and liquid in (None, a.is_liquid)
+        )
+
+    series = []
+    for month, balances in monthly:
+        equity = total(balances, AccountType.ASSET) - total(balances, AccountType.LIABILITY)
+        amount = numerator(balances, total)
+        series.append({
+            "date": f"{month}-01", "month": month, "amount": amount, "equity": equity,
+            "value": amount / equity if equity > 1e-9 else None,
+        })
+    return series
+
+
+def stacked_chart(monthly: list[tuple[str, dict[str, float]]], groups: dict[str, list[str]]) -> dict | None:
+    """
+    A 100% stacked area of the month-end balances of each group of accounts (in
+    order, the first one at the bottom), as SVG paths in plot percentages.
+    """
+    months = [(m, {g: sum(max(b.get(a, 0.0), 0.0) for a in accs) for g, accs in groups.items()})
+              for m, b in monthly]
+    months = [(m, totals) for m, totals in months if sum(totals.values()) > 1e-9]
+    if not months:
+        return None
+    x, x_ticks = time_axis([dt.date.fromisoformat(f"{m}-01") for m, _ in months])
+    xs = [x(f"{m}-01") for m, _ in months]
+    shares = [{g: v / sum(totals.values()) for g, v in totals.items()} for _, totals in months]
+    if len(xs) == 1:  # a single month: a full-width band
+        xs, shares = [0.0, 100.0], shares * 2
+    areas, below = [], [0.0] * len(xs)
+    for slot, group in enumerate(groups):
+        above = [b + s[group] for b, s in zip(below, shares)]
+        top = [f"{px},{round(100 * (1 - v), 2)}" for px, v in zip(xs, above)]
+        bottom = [f"{px},{round(100 * (1 - v), 2)}" for px, v in zip(xs, below)][::-1]
+        areas.append({
+            "name": group, "slot": slot % 8 + 1,
+            "path": "M" + " L".join(top + bottom) + " Z",
+            "last": shares[-1][group],
+        })
+        below = above
     return {
-        "path": "M" + " L".join(f"{p['x']},{p['y']}" for p in points),
-        "points": points,
-        "y_ticks": [{"y": y(t), "label": compact(t)} for t in ticks],
+        "areas": areas,
+        "points": [
+            {"x": x(f"{m}-01"), "date": m, "rows": [[g, f"{100 * v / sum(t.values()):.1f}%"] for g, v in t.items()][::-1]}
+            for m, t in months
+        ],
+        "y_ticks": [{"y": 100 - t, "label": f"{t}%"} for t in (0, 25, 50, 75, 100)],
         "x_ticks": x_ticks,
-        "last": points[-1],
+        "first": months[0][0],
+        "last": months[-1][0],
     }
 
 
@@ -606,7 +730,7 @@ def build_charts(snapshot: Snapshot, month: str = "", initial: bool = False) -> 
         })
 
     series = equity_series(snapshot, month, initial)
-    equity = equity_chart(series)
+    equity = line_chart(series)
     if equity:
         equity["change"] = sum(p["change"] for p in series)
         equity["since"] = "in the month" if month else f"since {series[0]['date']}"
@@ -620,4 +744,32 @@ def build_charts(snapshot: Snapshot, month: str = "", initial: bool = False) -> 
         "statement": statement,
         "equity": equity,
         "equity_series": series,
+        **over_time_charts(snapshot, month),
+    }
+
+
+def over_time_charts(snapshot: Snapshot, month: str = "") -> dict:
+    """
+    Month-end charts up to `month` (all the ledger by default): liabilities over
+    equity, net liquidity (liquid assets minus liquid liabilities) over equity, and
+    the share of each currency in the assets.
+    """
+    monthly = month_end_balances(snapshot, month)
+    debt = ratio_series(snapshot, monthly, lambda b, total: total(b, AccountType.LIABILITY))
+    liquidity = ratio_series(
+        snapshot, monthly,
+        lambda b, total: total(b, AccountType.ASSET, True) - total(b, AccountType.LIABILITY, True),
+    )
+    assets = [a for a in snapshot.accounts.values() if a.acc_type == AccountType.ASSET]
+    currencies = {
+        c: [a.name for a in assets if a.currency.name == c]
+        for c in snapshot.currencies
+        if any(a.currency.name == c for a in assets)
+    }
+    return {
+        "debt_ratio": line_chart(debt, percent),
+        "debt_series": debt,
+        "liquidity_ratio": line_chart(liquidity, percent),
+        "liquidity_series": liquidity,
+        "currency_shares": stacked_chart(monthly, currencies),
     }

@@ -167,6 +167,49 @@
     document.addEventListener("DOMContentLoaded", () => checkFutureDates(document));
     document.addEventListener("htmx:afterSettle", (e) => checkFutureDates(e.detail.elt));
 
+    // Line chart hover: snap a crosshair, dot and tooltip to the nearest point. A
+    // stacked chart lists the share of each series instead, with no dot.
+    document.addEventListener("pointermove", (e) => {
+      const chart = e.target.closest(".line-chart");
+      document.querySelectorAll(".line-chart.hover").forEach((c) => {
+        if (c !== chart) c.classList.remove("hover");
+      });
+      if (!chart) return;
+      // Coordinates are percentages of the plot area.
+      const box = chart.querySelector(".plot").getBoundingClientRect();
+      const mx = (100 * (e.clientX - box.left)) / box.width;
+      const points = JSON.parse(chart.dataset.points);
+      const p = points.reduce((a, b) => (Math.abs(b.x - mx) < Math.abs(a.x - mx) ? b : a));
+      const y = p.y ?? 50;
+      chart.querySelector(".crosshair").setAttribute("transform", `translate(${p.x} 0)`);
+      const tip = chart.querySelector(".tooltip");
+      tip.querySelector(".tip-date").textContent = p.label ?? p.date;
+      if (p.rows) {
+        tip.querySelector(".tip-rows").replaceChildren(...p.rows.map(([name, text]) => {
+          const row = document.createElement("div");
+          row.textContent = `${name}: ${text}`;
+          return row;
+        }));
+      } else {
+        const dot = chart.querySelector(".hover-dot");
+        dot.style.left = `${p.x}%`;
+        dot.style.top = `${y}%`;
+        const value = tip.querySelector(".tip-value");
+        if (value.classList.contains("money")) setMoney(value, p.value_text); else value.textContent = p.value_text;
+        const change = tip.querySelector(".tip-change");
+        if (change.classList.contains("money")) setMoney(change, p.change_text); else change.textContent = p.change_text;
+        change.classList.remove("gain", "loss", "muted");
+        change.classList.add(p.change === undefined ? "muted" : p.change >= 0 ? "gain" : "loss");
+      }
+      tip.style.left = `${p.x}%`;
+      tip.style.top = `${y}%`;
+      tip.classList.toggle("flip", p.x > 60);
+      chart.classList.add("hover");
+    });
+    document.documentElement.addEventListener("pointerleave", () => {
+      document.querySelectorAll(".line-chart.hover").forEach((c) => c.classList.remove("hover"));
+    });
+
     // Money inputs always show two decimals, e.g. 1234.5 -> 1,234.50.
     document.addEventListener("change", (e) => {
       const input = e.target;
