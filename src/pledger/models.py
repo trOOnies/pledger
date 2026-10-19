@@ -17,6 +17,7 @@ from pledger.code.models import assert_accounts
 from pledger.enums import (
     AccountType,
     CreditorKind,
+    DebtRole,
     InvestmentType,
     LedgerSide,
     MovementType,
@@ -406,6 +407,7 @@ class Creditor:
     name: str
     amount: float
     kind: CreditorKind = CreditorKind.PERSON
+    expected: DebtRole | None = None  # the role they should have, if any
 
     @property
     def is_creditor(self) -> bool:
@@ -416,6 +418,23 @@ class Creditor:
     def is_debtor(self) -> bool:
         """They owe us."""
         return self.amount < -1e-9
+
+    @property
+    def meets_expected(self) -> bool:
+        """Not in the opposite role to the expected one (being settled meets either)."""
+        if self.expected == DebtRole.CREDITOR:
+            return not self.is_debtor
+        if self.expected == DebtRole.DEBTOR:
+            return not self.is_creditor
+        return True
+
+
+# The expected role of each kind of creditor, unless set in the creditors YAML.
+DEFAULT_EXPECTED = {
+    CreditorKind.PERSON: None,
+    CreditorKind.SERVICE: DebtRole.CREDITOR,
+    CreditorKind.COMPANY: DebtRole.DEBTOR,
+}
 
 
 @dataclass
@@ -433,6 +452,7 @@ class DebtAccount(Account):
         self._check_positivity = lambda _: True
         self._check_positivity_vect = np.vectorize(self._check_positivity)
         self.unassigned = 0.0  # added debt whose comment names no one
+        self.unassigned_comments: dict[str, float] = {}  # that debt by comment
 
     def creditor_in(self, comment: str) -> str | None:
         """
@@ -446,13 +466,14 @@ class DebtAccount(Account):
         ]
         return min(found)[2] if found else None
 
-    def add_debt(self, name: str | None, amount: float) -> None:
+    def add_debt(self, name: str | None, amount: float, comment: str = "") -> None:
         """
         Adds an amount to what we owe someone (negative: to what they owe us), or
-        to the unassigned debt without a name.
+        to the unassigned debt without a name, keeping the movement's comment.
         """
         if name is None:
             self.unassigned += amount
+            self.unassigned_comments[comment] = self.unassigned_comments.get(comment, 0.0) + amount
         else:
             self.creditors[name].amount += amount
 
@@ -464,6 +485,19 @@ class DebtAccount(Account):
         """The ones that owe us."""
         return {n: c for n, c in self.creditors.items() if c.is_debtor}
 
+    @staticmethod
+    def _expected_of(acc_name: str, name: str, value) -> DebtRole | None:
+        """An expected role from the creditors YAML: null for none."""
+        if value is None:
+            return None
+        try:
+            return DebtRole(value)
+        except ValueError:
+            raise ValueError(
+                f"Creditor {name!r} of the account {acc_name!r} has an unknown expected role: {value!r} "
+                f"(must be {[r.value for r in DebtRole]} or null)"
+            ) from None
+
     def get_kind(self, kind: CreditorKind) -> dict[str, Creditor]:
         """The people, services or companies."""
         return {n: c for n, c in self.creditors.items() if c.kind == kind}
@@ -474,8 +508,10 @@ class DebtAccount(Account):
     ) -> dict[str, Creditor]:
         """
         Creditors of an account from its creditors YAML dict, a section per kind
-        (`people`, `services`, `companies`) of name: initial debt. The `companies`
-        missing from its section are added with no initial debt.
+        (`people`, `services`, `companies`) of name: initial debt, or name: a dict
+        of `amount` and `expected` (`creditor`, `debtor` or null for none; the
+        kind's default if missing). The `companies` missing from its section are
+        added with no initial debt.
         """
         if not isinstance(data, dict):
             raise ValueError(f"The creditors of the account {acc_name!r} must be a mapping")  # noqa: TRY004 (a bad config value)
@@ -490,8 +526,16 @@ class DebtAccount(Account):
             section = data.get(kind.value) or {}
             if not isinstance(section, dict):
                 raise ValueError(f"The {kind.value} of the account {acc_name!r} must be a mapping of name: amount")  # noqa: TRY004 (a bad config value)
-            for name, amount in section.items():
+            for name, value in section.items():
                 name = str(name)  # YAML keys may be numbers
+                amount, expected = value, DEFAULT_EXPECTED[kind]
+                if isinstance(value, dict):
+                    extra = sorted(str(k) for k in set(value) - {"amount", "expected"})
+                    if extra:
+                        raise ValueError(f"Creditor {name!r} of the account {acc_name!r} has unknown keys {extra}")
+                    amount = value.get("amount")
+                    if "expected" in value:
+                        expected = DebtAccount._expected_of(acc_name, name, value["expected"])
                 if isinstance(amount, bool) or not isinstance(amount, (int, float)):
                     raise ValueError(  # noqa: TRY004 (a bad config value)
                         f"Creditor {name!r} of the account {acc_name!r} amount must be a number: {amount!r}"
@@ -501,10 +545,13 @@ class DebtAccount(Account):
                         f"Creditor {name!r} of the account {acc_name!r} is in both "
                         f"{creditors[name].kind.value} and {kind.value}"
                     )
-                creditors[name] = Creditor(name=name, amount=float(amount), kind=kind)
+                creditors[name] = Creditor(name=name, amount=float(amount), kind=kind, expected=expected)
         for name in companies or []:
             if name not in creditors:
-                creditors[name] = Creditor(name=name, amount=0.0, kind=CreditorKind.COMPANY)
+                creditors[name] = Creditor(
+                    name=name, amount=0.0, kind=CreditorKind.COMPANY,
+                    expected=DEFAULT_EXPECTED[CreditorKind.COMPANY],
+                )
             elif creditors[name].kind != CreditorKind.COMPANY:
                 raise ValueError(
                     f"Creditor {name!r} of the account {acc_name!r} is a company of the work "

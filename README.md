@@ -51,14 +51,19 @@ initial amount is the sum of those amounts. A quantity can't go below 0.
 Debt accounts are the liability accounts listed as top-level keys in `creditors.yaml`, each
 with up to three sections, `people`, `services` and `companies`, mapping who we have debts
 with to the initial amount: positive if we owe them, negative if they owe us. A name can
-only be in one section of an account.
+only be in one section of an account. Instead of the amount, a name can map to its
+`amount` and its `expected` role: `creditor` (we should owe them, or nothing), `debtor`
+(they should owe us, or nothing) or `null` (no expectation). Without `expected`, people
+have no expected role, services are expected to be creditors and companies debtors.
 
 ```yaml
 De:
   people:
     Dad: 0.00
   services:
-    Rent: 0.00
+    Rent:
+      amount: 0.00
+      expected: debtor
   companies: null
 ```
 
@@ -69,7 +74,8 @@ can go below 0 (we are owed more than we owe). The ledger movements with a debt 
 either side add to whoever is named in their `comment` (as a whole word, ignoring case;
 the earliest name there, and the longest one if several start there): a credit is more
 that we owe them, a debit less. The Debt tab lists people, services and companies apart,
-and the movements naming no one as unassigned.
+and the movements naming no one as unassigned. It alerts when there is unassigned debt
+(listing it by comment) and when anyone is in the opposite role to the expected one.
 
 A base movement is a dict (`description` and optional fixed `debit`/`credit` accounts) or
 just its description. A side set to `INVESTMENT` or `DEBT` (reserved names) takes any

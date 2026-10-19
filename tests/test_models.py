@@ -9,6 +9,7 @@ import pytest
 from pledger.enums import (
     AccountType,
     CreditorKind,
+    DebtRole,
     InvestmentType,
     LedgerSide,
     MovementType,
@@ -628,7 +629,7 @@ class TestDebtAccount:
         assert isinstance(cc, DebtAccount) and cc.acc_type == AccountType.LIABILITY
         assert cc.creditors == {
             "Dad": Creditor("Dad", 100.0), "Mum": Creditor("Mum", -150.5),
-            "Work": Creditor("Work", 0.0, CreditorKind.SERVICE),
+            "Work": Creditor("Work", 0.0, CreditorKind.SERVICE, DebtRole.CREDITOR),
         }
         assert list(cc.get_kind(CreditorKind.SERVICE)) == ["Work"]
         assert cc.initial_amount == -50.5
@@ -644,6 +645,9 @@ class TestDebtAccount:
             ("  companies:\n", "  pets:\n", r"unknown sections \['pets'\]"),
             ("  companies:\n", "  companies: 3\n", "The companies of the account 'Cc' must be a mapping"),
             ("    Work: 0\n", "    Work: 0\n    Dad: 1\n", "'Dad' of the account 'Cc' is in both people and services"),
+            ("    Work: 0\n", "    Work:\n      amount: 0\n      expected: owed\n", "unknown expected role: 'owed'"),
+            ("    Work: 0\n", "    Work:\n      amount: 0\n      due: 1\n", r"unknown keys \['due'\]"),
+            ("    Work: 0\n", "    Work:\n      expected: debtor\n", "'Work' of the account 'Cc' amount must be a number"),
         ],
     )
     def test_load_yaml_rejects_invalid(self, paths, old, new, message):
@@ -659,6 +663,37 @@ class TestDebtAccount:
         Path(paths[0]).write_text(text.replace("    description: Credit card\n", "    description: Credit card\n    initial_amount: 0\n"), encoding="utf-8")
         with pytest.raises(ValueError, match="Debt account 'Cc' must not have an initial_amount"):
             self.load(paths)
+
+    def test_expected_roles(self, paths):
+        creditors_yaml = paths[2]
+        Path(creditors_yaml).write_text(
+            "Cc:\n  people:\n    Dad: 1\n    Mum:\n      amount: 2\n      expected: debtor\n"
+            "  services:\n    Gas: 3\n    Rent:\n      amount: 4\n      expected: null\n"
+            "  companies:\n    Acme:\n      amount: 5\n      expected: creditor\n",
+            encoding="utf-8",
+        )
+        accounts_yaml, currencies_yaml, _ = paths
+        cc = Account.load_yaml(
+            accounts_yaml, *Currency.load_yaml(currencies_yaml), creditors_path=creditors_yaml,
+            companies=["Acme", "Globex"],
+        )["Cc"]
+        assert {n: c.expected for n, c in cc.creditors.items()} == {
+            "Dad": None, "Mum": DebtRole.DEBTOR,  # people have no default
+            "Gas": DebtRole.CREDITOR, "Rent": None,  # services default to creditors
+            "Acme": DebtRole.CREDITOR, "Globex": DebtRole.DEBTOR,  # companies to debtors
+        }
+        assert cc.creditors["Mum"].amount == 2 and cc.initial_amount == 15
+
+    @pytest.mark.parametrize(
+        ("expected", "amount", "met"),
+        [
+            (None, 5, True), (None, -5, True),
+            (DebtRole.CREDITOR, 5, True), (DebtRole.CREDITOR, 0, True), (DebtRole.CREDITOR, -5, False),
+            (DebtRole.DEBTOR, -5, True), (DebtRole.DEBTOR, 0, True), (DebtRole.DEBTOR, 5, False),
+        ],
+    )
+    def test_meets_expected(self, expected, amount, met):
+        assert Creditor("X", amount, expected=expected).meets_expected is met
 
     def test_load_yaml_rejects_investment_and_debt_accounts(self, paths, tmp_path):
         investments = tmp_path / "investment.yaml"

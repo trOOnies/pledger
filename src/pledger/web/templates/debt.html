@@ -12,6 +12,31 @@
 </div>
 {% else %}
 <div class="view">
+  {% if unassigned_accounts %}
+  <details class="msg warn alert" role="alert">
+    <summary>⚠ Unassigned debt of <span class="money">{{ unassigned | money }}</span>: some movements of the debt
+      accounts don't name anyone in their comment.</summary>
+    <p class="small">Name someone of <code>{{ settings.creditors_path.name if settings.creditors_path else "creditors.yaml" }}</code> in their comment, or add who they are about there.</p>
+    {% for a in unassigned_accounts %}
+    <ul class="small">
+      {% for comment, amount in a.comments %}
+      <li>{{ comment }}{% if unassigned_accounts | length > 1 %} <span class="muted">({{ a.name }})</span>{% endif %}: <span class="money">{{ amount | money }}</span></li>
+      {% endfor %}
+    </ul>
+    {% endfor %}
+  </details>
+  {% endif %}
+  {% if unmet %}
+  <details class="msg warn alert" role="alert">
+    <summary>⚠ {{ unmet | length }} {{ "is" if unmet | length == 1 else "are" }} not in the expected role.</summary>
+    <ul class="small">
+      {% for p in unmet %}
+      <li><strong>{{ p.name }}</strong> <span class="muted">({{ p.kind | lower }}{{ ", " ~ p.account if multiple_accounts }})</span>
+        is a {{ p.role | lower }} (<span class="money">{{ p.amount | money }}</span>), but is expected to be a {{ p.expected | lower }}.</li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
   <div class="cards">
     <div class="card" title="What we owe our creditors"><span class="label">We owe</span><span class="num money">{{ we_owe | money }}</span></div>
     <div class="card" title="What our debtors owe us"><span class="label">Owed to us</span><span class="num money">{{ owed_to_us | money }}</span></div>
@@ -34,21 +59,22 @@
   <div class="panel">
     <h2>{{ k.title }} <small>{{ k.rows | length }}</small></h2>
     <table data-sortable="debts-{{ k.kind }}">
-      <thead><tr><th>Name</th><th>Role</th>{% if multiple_accounts %}<th>Account</th>{% endif %}<th class="num">Amount</th></tr></thead>
+      <thead><tr><th>Name</th><th>Role</th><th title="The role they should have: services are expected to be creditors and companies debtors, unless set in the creditors YAML">Expected</th>{% if multiple_accounts %}<th>Account</th>{% endif %}<th class="num">Amount</th></tr></thead>
       <tbody>
       {% for p in k.rows %}
       <tr>
         <td class="nowrap"><strong>{{ p.name }}</strong></td>
-        <td>{{ p.role }}</td>
+        {% if p.met %}<td>{{ p.role }}</td>{% else %}<td class="nowrap hint warn" title="Expected to be a {{ p.expected | lower }}">⚠ {{ p.role }}</td>{% endif %}
+        <td class="{{ 'muted' if not p.expected }}">{{ p.expected or "-" }}</td>
         {% if multiple_accounts %}<td>{{ p.account }}</td>{% endif %}
         <td class="num money {{ 'gain' if p.amount < 0 }}" data-sort="{{ p.amount }}">{{ p.amount | money }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="{{ 4 if multiple_accounts else 3 }}" class="muted">No {{ k.title | lower }} in the debt accounts.</td></tr>
+      <tr><td colspan="{{ 5 if multiple_accounts else 4 }}" class="muted">No {{ k.title | lower }} in the debt accounts.</td></tr>
       {% endfor %}
       </tbody>
       {% if k.rows %}
-      <tfoot><tr><th colspan="{{ 3 if multiple_accounts else 2 }}">Net</th><th class="num money {{ 'gain' if k.net < 0 }}">{{ k.net | money }}</th></tr></tfoot>
+      <tfoot><tr><th colspan="{{ 4 if multiple_accounts else 3 }}">Net</th><th class="num money {{ 'gain' if k.net < 0 }}">{{ k.net | money }}</th></tr></tfoot>
       {% endif %}
     </table>
     {% if k.kind == "companies" %}<p class="muted small">The companies of the Work tab, at no initial debt unless set in <code>{{ settings.creditors_path.name if settings.creditors_path else "creditors.yaml" }}</code>.</p>{% endif %}

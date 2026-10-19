@@ -38,6 +38,12 @@ class CreditorKind(str, Enum):
     COMPANY = "companies"
 
 
+class DebtRole(str, Enum):
+    """Whether we owe someone in a debt account (creditor) or they owe us (debtor)."""
+    CREDITOR = "creditor"
+    DEBTOR = "debtor"
+
+
 class MovementType(str, Enum):
     """Type of movement based on equity side."""
     GAIN = "gain"

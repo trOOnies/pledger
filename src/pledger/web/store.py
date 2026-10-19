@@ -655,7 +655,7 @@ def _apply_debts(accounts: dict[str, Account], rows: DataFrame) -> None:
             acc = accounts[name]
             if isinstance(acc, DebtAccount):
                 value = float(amount.replace(",", "").replace(" ", "") or 0)
-                acc.add_debt(acc.creditor_in(comment), sign * value)
+                acc.add_debt(acc.creditor_in(comment), sign * value, comment)
 
 
 def _existing(path: Path | None) -> str | None:

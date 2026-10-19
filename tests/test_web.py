@@ -1132,6 +1132,11 @@ class TestDebtPage:
         for name, role in (("Dad", "Creditor"), ("Ana", "Debtor"), ("Leo", "Settled")):
             assert f"<strong>{name}</strong></td>\n        <td>{role}</td>" in r.text
 
+    def test_no_alerts_when_all_is_as_expected(self, client):
+        r = client.get("/debt")
+        assert 'class="msg warn alert"' not in r.text
+        assert '<td class="muted">-</td>' in r.text and "<td class=\"\">Creditor</td>" in r.text  # Dad, Bank
+
     def test_debt_bars_show_positive_amounts(self, client):
         r = client.get("/debt")
         owed = r.text.split("Owed to us <span")[1].split("<h2>People</h2>")[0]
@@ -1161,7 +1166,13 @@ class TestDebtPage:
         assert "$120.00" in cards and "$1,020.00" in cards and "-$5.00" in cards and "-$905.00" in cards
         accounts = r.text.split("<h2>Debt accounts</h2>")[1]
         assert 'data-sort="-5.0">-$5.00</td>' in accounts
-        assert "<strong>Bank</strong></td>\n        <td>Debtor</td>" in r.text
+        # Bank is a service, expected to be a creditor
+        assert '<strong>Bank</strong></td>\n        <td class="nowrap hint warn" title="Expected to be a creditor">⚠ Debtor</td>' in r.text
+        alerts = r.text.split('<details class="msg warn alert" role="alert">')[1:]
+        assert len(alerts) == 2
+        assert "Unassigned debt of" in alerts[0] and "<li>Zurich 1/24: <span class=\"money\">-$5.00</span></li>" in alerts[0]
+        assert "1 is not in the expected role" in alerts[1] and "<strong>Bank</strong>" in alerts[1]
+        assert "is a debtor (" in alerts[1] and "but is expected to be a creditor" in alerts[1]
 
 
 @pytest.mark.parametrize(

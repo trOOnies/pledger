@@ -204,7 +204,8 @@ def build_debts(snapshot: Snapshot) -> dict:
     The people, services and companies in each debt account: the ones we owe
     (creditors) and the ones that owe us (debtors), with what we owe and are owed
     as positive amounts, plus the debt of the movements whose comment names no
-    one (unassigned).
+    one (unassigned). Lists who isn't in their expected role, and the unassigned
+    debt of each account by comment.
     """
     accounts = [a for a in snapshot.accounts.values() if isinstance(a, DebtAccount)]
 
@@ -226,6 +227,8 @@ def build_debts(snapshot: Snapshot) -> dict:
                 "account": a.name,
                 "name": c.name,
                 "role": "Creditor" if c.is_creditor else "Debtor" if c.is_debtor else "Settled",
+                "expected": c.expected.value.capitalize() if c.expected else None,
+                "met": c.meets_expected,
                 "amount": c.amount,
             }
             for a in accounts
@@ -249,6 +252,22 @@ def build_debts(snapshot: Snapshot) -> dict:
             for a in accounts
         ],
         "kinds": kinds,
+        "unmet": [
+            {**r, "kind": k["title"]} for k in kinds for r in k["rows"] if not r["met"]
+        ],
+        "unassigned_accounts": [
+            {
+                "name": a.name,
+                "amount": a.unassigned,
+                "comments": sorted(
+                    ((c or "(no comment)", v) for c, v in a.unassigned_comments.items()
+                     if not math.isclose(v, 0.0, abs_tol=1e-9)),
+                    key=lambda cv: -abs(cv[1]),
+                ),
+            }
+            for a in accounts
+            if not math.isclose(a.unassigned, 0.0, abs_tol=1e-9)
+        ],
         "multiple_accounts": len(accounts) > 1,
         "we_owe": we_owe,
         "owed_to_us": owed_to_us,
