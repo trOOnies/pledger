@@ -48,7 +48,12 @@ initial amount is the sum of those amounts. A quantity can't go below 0.
 Debt accounts are the liability accounts listed as top-level keys in `creditors.yaml`, each
 mapping the people we have debts with to the initial amount: positive if we owe them,
 negative if they owe us. The account's initial amount is their sum, and its balance can
-go below 0 (we are owed more than we owe).
+go below 0 (we are owed more than we owe). The ledger movements with a debt account on
+either side add to the person named in their `comment` (as a whole word, ignoring case;
+the earliest name there, and the longest one if several start there): a credit is more
+that we owe them, a debit less. The Debt tab shows the movements naming no one as
+unassigned. The companies of the Work tab are added to every debt account (with 0) when
+the app starts and when a month with a new company is saved.
 
 A base movement is a dict (`description` and optional fixed `debit`/`credit` accounts) or
 just its description. A side set to `INVESTMENT` or `DEBT` (reserved names) takes any

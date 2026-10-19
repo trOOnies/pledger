@@ -1101,6 +1101,28 @@ class TestDebtPage:
         assert '<span class="bar-name">Dad</span>' in we_owe
         assert "Leo" not in we_owe and "Ana" not in we_owe
 
+    def test_ledger_debts_go_to_the_people_in_the_comment(self, settings, client):
+        with settings.ledger_path.open("a", encoding="utf-8") as f:
+            f.write(
+                "2026-01-05;Card fee;Eq;20;Cc;Fee for dad\n"  # a credit: we owe more
+                '2026-01-06;Move;Cc;"1,040.5";Ca;bank 2026-01\n'  # a debit: we owe less
+                "2026-01-07;Move;Cc;5;Ca;Zurich 1/24\n"  # names no one
+                "2026-01-08;Move;Ca;7;Bk;Dad\n"  # no debt account
+            )
+        settings.ledger_path.write_text(
+            settings.ledger_path.read_text().replace("2026-01-04;Gift;Ca;10;", "2026-01-04;Gift;Ca;2000;")
+        )
+        cc = LedgerStore(settings).load().accounts["Cc"]
+        # The initial amounts are only counted once, from the creditors YAML
+        assert {n: c.amount for n, c in cc.creditors.items()} == {"Dad": 120, "Bank": -990, "Ana": -30, "Leo": 0}
+        assert cc.unassigned == -5
+        r = client.get("/debt")
+        assert card_labels(r.text) == ["We owe", "Owed to us", "Unassigned", "Net debt"]
+        cards = r.text.split('<div class="cards">')[1].split("</div>\n  </div>")[0]
+        assert "$120.00" in cards and "$1,020.00" in cards and "-$5.00" in cards and "-$905.00" in cards
+        assert "<strong>(no one)</strong></td>\n        <td>Unassigned</td>" in r.text
+        assert "<strong>Bank</strong></td>\n        <td>Debtor</td>" in r.text
+
 
 @pytest.mark.parametrize(
     ("path", "message"),
@@ -1328,3 +1350,50 @@ def test_work_file_is_created_when_adding(settings, tmp_path):
         "Month;Company;Position;Gross salary;Net salary;Received payment date\n"
         "2025-01;Acme;Dev;10.00;8.00;2025-02-01\n"
     )
+
+
+class TestWorkCreditors:
+    @pytest.fixture
+    def settings(self, settings, tmp_path):
+        text = settings.accounts_path.read_text(encoding="utf-8")
+        settings.accounts_path.write_text(
+            text.replace("    description: Credit card\n    initial_amount: 0\n", "    description: Credit card\n")
+            .replace("equity:\n", "  De:\n    description: Debts\nequity:\n"),
+            encoding="utf-8",
+        )
+        creditors = tmp_path / "creditors.yaml"
+        creditors.write_text("# people\nCc:\n  Dad: 100\n  Acme: -5\nDe:\n", encoding="utf-8")
+        work = tmp_path / "work.csv"
+        work.write_text(WORK_CSV, encoding="utf-8")
+        return replace(settings, creditors_path=creditors, work_path=work)
+
+    def text(self, settings):
+        return settings.creditors_path.read_text(encoding="utf-8")
+
+    def test_companies_are_added_at_startup(self, settings):
+        with TestClient(create_app(settings)) as client:
+            assert client.get("/debt").status_code == 200
+        assert self.text(settings) == (
+            "# people\nCc:\n  Dad: 100\n  Acme: -5\n  Globex: 0.0\nDe:\n  Globex: 0.0\n  Acme: 0.0\n"
+        )
+        with TestClient(create_app(settings)):  # nothing missing now
+            pass
+        assert self.text(settings).count("Globex") == 2
+
+    def test_startup_without_creditors_or_with_broken_files(self, settings):
+        settings.ledger_path.write_text("nope", encoding="utf-8")
+        before = self.text(settings)
+        with TestClient(create_app(settings)):
+            pass
+        assert self.text(settings) == before
+        with TestClient(create_app(replace(settings, creditors_path=None))):
+            pass
+
+    def test_new_companies_are_added(self, settings):
+        store = LedgerStore(settings)
+        assert store.add_creditors(["Acme"]) == [("De", "Acme")]
+        store.save_month("2026-02", "Initech", "Dev", "10", "8")
+        store.save_month("2026-03", "Initech", "Dev", "10", "8")
+        assert self.text(settings).count("Initech: 0.0") == 2
+        accounts = store.load().accounts
+        assert accounts["Cc"].creditors["Initech"].amount == 0 and "Initech" in accounts["De"].creditors

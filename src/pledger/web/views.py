@@ -191,7 +191,8 @@ def build_investments(snapshot: Snapshot) -> dict:
 def build_debts(snapshot: Snapshot) -> dict:
     """
     The people in each debt account: the ones we owe (creditors) and the ones
-    that owe us (debtors), with what we owe and are owed as positive amounts.
+    that owe us (debtors), with what we owe and are owed as positive amounts,
+    plus the debt of the movements whose comment names no one (unassigned).
     """
     accounts = [a for a in snapshot.accounts.values() if isinstance(a, DebtAccount)]
     people = [
@@ -203,6 +204,10 @@ def build_debts(snapshot: Snapshot) -> dict:
         }
         for a in accounts
         for c in a.creditors.values()
+    ] + [
+        {"account": a.name, "name": "(no one)", "role": "Unassigned", "amount": a.unassigned}
+        for a in accounts
+        if not math.isclose(a.unassigned, 0.0, abs_tol=1e-9)
     ]
 
     def by_account(people_of, sign: int) -> list[dict]:
@@ -214,6 +219,7 @@ def build_debts(snapshot: Snapshot) -> dict:
 
     we_owe = sum(c.amount for a in accounts for c in a.get_creditors().values())
     owed_to_us = -sum(c.amount for a in accounts for c in a.get_debtors().values())
+    unassigned = sum(a.unassigned for a in accounts)
     return {
         "accounts": [
             {
@@ -221,14 +227,15 @@ def build_debts(snapshot: Snapshot) -> dict:
                 "description": a.description,
                 "currency": a.currency.name,
                 "people": len(a.creditors),
-                "net": sum(c.amount for c in a.creditors.values()),
+                "net": sum(c.amount for c in a.creditors.values()) + a.unassigned,
             }
             for a in accounts
         ],
         "people": people,
         "we_owe": we_owe,
         "owed_to_us": owed_to_us,
-        "net": we_owe - owed_to_us,
+        "unassigned": unassigned,
+        "net": we_owe - owed_to_us + unassigned,
         "creditors": by_account(DebtAccount.get_creditors, 1),
         "debtors": by_account(DebtAccount.get_debtors, -1),
     }

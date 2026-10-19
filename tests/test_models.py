@@ -577,6 +577,36 @@ class TestDebtAccount:
         assert list(debts.get_debtors()) == ["Mum"]
         assert debts.get_creditors()["Dad"] is debts.creditors["Dad"]
 
+    @pytest.mark.parametrize(
+        ("comment", "name"),
+        [
+            ("Gas", "Gas"),
+            ("Gas 2025-12 (paid by Ali)", "Gas"),
+            ("gas bill", "Gas"),
+            ("Bill of La Nacion", "La Nacion"),  # the longest one there
+            ("La 2 and Gas", "La"),  # the earliest one
+            ("Gasoline", None),  # whole words only
+            ("Zurich 1/24", None),
+            ("", None),
+        ],
+    )
+    def test_creditor_in(self, currencies, comment, name):
+        debts = DebtAccount(
+            "De", "Debts", AccountType.LIABILITY, currencies["ARS"], 0.0,
+            creditors={n: Creditor(n, 0.0) for n in ("Gas", "La", "La Nacion")},
+        )
+        assert debts.creditor_in(comment) == name
+
+    def test_add_debt(self, currencies):
+        debts = DebtAccount(
+            "De", "Debts", AccountType.LIABILITY, currencies["ARS"], 0.0,
+            creditors={"Dad": Creditor("Dad", 100.0)},
+        )
+        debts.add_debt("Dad", -150.0)
+        debts.add_debt(None, 20.0)
+        assert debts.creditors["Dad"].is_debtor and debts.creditors["Dad"].amount == -50.0
+        assert debts.unassigned == 20.0
+
     def test_total_can_be_negative(self, currencies):
         debts = DebtAccount("De", "Debts", AccountType.LIABILITY, currencies["ARS"], 0.0)
         debts.add(-50.0)

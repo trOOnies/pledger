@@ -422,6 +422,29 @@ class DebtAccount(Account):
         super().__post_init__()
         self._check_positivity = lambda _: True
         self._check_positivity_vect = np.vectorize(self._check_positivity)
+        self.unassigned = 0.0  # added debt whose comment names no one
+
+    def creditor_in(self, comment: str) -> str | None:
+        """
+        The creditor or debtor named in a movement comment, as a whole word (ignoring
+        case): the earliest one, and the longest one there, if several.
+        """
+        found = [
+            (m.start(), -len(name), name)
+            for name in self.creditors
+            if (m := re.search(rf"(?<!\w){re.escape(name)}(?!\w)", comment, re.IGNORECASE))
+        ]
+        return min(found)[2] if found else None
+
+    def add_debt(self, name: str | None, amount: float) -> None:
+        """
+        Adds an amount to what we owe someone (negative: to what they owe us), or
+        to the unassigned debt without a name.
+        """
+        if name is None:
+            self.unassigned += amount
+        else:
+            self.creditors[name].amount += amount
 
     def get_creditors(self) -> dict[str, Creditor]:
         """The ones we owe."""
