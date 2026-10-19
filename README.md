@@ -14,7 +14,7 @@ make lint
 A FastAPI + HTMX UI. The Ledger page lists, adds and deletes movements; Accounts shows
 balances and adds accounts; Investments lists the investments of the investment accounts
 and their composition by type or by account; Debt lists who we owe and who owes us in the
-debt accounts; Setup adds result types and base movements. The Charts page
+debt accounts; Work lists the salary, company and job position of each month; Setup adds result types and base movements. The Charts page
 shows the composition of assets and liabilities, gains and losses by result type, a result
 statement, and equity over time. The Help page explains the concepts for everyday users.
 The month filter is shared by Ledger, Accounts and Charts (remembered in a cookie).
@@ -25,9 +25,10 @@ make serve     # http://127.0.0.1:8000 (API docs at /docs)
 
 It reads `info/accounts.yaml`, `info/result_types.yaml`, `info/ledger.csv`,
 `info/currencies.yaml` (with each other currency's rates in `info/currencies/<NAME>.csv`)
-and, if present, `info/investment.yaml` and `info/creditors.yaml` from the current
-directory. Override with `PLEDGER_ACCOUNTS`, `PLEDGER_BASE_MOVEMENTS`, `PLEDGER_LEDGER`,
-`PLEDGER_CURRENCIES`, `PLEDGER_INVESTMENTS` and `PLEDGER_CREDITORS`. The CSV stays the source of truth: adding a movement appends one line,
+and, if present, `info/investment.yaml`, `info/creditors.yaml` and `info/work.csv` from the
+current directory. Override with `PLEDGER_ACCOUNTS`, `PLEDGER_BASE_MOVEMENTS`,
+`PLEDGER_LEDGER`, `PLEDGER_CURRENCIES`, `PLEDGER_INVESTMENTS`, `PLEDGER_CREDITORS` and
+`PLEDGER_WORK`. The CSV stays the source of truth: adding a movement appends one line,
 deleting removes one line, and the rest of the file is left byte-for-byte as it was.
 New accounts and base movements are inserted at the end of their section in the YAML files
 (gains and losses under their result type, transfers under `transfer`),
@@ -63,6 +64,24 @@ ledger is loaded and are never stored in `ledger.csv`, which can't contain them.
 count towards balances and equity, but the movements, gains, losses, profit and result
 charts leave out the movements of their result type unless the *Initial movements* filter
 (or the `initial` API parameter) is on.
+
+The Work tab reads the work history from `work.csv`, one row per month, in order:
+
+```csv
+Month;Company;Position;Gross salary;Net salary;Received payment date
+2024-09;Acme;Acme Sr;4291295.67;4111961.22;2024-10-03
+2024-10;;;;;
+2024-11;Globex;GX Dev;3165000.42;2694595.00;
+```
+
+No month can be missing: a month without a job is a row with no company, position or
+salary. A worked month needs both salaries, the net one no larger than the gross one; the
+`Received payment date` column is optional (added when a date is first entered). The
+companies and their job positions come from the rows, and the job of the last month, if
+it isn't a gap, is the current one. The tab's form adds a month right after the last one
+(or right before the first one) or, for an existing month, replaces it; each row's edit
+button loads it into the form. Only the first and last months can be deleted. The file is
+created if missing and doesn't affect the ledger.
 
 The eye button in the top bar replaces every amount with `******` until clicked again; the
 choice is remembered by the browser.

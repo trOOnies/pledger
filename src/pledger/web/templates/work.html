@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}Work · pledger{% endblock %}
+{% block content %}
+<p class="muted">The work history is kept in <code>{{ settings.work_path }}</code>, one row per month.</p>
+<div id="work">{% include "_work.html" %}</div>
+{% endblock %}

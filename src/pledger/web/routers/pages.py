@@ -19,6 +19,7 @@ from pledger.web.views import (
     build_debts,
     build_investments,
     build_view,
+    build_work,
     months_of,
     setup_context,
 )
@@ -64,6 +65,14 @@ def debt(request: Request, store: StoreDep):
     context = build_debts(store.load())
     return templates.TemplateResponse(
         request, "debt.html", {**context, "settings": store.settings}
+    )
+
+
+@router.get("/work")
+def work(request: Request, store: StoreDep):
+    context = build_work(store.load_work())
+    return templates.TemplateResponse(
+        request, "work.html", {**context, "settings": store.settings}
     )
 
 

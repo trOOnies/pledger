@@ -6,6 +6,7 @@ import datetime as dt
 import os
 import re
 from dataclasses import dataclass, field
+from itertools import pairwise
 from math import isclose
 
 import numpy as np
@@ -683,3 +684,117 @@ class Movement:
 
         self.acc_debit = self.input_acc_debit
         self.acc_credit = self.input_acc_credit
+
+
+# * ---------------------------------------
+
+
+def parse_month(value, what: str) -> str:
+    """A month as YYYY-MM, from that text or a date (whose month is taken)."""
+    if isinstance(value, dt.date):
+        return value.strftime("%Y-%m")
+    value = str(value).strip()
+    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", value):
+        raise ValueError(f"Invalid {what}: {value!r} (must be YYYY-MM)")
+    return value
+
+
+def next_month(month: str) -> str:
+    """The month after a YYYY-MM month."""
+    year, mon = int(month[:4]), int(month[5:])
+    return f"{year + mon // 12:04d}-{mon % 12 + 1:02d}"
+
+
+@dataclass
+class WorkMonth:
+    """
+    A month (YYYY-MM) of the work history: the company and job position worked at,
+    with the salary, gross and net, and when it was received, if it was. A month
+    without a company is a gap (no job) and has no salary.
+    """
+
+    month: str
+    company: str | None = None
+    position: str | None = None
+    gross: float | None = None
+    net: float | None = None
+    payment_date: dt.date | None = None
+
+    def __post_init__(self):
+        self.month = parse_month(self.month, "month")
+        if (self.company is None) != (self.position is None):
+            raise ValueError(f"{self.month} must have both a company and a job position, or neither")
+        if self.is_gap:
+            if self.gross is not None or self.net is not None or self.payment_date is not None:
+                raise ValueError(f"{self.month} has no job, so it cannot have a salary")
+            return
+        if self.gross is None or self.net is None:
+            raise ValueError(f"{self.month} must have both a gross and a net salary")
+        if self.gross < 0 or self.net < 0:
+            raise ValueError(f"The salary of {self.month} cannot be negative")
+        if self.net > self.gross + 1e-9:
+            raise ValueError(f"The net salary of {self.month} cannot be over the gross salary")
+
+    @property
+    def is_gap(self) -> bool:
+        return self.company is None
+
+    @staticmethod
+    def check_sequence(months: list[WorkMonth]) -> None:
+        """One per month, in order and with no missing months: gaps must be explicit."""
+        for prev, cur in pairwise(months):
+            if cur.month != next_month(prev.month):
+                raise ValueError(
+                    f"{cur.month} comes after {prev.month}, but {next_month(prev.month)} is expected: "
+                    "months must be in order, one per row, with gaps as rows with no company"
+                )
+
+
+@dataclass
+class JobPosition:
+    """A job position at a company, with the months worked in it (in order)."""
+
+    name: str
+    company: str
+    months: list[str] = field(default_factory=list)
+
+    @property
+    def start(self) -> str:
+        return self.months[0]
+
+    @property
+    def end(self) -> str:
+        return self.months[-1]
+
+
+@dataclass
+class Company:
+    """A company worked for, with its job positions (the newest first)."""
+
+    name: str
+    positions: dict[str, JobPosition] = field(default_factory=dict)
+
+    @property
+    def start(self) -> str:
+        return min(p.start for p in self.positions.values())
+
+    @property
+    def end(self) -> str:
+        return max(p.end for p in self.positions.values())
+
+    @property
+    def months(self) -> int:
+        return sum(len(p.months) for p in self.positions.values())
+
+    @classmethod
+    def from_months(cls, months: list[WorkMonth]) -> dict[str, Company]:
+        """The companies and job positions of the work months, from the newest to the oldest."""
+        companies: dict[str, Company] = {}
+        for m in months:
+            if m.is_gap:
+                continue
+            company = companies.setdefault(m.company, cls(m.company))
+            company.positions.setdefault(m.position, JobPosition(m.position, m.company)).months.append(m.month)
+        for c in companies.values():
+            c.positions = dict(sorted(c.positions.items(), key=lambda kv: kv[1].end, reverse=True))
+        return dict(sorted(companies.items(), key=lambda kv: kv[1].end, reverse=True))

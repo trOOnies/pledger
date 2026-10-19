@@ -14,6 +14,7 @@ from pledger.web.routers import (
     pages,
     result_types,
     summary,
+    work,
 )
 from pledger.web.store import LedgerDataError, LedgerStore, Settings
 from pledger.web.templating import HERE, templates
@@ -43,6 +44,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(base_movements.router)
     app.include_router(movements.router)
     app.include_router(summary.router)
+    app.include_router(work.router)
     return app
 
 

@@ -1,0 +1,83 @@
+<div class="layout">
+  <aside class="panel">{% include "_work_form.html" %}</aside>
+
+  <section class="view">
+    <div class="cards">
+      <div class="card" title="The job of the last month, if any"><span class="label">Current job</span><span class="num">{{ current.company if current else "-" }}</span>{% if current %}<span class="muted small">{{ current.position }}</span>{% endif %}</div>
+      <div class="card" title="Gross salaries of the months of this year"><span class="label">Gross <small>{{ year }}</small></span><span class="num money">{{ gross | money }}</span></div>
+      <div class="card" title="Net salaries of the months of this year"><span class="label">Net <small>{{ year }}</small></span><span class="num money">{{ net | money }}</span></div>
+    </div>
+
+    <div class="panel">
+      <h2>Companies</h2>
+      <table data-sortable="positions">
+        <thead><tr><th>Company</th><th>Position</th><th>From</th><th>To</th><th class="num">Months</th></tr></thead>
+        <tbody>
+        {% for c in companies %}
+        {% for p in c.positions.values() %}
+        <tr>
+          <td class="nowrap"><strong>{{ c.name }}</strong>{% if current and current.company == c.name and current.position == p.name %} <span class="badge gain">Current</span>{% endif %}</td>
+          <td>{{ p.name }}</td>
+          <td class="nowrap">{{ p.start }}</td>
+          <td class="nowrap">{{ p.end }}</td>
+          <td class="num">{{ p.months | length }}</td>
+        </tr>
+        {% endfor %}
+        {% else %}
+        <tr><td colspan="5" class="muted">No companies yet: add a month with its company and position.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <h2>Salaries</h2>
+      {% if unpaid %}
+      <p class="msg warn" title="{{ unpaid | join(', ') }}">⚠ {{ unpaid | length }} past month{{ 's' if unpaid | length != 1 }} with a job {{ 'have' if unpaid | length != 1 else 'has' }} no received payment date{% if unpaid | length <= 3 %}: {{ unpaid | join(', ') }}{% endif %}.</p>
+      {% endif %}
+      <div class="table-wrap">
+      <table data-sortable="salaries">
+        <thead><tr><th>Month</th><th>Company</th><th>Position</th><th class="num">Gross salary</th><th class="num">Net salary</th><th>Received payment date</th><th></th></tr></thead>
+        <tbody>
+        {% for row in months %}
+        {% set m = row.month %}
+        <tr>
+          <td class="nowrap"><strong>{{ m.month }}</strong></td>
+          {% if m.is_gap %}
+          <td class="muted" colspan="2">No job</td>
+          <td class="num muted" data-sort="-1">-</td>
+          <td class="num muted" data-sort="-1">-</td>
+          <td class="muted">-</td>
+          {% else %}
+          <td>{{ m.company }}</td>
+          <td>{{ m.position }}</td>
+          <td class="num money" data-sort="{{ m.gross }}">{{ m.gross | money }}</td>
+          <td class="num money" data-sort="{{ m.net }}">{{ m.net | money }}</td>
+          {% if row.unpaid %}
+          <td class="nowrap hint warn" title="This month is over, but its payment hasn't been received">⚠ Not received</td>
+          {% else %}
+          <td class="nowrap {{ 'muted' if not m.payment_date }}">{{ m.payment_date or "-" }}</td>
+          {% endif %}
+          {% endif %}
+          <td class="nowrap">
+            <button class="icon edit" title="Edit" aria-label="Edit {{ m.month }}"
+              hx-get="/work/form?month={{ m.month }}" hx-target="#work-form" hx-swap="outerHTML">&#9998;</button>
+            {% if row.deletable %}
+            <button class="icon" title="Delete" aria-label="Delete {{ m.month }}"
+              hx-post="/work/months/{{ row.index }}/delete"
+              hx-vals='{{ {"fingerprint": row.fingerprint} | tojson }}'
+              hx-confirm="Delete {{ m.month }}?"
+              hx-target="#work">&times;</button>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="muted">No months yet.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      {% if months %}<p class="muted small">Only the first and last months can be deleted; make other months a gap by editing them.</p>{% endif %}
+    </div>
+  </section>
+</div>

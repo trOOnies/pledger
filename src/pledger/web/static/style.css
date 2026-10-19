@@ -224,10 +224,13 @@ button.icon {
   color: var(--muted); cursor: pointer; font-size: 1.1rem; line-height: 1;
 }
 button.icon:hover { color: var(--loss); }
+button.icon.edit:hover { color: var(--accent); }
 
 .msg { margin: 0; padding: .5rem .75rem; border-radius: 6px; }
 .msg.error { background: var(--loss-bg); color: var(--loss); }
 .msg.success { background: var(--gain-bg); color: var(--gain); }
+.msg.warn { background: var(--transfer-bg); color: var(--warn); }
+section.panel > .msg, .panel > .msg.warn { margin-bottom: .75rem; }
 .hint.warn { color: var(--warn); font-size: .8rem; }
 
 .flash {
@@ -237,7 +240,8 @@ button.icon:hover { color: var(--loss); }
 
 .htmx-request #view, #view.htmx-request,
 .htmx-request #charts, #charts.htmx-request,
-.htmx-request #accounts-view, #accounts-view.htmx-request { opacity: .6; transition: opacity .2s; }
+.htmx-request #accounts-view, #accounts-view.htmx-request,
+.htmx-request #work, #work.htmx-request { opacity: .6; transition: opacity .2s; }
 
 /* Charts */
 #charts { display: grid; gap: 1rem; }

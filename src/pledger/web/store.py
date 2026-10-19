@@ -20,10 +20,15 @@ from pledger.ledger import Ledger
 from pledger.models import (
     SPECIAL_SIDES,
     Account,
+    Company,
     Currency,
+    JobPosition,
     Movement,
     MovementBase,
     ResultType,
+    WorkMonth,
+    next_month,
+    parse_month,
 )
 
 BOM = "﻿"
@@ -52,6 +57,7 @@ class Settings:
     currencies_path: Path
     investments_path: Path | None = None  # None or missing: no investment accounts
     creditors_path: Path | None = None  # None or missing: no debt accounts
+    work_path: Path | None = None  # missing: no work history yet (created when adding a month)
     currency: str = "$"
 
     @classmethod
@@ -66,6 +72,7 @@ class Settings:
             currencies_path=Path(os.environ.get("PLEDGER_CURRENCIES", "info/currencies.yaml")),
             investments_path=Path(os.environ.get("PLEDGER_INVESTMENTS", "info/investment.yaml")),
             creditors_path=Path(os.environ.get("PLEDGER_CREDITORS", "info/creditors.yaml")),
+            work_path=Path(os.environ.get("PLEDGER_WORK", "info/work.csv")),
             currency=os.environ.get("PLEDGER_CURRENCY", "$"),
         )
 
@@ -124,6 +131,33 @@ class Snapshot:
     def manual_base_movements(self) -> dict[str, MovementBase]:
         """Base movements that can be picked for a new movement (not internal ones)."""
         return {n: b for n, b in self.base_movements.items() if not b.internal}
+
+
+# Columns of the work CSV; the received payment date one is optional.
+MONTH, COMPANY, POSITION, GROSS, NET, PAYMENT_DATE = (
+    "Month", "Company", "Position", "Gross salary", "Net salary", "Received payment date",
+)
+WORK_COLUMNS = [MONTH, COMPANY, POSITION, GROSS, NET, PAYMENT_DATE]
+
+
+@dataclass
+class Work:
+    """The work history, one row per month, loaded from disk for one request."""
+
+    months: list[WorkMonth]  # in order, with no missing months
+    rows: DataFrame  # raw CSV rows, all columns as strings
+
+    def __post_init__(self):
+        self.companies: dict[str, Company] = Company.from_months(self.months)
+
+    @property
+    def current(self) -> WorkMonth | None:
+        """The last month, if it is not a gap: the current job."""
+        last = self.months[-1] if self.months else None
+        return None if last is None or last.is_gap else last
+
+    def position_of(self, month: WorkMonth) -> JobPosition | None:
+        return None if month.is_gap else self.companies[month.company].positions[month.position]
 
 
 def row_fingerprint(row) -> str:
@@ -222,7 +256,7 @@ class LedgerStore:
 
         buf = io.StringIO()
         csv.writer(buf, delimiter=";", lineterminator="").writerow(new_row.values())
-        csv_file = self._read_file(len(snapshot.rows))
+        csv_file = self._read_file(len(snapshot.rows), self.settings.ledger_path)
         csv_file.lines.append(buf.getvalue())
         self._write_file(csv_file)
 
@@ -357,6 +391,131 @@ class LedgerStore:
             _atomic_write(path, before)
             raise ValueError(f"Could not add {name!r}: {e}") from None
 
+    def load_work(self) -> Work:
+        """
+        The work history: one row per month, in order and with no missing months
+        (a month without a job is a row with no company, position or salary).
+        """
+        path = self.settings.work_path
+        try:
+            if _existing(path) and path.read_bytes().strip():
+                rows = read_csv(path, sep=";", dtype=str, keep_default_na=False, encoding="utf-8-sig")
+                missing = [c for c in WORK_COLUMNS if c != PAYMENT_DATE and c not in rows.columns]
+                if missing:
+                    raise ValueError(f"The work CSV is missing the columns {missing}")
+            else:
+                rows = DataFrame(columns=WORK_COLUMNS, dtype=str)
+            months = [_work_month(row) for _, row in rows.iterrows()]
+            WorkMonth.check_sequence(months)
+        except (OSError, KeyError, ValueError) as e:
+            raise LedgerDataError(f"{type(e).__name__}: {e}") from e
+        return Work(months, rows)
+
+    def save_month(
+        self,
+        month: str,
+        company: str = "",
+        position: str = "",
+        gross: str | float = "",
+        net: str | float = "",
+        payment_date: str = "",
+    ) -> bool:
+        """
+        Save a month of the work history: replacing it if it is already there, else
+        adding it right after the last month or right before the first one, so there
+        are no missing months. Without a company, it is a gap (no job). Returns
+        whether the month is new. Creates the work CSV if missing.
+        """
+        path = self.settings.work_path
+        if path is None:
+            raise ValueError("No work CSV is set")
+        work = self.load_work()
+        texts = {"company": company, "position": position}
+        for what, text in texts.items():
+            if any(c in str(text) for c in "\r\n"):
+                raise ValueError(f"The {what} cannot contain line breaks")
+        entry = WorkMonth(
+            month=parse_month(month, "month"),
+            company=str(company).strip() or None,
+            position=str(position).strip() or None,
+            gross=_parse_amount(gross, "gross salary") if str(gross).strip() else None,
+            net=_parse_amount(net, "net salary") if str(net).strip() else None,
+            payment_date=_parse_date(payment_date, "received payment date"),
+        )
+
+        if not _existing(path) or not path.read_bytes().strip():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(";".join(WORK_COLUMNS) + "\n", encoding="utf-8")
+            work = self.load_work()
+        months = [m.month for m in work.months]
+        if entry.month in months:
+            index = months.index(entry.month)
+            old_row = dict(work.rows.iloc[index])
+        elif not months or entry.month == next_month(months[-1]):
+            index, old_row = len(months), {}
+        elif next_month(entry.month) == months[0]:
+            index, old_row = 0, {}
+        else:
+            expected = f"{next_month(months[-1])} (after the last month)"
+            raise ValueError(
+                f"Months cannot be skipped: add {expected} first, leaving the company "
+                "empty for months without a job"
+            )
+
+        before = path.read_bytes().decode("utf-8")
+        csv_file = self._read_file(len(work.rows), path)
+        columns = list(work.rows.columns)
+        if entry.payment_date and PAYMENT_DATE not in columns:
+            # Add the optional column, empty for every other month.
+            columns.append(PAYMENT_DATE)
+            csv_file.lines[0] += ";" + PAYMENT_DATE
+            for i in csv_file.row_lines:
+                csv_file.lines[i] += ";"
+        new_row = {col: old_row.get(col, "") for col in columns}  # keeps any other columns
+        new_row.update({
+            MONTH: entry.month,
+            COMPANY: entry.company or "",
+            POSITION: entry.position or "",
+            GROSS: "" if entry.gross is None else f"{entry.gross:.2f}",
+            NET: "" if entry.net is None else f"{entry.net:.2f}",
+        })
+        if PAYMENT_DATE in columns:
+            new_row[PAYMENT_DATE] = entry.payment_date.isoformat() if entry.payment_date else ""
+        buf = io.StringIO()
+        csv.writer(buf, delimiter=";", lineterminator="").writerow(new_row.values())
+        if old_row:
+            csv_file.lines[csv_file.row_lines[index]] = buf.getvalue()
+        elif index == 0 and months:
+            csv_file.lines.insert(csv_file.row_lines[0], buf.getvalue())
+        else:
+            csv_file.lines.append(buf.getvalue())
+        self._write_file(csv_file)
+        try:
+            self.load_work()
+        except LedgerDataError as e:
+            _atomic_write(path, before)
+            raise ValueError(f"Could not save {entry.month}: {e}") from None
+        return not old_row
+
+    def delete_month(self, index: int, fingerprint: str | None = None) -> None:
+        """
+        Delete the first or the last month of the work history by position, optionally
+        checking it is the expected one. Other months can only be made gaps.
+        """
+        rows = self.load_work().rows
+        if not 0 <= index < len(rows):
+            raise StaleRowError(f"Work row {index} does not exist")
+        if fingerprint is not None and work_fingerprint(rows.iloc[index]) != fingerprint:
+            raise StaleRowError("The work history changed since this page was loaded; reload and try again")
+        if index not in {0, len(rows) - 1}:
+            raise ValueError(
+                "Only the first or last month can be deleted; leave the company of the others "
+                "empty to make them months without a job"
+            )
+        csv_file = self._read_file(len(rows), self.settings.work_path)
+        del csv_file.lines[csv_file.row_lines[index]]
+        self._write_file(csv_file)
+
     def delete(self, index: int, fingerprint: str | None = None) -> None:
         """
         Delete a row by position, optionally checking it is the expected one.
@@ -373,16 +532,16 @@ class LedgerStore:
         base_name = rows.iloc[index]["base_movement"]
         if snapshot.base_movements[base_name].internal:
             raise ValueError(f"Movements of the internal base movement {base_name!r} cannot be deleted")
-        csv_file = self._read_file(len(rows))
+        csv_file = self._read_file(len(rows), self.settings.ledger_path)
         del csv_file.lines[csv_file.row_lines[index]]
         self._write_file(csv_file)
 
-    def _read_file(self, n_rows: int) -> _CsvFile:
+    def _read_file(self, n_rows: int, path: Path) -> _CsvFile:
         """
-        Split the CSV into raw lines, so edits touch only the affected line and
+        Split a CSV into raw lines, so edits touch only the affected line and
         every other byte (quoting, BOM, line endings) is kept as is.
         """
-        raw = self.settings.ledger_path.read_bytes().decode("utf-8")
+        raw = path.read_bytes().decode("utf-8")
         bom = raw.startswith(BOM)
         text = raw.removeprefix(BOM)
         newline = "\r\n" if "\r\n" in text else "\n"
@@ -392,18 +551,36 @@ class LedgerStore:
         row_lines = [i for i, line in enumerate(lines) if i > 0 and line.strip()]
         if len(row_lines) != n_rows:
             raise LedgerDataError(
-                "The ledger CSV has multi-line fields; edit it outside pledger"
+                f"The CSV {path} has multi-line fields; edit it outside pledger"
             )
-        return _CsvFile(lines, row_lines, newline, bom, trailing)
+        return _CsvFile(path, lines, row_lines, newline, bom, trailing)
 
     def _write_file(self, csv_file: _CsvFile) -> None:
-        """Atomically replace the CSV."""
+        """Atomically replace a CSV."""
         text = csv_file.newline.join(csv_file.lines)
         if csv_file.trailing:
             text += csv_file.newline
         if csv_file.bom:
             text = BOM + text
-        _atomic_write(self.settings.ledger_path, text)
+        _atomic_write(csv_file.path, text)
+
+
+def work_fingerprint(row) -> str:
+    """Identifies a work CSV row's content, like row_fingerprint."""
+    return "|".join(str(row.get(c, "")) for c in WORK_COLUMNS)
+
+
+def _work_month(row) -> WorkMonth:
+    """A WorkMonth from a work CSV row (all strings, empty for missing values)."""
+    month = row[MONTH]
+    return WorkMonth(
+        month=month,
+        company=row[COMPANY].strip() or None,
+        position=row[POSITION].strip() or None,
+        gross=_parse_amount(row[GROSS], f"gross salary of {month}") if row[GROSS].strip() else None,
+        net=_parse_amount(row[NET], f"net salary of {month}") if row[NET].strip() else None,
+        payment_date=_parse_date(row.get(PAYMENT_DATE, ""), f"received payment date of {month}"),
+    )
 
 
 def _check_initial_base_movements(base_movements: dict[str, MovementBase]) -> None:
@@ -479,6 +656,17 @@ def _atomic_write(path: Path, text: str) -> None:
     except BaseException:
         Path(tmp).unlink(missing_ok=True)
         raise
+
+
+def _parse_date(value: str, what: str) -> dt.date | None:
+    """An optional ISO date: None if empty."""
+    value = str(value).strip()
+    if not value:
+        return None
+    try:
+        return dt.date.fromisoformat(value)
+    except ValueError:
+        raise ValueError(f"Invalid {what}: {value!r}") from None
 
 
 def _parse_amount(amount: str | float, what: str, negative_error: str | None = None) -> float:
@@ -591,6 +779,7 @@ def _yaml_entry(name: str, fields: dict, indent: int, step: int) -> list[str]:
 
 @dataclass
 class _CsvFile:
+    path: Path
     lines: list[str]
     row_lines: list[int]  # line number of each data row
     newline: str

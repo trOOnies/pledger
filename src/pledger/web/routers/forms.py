@@ -16,8 +16,10 @@ from pledger.web.views import (
     base_fields,
     base_sides,
     build_accounts,
+    build_work,
     months_of,
     setup_context,
+    work_form,
 )
 
 router = APIRouter(tags=["forms"], default_response_class=HTMLResponse)
@@ -139,6 +141,63 @@ def create_account(
         request, store, {"acc_type": acc_type, "acc_currency": currency},
         account_success=f"Added account {name.strip()}",
     )
+
+
+def render_work(request: Request, store: LedgerStore, form: dict | None = None, **extra):
+    return templates.TemplateResponse(
+        request, "_work.html", {**build_work(store.load_work(), form), **extra}
+    )
+
+
+@router.get("/work/form")
+def work_month_form(request: Request, store: StoreDep, month: str = ""):
+    """The work month form, filled with a month's values to edit it."""
+    return templates.TemplateResponse(
+        request, "_work_form.html", {"form": work_form(store.load_work(), month.strip())}
+    )
+
+
+@router.post("/work/months")
+def save_work_month(
+    request: Request,
+    store: StoreDep,
+    month: Annotated[str, Form()] = "",
+    company: Annotated[str, Form()] = "",
+    position: Annotated[str, Form()] = "",
+    gross: Annotated[str, Form()] = "",
+    net: Annotated[str, Form()] = "",
+    payment_date: Annotated[str, Form()] = "",
+):
+    try:
+        created = store.save_month(month, company, position, gross, net, payment_date)
+    except ValueError as e:
+        values = {
+            "company": company, "position": position, "gross": gross, "net": net,
+            "payment_date": payment_date,
+        }
+        work = store.load_work()
+        form = {**work_form(work, month.strip(), values), "error": str(e)}
+        return render_work(request, store, form)
+    work = store.load_work()
+    what = f"{position.strip()} at {company.strip()}" if company.strip() else "no job"
+    form = {
+        **work_form(work),
+        "success": f"{'Added' if created else 'Updated'} {month.strip()} ({what})",
+    }
+    return render_work(request, store, form)
+
+
+@router.post("/work/months/{index}/delete")
+def delete_work_month(
+    request: Request, store: StoreDep, index: int, fingerprint: Annotated[str, Form()]
+):
+    try:
+        store.delete_month(index, fingerprint)
+    except StaleRowError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from None
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
+    return render_work(request, store)
 
 
 @router.post("/setup/result-types")

@@ -17,6 +17,7 @@ from pledger.web.store import (
     Settings,
     _insert_yaml_entry,
     row_fingerprint,
+    work_fingerprint,
 )
 from pledger.web.templating import money, quantity
 from pledger.web.views import build_charts, composition, equity_series, nice_ticks
@@ -1115,3 +1116,215 @@ def test_quantity_format():
     assert quantity(1.5) == "1.5"
     assert quantity(0.123456) == "0.1235"
     assert quantity(0) == "0"
+
+
+WORK_CSV = """\
+Month;Company;Position;Gross salary;Net salary
+2025-10;Acme;Acme Jr;1000.00;800.00
+2025-11;Acme;Acme Sr;1500.50;1200.00
+2025-12;;;;
+2026-01;Globex;GX Dev;2000.00;1600.00"""
+
+
+class TestWork:
+    @pytest.fixture
+    def settings(self, settings, tmp_path):
+        path = tmp_path / "work.csv"
+        path.write_text(WORK_CSV, encoding="utf-8")
+        return replace(settings, work_path=path)
+
+    @pytest.fixture
+    def store(self, settings):
+        return LedgerStore(settings)
+
+    @pytest.fixture
+    def client(self, settings):
+        return TestClient(create_app(settings))
+
+    def text(self, settings):
+        return settings.work_path.read_text(encoding="utf-8")
+
+    def test_load(self, store):
+        work = store.load_work()
+        assert [m.month for m in work.months] == ["2025-10", "2025-11", "2025-12", "2026-01"]
+        assert work.months[2].is_gap
+        assert list(work.companies) == ["Globex", "Acme"]
+        assert work.current.position == "GX Dev"
+        assert work.position_of(work.months[1]).name == "Acme Sr"
+
+    def test_no_current_job_after_a_gap(self, store, settings):
+        settings.work_path.write_text(WORK_CSV + "\n2026-02;;;;", encoding="utf-8")
+        assert store.load_work().current is None
+
+    @pytest.mark.parametrize(
+        ("line", "error"),
+        [
+            ("2026-03;;;;", "2026-03 comes after 2026-01, but 2026-02 is expected"),
+            ("2026-01;;;;", "is expected"),
+            ("2026-02;Globex;;1;1", "both a company and a job position"),
+            ("2026-02;;;1;1", "cannot have a salary"),
+            ("2026-02;Globex;GX Dev;;", "both a gross and a net salary"),
+            ("2026-02;Globex;GX Dev;1;2", "over the gross"),
+        ],
+    )
+    def test_data_errors(self, store, settings, line, error):
+        settings.work_path.write_text(WORK_CSV + "\n" + line, encoding="utf-8")
+        with pytest.raises(LedgerDataError, match=error):
+            store.load_work()
+
+    def test_missing_columns(self, store, settings):
+        settings.work_path.write_text("Month;Company\n2026-01;;\n", encoding="utf-8")
+        with pytest.raises(LedgerDataError, match="missing the columns"):
+            store.load_work()
+
+    def test_add_after_the_last_month_keeps_the_file(self, store, settings):
+        assert store.save_month("2026-02", "Globex", "GX Dev", "2,100", "1700") is True
+        assert self.text(settings) == WORK_CSV + "\n2026-02;Globex;GX Dev;2100.00;1700.00"
+        assert store.save_month("2026-03") is True  # a gap
+        assert self.text(settings).endswith("\n2026-03;;;;")
+
+    def test_add_before_the_first_month(self, store, settings):
+        store.save_month("2025-09", "Acme", "Acme Jr", "900", "700")
+        assert self.text(settings).startswith(
+            "Month;Company;Position;Gross salary;Net salary\n2025-09;Acme;Acme Jr;900.00;700.00\n2025-10;"
+        )
+
+    def test_existing_months_are_replaced(self, store, settings):
+        assert store.save_month("2025-12", "Acme", "Acme Sr", "1500.5", "1200") is False
+        assert "\n2025-12;Acme;Acme Sr;1500.50;1200.00\n" in self.text(settings)
+        assert store.save_month("2025-11") is False  # now a gap
+        assert "\n2025-11;;;;\n" in self.text(settings)
+        assert len(store.load_work().months) == 4
+
+    def test_payment_date_adds_its_column(self, store, settings):
+        store.save_month("2025-11", "Acme", "Acme Sr", "1500.5", "1200", "2025-12-05")
+        assert self.text(settings) == (
+            "Month;Company;Position;Gross salary;Net salary;Received payment date\n"
+            "2025-10;Acme;Acme Jr;1000.00;800.00;\n"
+            "2025-11;Acme;Acme Sr;1500.50;1200.00;2025-12-05\n"
+            "2025-12;;;;;\n"
+            "2026-01;Globex;GX Dev;2000.00;1600.00;"
+        )
+        assert store.load_work().months[1].payment_date == dt.date(2025, 12, 5)
+        store.save_month("2026-02", "Globex", "GX Dev", "1", "1")
+        assert self.text(settings).endswith("\n2026-02;Globex;GX Dev;1.00;1.00;")
+
+    @pytest.mark.parametrize(
+        ("args", "error"),
+        [
+            (("2026-03",), "Months cannot be skipped: add 2026-02 \\(after the last month\\) first"),
+            (("2025-08",), "Months cannot be skipped"),
+            (("2026-02", "Globex", "", "1", "1"), "both a company and a job position"),
+            (("2026-02", "", "", "1", "1"), "cannot have a salary"),
+            (("2026-02", "Globex", "GX Dev", "1", ""), "both a gross and a net salary"),
+            (("2026-02", "Globex", "GX Dev", "1", "2"), "over the gross"),
+            (("2026-02", "Globex", "GX Dev", "1", "-1"), "cannot be negative"),
+            (("2026-02", "Globex", "GX Dev", "1", "1", "2026-02-30"), "Invalid received payment date"),
+            (("June",), "must be YYYY-MM"),
+        ],
+    )
+    def test_save_errors(self, store, settings, args, error):
+        with pytest.raises(ValueError, match=error):
+            store.save_month(*args)
+        assert self.text(settings) == WORK_CSV
+
+    def test_delete_first_or_last_month_only(self, store, settings):
+        rows = store.load_work().rows
+        with pytest.raises(ValueError, match="Only the first or last month"):
+            store.delete_month(1, work_fingerprint(rows.iloc[1]))
+        store.delete_month(3, work_fingerprint(rows.iloc[3]))
+        store.delete_month(0, work_fingerprint(rows.iloc[0]))
+        assert [m.month for m in store.load_work().months] == ["2025-11", "2025-12"]
+
+    def test_page(self, client):
+        r = client.get("/work")
+        assert r.status_code == 200
+        assert 'href="/work" aria-current="page"' in r.text
+        assert card_labels(r.text) == ["Current job", "Gross", "Net"]
+        assert "<strong>Globex</strong> <span class=\"badge gain\">Current</span>" in r.text
+        salaries = r.text.split('data-sortable="salaries"')[1]
+        assert re.findall(r"<strong>(\d{4}-\d{2})</strong>", salaries) == ["2026-01", "2025-12", "2025-11", "2025-10"]
+        assert '<td class="muted" colspan="2">No job</td>' in salaries
+        assert "$1,500.50" in salaries
+        # Only the first and last months have a delete button
+        assert salaries.count('aria-label="Delete') == 2
+        # The form is ready for the next month, at the last job
+        assert "<h2>New month</h2>" in r.text
+        assert 'name="month" value="2026-02"' in r.text and 'name="position" value="GX Dev"' in r.text
+
+    def test_unpaid_months_warning(self, client, store, settings):
+        # Worked months already over: 2025-10, 2025-11 and 2026-01 (2025-12 is a gap)
+        r = client.get("/work")
+        assert "⚠ 3 past months with a job have no received payment date: 2026-01, 2025-11, 2025-10." in r.text
+        assert r.text.count("⚠ Not received") == 3
+        store.save_month("2025-11", "Acme", "Acme Sr", "1500.5", "1200", "2025-12-05")
+        store.save_month("2026-01", "Globex", "GX Dev", "2000", "1600", "2026-02-05")
+        r = client.get("/work")
+        assert "⚠ 1 past month with a job has no received payment date: 2025-10." in r.text
+        store.save_month("2025-10", "Acme", "Acme Jr", "1000", "800", "2025-11-05")
+        assert "no received payment date" not in client.get("/work").text
+
+    def test_current_month_is_not_unpaid(self, client, store, settings):
+        today = dt.date.today()
+        settings.work_path.write_text(
+            "Month;Company;Position;Gross salary;Net salary;Received payment date\n"
+            f"{today:%Y-%m};Acme;Dev;10;8;\n",
+            encoding="utf-8",
+        )
+        r = client.get("/work")
+        assert "no received payment date" not in r.text and "⚠ Not received" not in r.text
+
+    def test_edit_form(self, client):
+        r = client.get("/work/form", params={"month": "2025-11"})
+        assert "<h2>Edit 2025-11</h2>" in r.text and 'value="1,500.50"' in r.text
+        assert "Save 2025-11" in r.text
+        r = client.get("/work/form", params={"month": "2026-02"})
+        assert "<h2>New month</h2>" in r.text
+
+    def test_forms(self, client, store):
+        r = client.post("/work/months", data={"month": "2026-03"}, headers=HTMX)
+        assert "Months cannot be skipped" in r.text and 'value="2026-03"' in r.text
+        r = client.post(
+            "/work/months",
+            data={"month": "2026-02", "company": "Globex", "position": "GX Dev", "gross": "2,000.00", "net": "1,600.00"},
+            headers=HTMX,
+        )
+        assert "Added 2026-02 (GX Dev at Globex)" in r.text
+        assert 'name="month" value="2026-03"' in r.text  # ready for the next one
+        r = client.post("/work/months", data={"month": "2025-12"}, headers=HTMX)
+        assert "Updated 2025-12 (no job)" in r.text
+        fingerprint = work_fingerprint(store.load_work().rows.iloc[1])
+        r = client.post("/work/months/1/delete", data={"fingerprint": fingerprint}, headers=HTMX)
+        assert r.status_code == 422
+        r = client.post("/work/months/0/delete", data={"fingerprint": "stale"}, headers=HTMX)
+        assert r.status_code == 409
+
+    def test_api(self, client):
+        acme = client.get("/api/work/companies").json()[1]
+        assert acme == {
+            "name": "Acme", "start": "2025-10", "end": "2025-11",
+            "positions": [
+                {"name": "Acme Sr", "start": "2025-11", "end": "2025-11", "months": 1},
+                {"name": "Acme Jr", "start": "2025-10", "end": "2025-10", "months": 1},
+            ],
+        }
+        r = client.put("/api/work/months", json={"month": "2026-02", "company": "Globex", "position": "GX Dev", "gross": 10, "net": 8})
+        assert r.status_code == 200 and r.json()["created"] is True
+        assert client.get("/api/work/months").json()[-1] == {
+            "month": "2026-02", "company": "Globex", "position": "GX Dev",
+            "gross": 10.0, "net": 8.0, "payment_date": None,
+        }
+        r = client.put("/api/work/months", json={"month": "2026-04"})
+        assert r.status_code == 422 and "cannot be skipped" in r.json()["detail"]
+
+
+def test_work_file_is_created_when_adding(settings, tmp_path):
+    settings = replace(settings, work_path=tmp_path / "w" / "work.csv")
+    r = TestClient(create_app(settings)).get("/work")
+    assert r.status_code == 200 and "No companies yet" in r.text and "No months yet." in r.text
+    store = LedgerStore(settings)
+    store.save_month("2025-01", "Acme", "Dev", "10", "8", "2025-02-01")
+    assert settings.work_path.read_text(encoding="utf-8") == (
+        "Month;Company;Position;Gross salary;Net salary;Received payment date\n"
+        "2025-01;Acme;Dev;10.00;8.00;2025-02-01\n"
+    )

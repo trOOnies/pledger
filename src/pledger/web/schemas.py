@@ -26,6 +26,15 @@ class AccountIn(BaseModel):
     initial_date: str = ""  # the first date of the ledger if empty
 
 
+class WorkMonthIn(BaseModel):
+    month: str  # YYYY-MM
+    company: str = ""  # empty for a month without a job
+    position: str = ""
+    gross: float | None = None
+    net: float | None = None
+    payment_date: str = ""  # empty if not received yet
+
+
 class ResultTypeIn(BaseModel):
     name: str
     long_name: str

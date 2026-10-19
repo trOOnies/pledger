@@ -1,0 +1,34 @@
+{% set v = form.fields %}
+<form id="work-form" class="stack" hx-post="/work/months" hx-target="#work">
+  <h2>{% if form.editing %}Edit {{ v.month }}{% else %}New month{% endif %}</h2>
+  {% if form.error %}<p class="msg error">{{ form.error }}</p>{% endif %}
+  {% if form.success %}<p class="msg success">{{ form.success }}</p>{% endif %}
+  <label>Month
+    <input type="month" name="month" value="{{ v.month }}" placeholder="YYYY-MM" required
+      hx-get="/work/form" hx-trigger="change" hx-target="#work-form" hx-swap="outerHTML">
+  </label>
+  <div class="pair">
+    <label>Company
+      <input name="company" value="{{ v.company }}" list="work-companies" autocomplete="off">
+    </label>
+    <label>Position
+      <input name="position" value="{{ v.position }}" list="work-positions" autocomplete="off">
+    </label>
+  </div>
+  <datalist id="work-companies">{% for name in form.company_names %}<option value="{{ name }}">{% endfor %}</datalist>
+  <datalist id="work-positions">{% for name in form.position_names %}<option value="{{ name }}">{% endfor %}</datalist>
+  <div class="pair">
+    <label>Gross salary
+      <input name="gross" inputmode="decimal" value="{{ v.gross }}" placeholder="0.00" autocomplete="off" data-money>
+    </label>
+    <label>Net salary
+      <input name="net" inputmode="decimal" value="{{ v.net }}" placeholder="0.00" autocomplete="off" data-money>
+    </label>
+  </div>
+  <label><span>Received payment date <em class="optional">(optional)</em></span>
+    <input type="date" name="payment_date" value="{{ v.payment_date }}">
+  </label>
+  <p class="muted small">Leave the company, position and salaries empty for a month without a job.
+    {% if form.editing %}Saving replaces this month.{% else %}New months go right after the last one (or right before the first one).{% endif %}</p>
+  <button type="submit">{% if form.editing %}Save {{ v.month }}{% else %}Add month{% endif %}</button>
+</form>

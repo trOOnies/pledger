@@ -6,8 +6,20 @@ import datetime as dt
 import math
 
 from pledger.enums import AccountType, InvestmentType, LedgerSide, MovementType
-from pledger.models import SPECIAL_LABELS, DebtAccount, InvestmentAccount, special_of
-from pledger.web.store import INITIAL_GAIN, Snapshot, row_fingerprint
+from pledger.models import (
+    SPECIAL_LABELS,
+    DebtAccount,
+    InvestmentAccount,
+    next_month,
+    special_of,
+)
+from pledger.web.store import (
+    INITIAL_GAIN,
+    Snapshot,
+    Work,
+    row_fingerprint,
+    work_fingerprint,
+)
 
 ACCOUNT_TYPE_ORDER = list(AccountType)
 
@@ -219,6 +231,67 @@ def build_debts(snapshot: Snapshot) -> dict:
         "net": we_owe - owed_to_us,
         "creditors": by_account(DebtAccount.get_creditors, 1),
         "debtors": by_account(DebtAccount.get_debtors, -1),
+    }
+
+
+def work_form(work: Work, month: str = "", values: dict | None = None) -> dict:
+    """
+    The state of the work month form: a month's values to edit it, or by default
+    the month after the last one, at the same job.
+    """
+    by_month = {m.month: m for m in work.months}
+    last = work.months[-1] if work.months else None
+    if not month:
+        month = next_month(last.month) if last else dt.date.today().strftime("%Y-%m")
+    if values is None:
+        m = by_month.get(month)
+        if m is None:  # a new month, at the last job by default
+            values = {"company": last.company if last else "", "position": last.position if last else ""}
+        else:
+            values = {
+                "company": m.company or "",
+                "position": m.position or "",
+                "gross": "" if m.gross is None else f"{m.gross:,.2f}",
+                "net": "" if m.net is None else f"{m.net:,.2f}",
+                "payment_date": m.payment_date.isoformat() if m.payment_date else "",
+            }
+    return {
+        "fields": {"month": month, **values},
+        "editing": month in by_month,
+        "company_names": list(work.companies),
+        "position_names": sorted({p for c in work.companies.values() for p in c.positions}),
+    }
+
+
+def build_work(work: Work, form: dict | None = None) -> dict:
+    """
+    The companies worked for and their job positions, every month of the work
+    history (the newest first) and the totals of this year, plus the form state.
+    Worked months already over with no received payment date are flagged as unpaid.
+    """
+    today = dt.date.today()
+    year, this_month = str(today.year), today.strftime("%Y-%m")
+    this_year = [m for m in work.months if m.month[:4] == year and not m.is_gap]
+    last_index = len(work.months) - 1
+    months = [
+        {
+            "month": m,
+            "index": i,
+            "fingerprint": work_fingerprint(row),
+            "deletable": i in {0, last_index},
+            "unpaid": not m.is_gap and m.month < this_month and m.payment_date is None,
+        }
+        for i, (m, (_, row)) in enumerate(zip(work.months, work.rows.iterrows()))
+    ][::-1]
+    return {
+        "companies": list(work.companies.values()),
+        "current": work.current,
+        "months": months,
+        "unpaid": [r["month"].month for r in months if r["unpaid"]],
+        "year": year,
+        "gross": sum(m.gross for m in this_year),
+        "net": sum(m.net for m in this_year),
+        "form": form or work_form(work),
     }
 
 
