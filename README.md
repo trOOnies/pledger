@@ -57,8 +57,9 @@ types, sharing their ids with the other ones, next to a `transfer` section); its
 movements are reserved for pledger itself: they can't be picked for a new movement and
 their movements can't be deleted by hand, and its result types can't get new base movements. Balances and results don't use these yet.
 The internal gain `Initial (G)` and loss `Initial (L)` are required (with no fixed debit or
-credit account, respectively): a new asset or liability account records its initial amount
-with them, on its initial date.
+credit account, respectively): every account with a non-zero initial amount gets one such
+movement against equity, on its initial date. These movements are generated when the
+ledger is loaded and are never stored in `ledger.csv`, which can't contain them.
 
 Amounts are shown with a `$` currency symbol and two decimals; set `PLEDGER_CURRENCY`
 (e.g. `ARS`) to use another one.

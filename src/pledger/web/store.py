@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
-from pandas import DataFrame, read_csv
+from pandas import DataFrame, concat, read_csv
 
 from pledger.enums import AccountType, LedgerSide, MovementType
 from pledger.ledger import Ledger
@@ -28,7 +28,8 @@ from pledger.models import (
 
 BOM = "﻿"
 
-# Internal base movements recording the initial amount of new accounts.
+# Internal base movements recording the initial amount of the accounts. Their
+# movements are generated from the accounts YAML, never stored in the CSV.
 INITIAL_GAIN = "Initial (G)"
 INITIAL_LOSS = "Initial (L)"
 
@@ -78,15 +79,24 @@ class Snapshot:
     result_types: dict[int, ResultType]
     rows: DataFrame  # raw CSV rows, all columns as strings
     currencies: dict[str, Currency]  # the base currency first
+    # Generated initial movements, like CSV rows, indexed -1, -2, ...
+    initial_rows: DataFrame
 
     @property
     def base_currency(self) -> Currency:
         return next(iter(self.currencies.values()))
 
+    @property
+    def all_rows(self) -> DataFrame:
+        """The initial movements of the accounts, then the CSV rows."""
+        if not len(self.rows):  # concat fails on an empty, header-only CSV
+            return self.initial_rows
+        return concat([self.initial_rows, self.rows])
+
     def ledger(self, rows: DataFrame | None = None) -> Ledger:
-        """Build a Ledger from these rows (all rows by default)."""
+        """Build a Ledger from these rows (all rows, initial ones included, by default)."""
         return Ledger.from_dataframe(
-            self.rows if rows is None else rows,
+            self.all_rows if rows is None else rows,
             self.accounts,
             self.base_movements,
         )
@@ -135,7 +145,16 @@ class LedgerStore:
                 s.ledger_path, sep=";", dtype=str, keep_default_na=False,
                 encoding="utf-8-sig",
             )
-            snapshot = Snapshot(accounts, base_movements, result_types, rows, currencies)
+            stored = sorted(set(rows["base_movement"]) & {INITIAL_GAIN, INITIAL_LOSS})
+            if stored:
+                raise ValueError(
+                    f"The ledger CSV cannot have movements of {stored}: they are generated "
+                    "from the initial amounts of the accounts"
+                )
+            initial_rows = _initial_rows(accounts, base_movements, rows)
+            snapshot = Snapshot(
+                accounts, base_movements, result_types, rows, currencies, initial_rows
+            )
             snapshot.ledger()  # validate the whole ledger up front
         except (OSError, KeyError, ValueError, AssertionError) as e:
             raise LedgerDataError(f"{type(e).__name__}: {e}") from e
@@ -181,19 +200,6 @@ class LedgerStore:
         except AssertionError as e:
             raise ValueError(str(e)) from None
 
-        self._append_row(snapshot, move_date, base_movement, acc_debit, acc_credit, value, comment)
-
-    def _append_row(
-        self,
-        snapshot: Snapshot,
-        move_date: str,
-        base_movement: str,
-        acc_debit: str,
-        acc_credit: str,
-        value: float,
-        comment: str = "",
-    ) -> None:
-        """Append an already validated movement to the CSV."""
         new_row = {col: "" for col in snapshot.rows.columns}
         new_row.update(
             move_date=move_date,
@@ -224,11 +230,7 @@ class LedgerStore:
         """
         Validate a new account and add it to the accounts YAML. Without a currency,
         it is in the base currency; without an initial date, it starts on the
-        first date of the ledger (today if it is empty).
-
-        A non-zero initial amount (in the base currency) is also recorded in the
-        ledger, on the initial date, with the internal base movement INITIAL_GAIN
-        (assets) or INITIAL_LOSS (liabilities).
+        first date of the ledger. Its initial movement is generated when loading.
         """
         snapshot = self.load()
         name = _check_name(name, snapshot.accounts, "account")
@@ -258,36 +260,7 @@ class LedgerStore:
                 fields["initial_date"] = dt.date.fromisoformat(initial_date.strip())
             except ValueError:
                 raise ValueError(f"Invalid initial date: {initial_date!r}") from None
-        path = self.settings.accounts_path
-        before = path.read_bytes().decode("utf-8")
-        self._add_yaml_entry(path, (acc_type.value,), name, fields)
-
-        base_name = INITIAL_GAIN if acc_type == AccountType.ASSET else INITIAL_LOSS
-        if math.isclose(amount, 0.0, abs_tol=1e-9):
-            return
-        try:
-            snapshot = self.load()
-            equity = next(a for a in snapshot.accounts.values() if a.acc_type == AccountType.EQUITY)
-            acc_debit, acc_credit = (
-                (name, equity.name) if acc_type == AccountType.ASSET else (equity.name, name)
-            )
-            if "initial_date" in fields:
-                move_date = fields["initial_date"].isoformat()
-            elif len(snapshot.rows):
-                move_date = min(snapshot.rows["move_date"])
-            else:
-                move_date = dt.date.today().isoformat()
-            Movement(
-                move_date=move_date,
-                move_base=snapshot.base_movements[base_name],
-                input_acc_debit=snapshot.accounts[acc_debit],
-                input_acc_credit=snapshot.accounts[acc_credit],
-                amount=amount,
-            )
-            self._append_row(snapshot, move_date, base_name, acc_debit, acc_credit, amount)
-        except (LedgerDataError, AssertionError, StopIteration) as e:
-            _atomic_write(path, before)
-            raise ValueError(f"Could not record the initial amount of {name!r}: {e}") from None
+        self._add_yaml_entry(self.settings.accounts_path, (acc_type.value,), name, fields)
 
     def add_result_type(self, name: str, long_name: str, description: str) -> None:
         """Validate a new result type and add it, with the next id, to the base movements YAML."""
@@ -427,7 +400,7 @@ class LedgerStore:
 def _check_initial_base_movements(base_movements: dict[str, MovementBase]) -> None:
     """
     INITIAL_GAIN and INITIAL_LOSS must be an internal gain and loss, with a free
-    asset or liability side, to record the initial amount of new accounts.
+    asset or liability side, to record the initial amount of the accounts.
     """
     for name, move_type, side in (
         (INITIAL_GAIN, MovementType.GAIN, LedgerSide.DEBIT),
@@ -439,6 +412,46 @@ def _check_initial_base_movements(base_movements: dict[str, MovementBase]) -> No
                 f"The base movement {name!r} is required: an internal {move_type.value} "
                 f"with no fixed {side.value} account"
             )
+
+
+def _initial_rows(
+    accounts: dict[str, Account], base_movements: dict[str, MovementBase], rows: DataFrame
+) -> DataFrame:
+    """
+    The movement recording the initial amount of each account, in definition order,
+    as CSV rows: on its initial date, or the first date of the ledger (the first
+    initial date if the ledger is empty, else today). Increases are INITIAL_GAIN and
+    decreases INITIAL_LOSS movements against the equity account.
+    """
+    dates = [a.initial_date.isoformat() for a in accounts.values() if a.initial_date]
+    first_date = (
+        min(rows["move_date"]) if len(rows) else min(dates, default=dt.date.today().isoformat())
+    )
+    new_rows = []
+    for acc in accounts.values():
+        amount = acc.initial_amount
+        if acc.acc_type == AccountType.EQUITY or math.isclose(amount, 0.0, abs_tol=1e-9):
+            continue
+        # A positive liability is a decrease of equity, like a negative asset.
+        if (amount > 0) == (acc.acc_type == AccountType.ASSET):
+            base = base_movements[INITIAL_GAIN]
+            acc_debit, acc_credit = acc.name, base.acc_credit.name
+        else:
+            base = base_movements[INITIAL_LOSS]
+            acc_debit, acc_credit = base.acc_debit.name, acc.name
+        new_rows.append({
+            "move_date": acc.initial_date.isoformat() if acc.initial_date else first_date,
+            "base_movement": base.name,
+            "acc_debit": acc_debit,
+            "acc_credit": acc_credit,
+            "amount": repr(abs(amount)),
+        })
+    return DataFrame(
+        [{col: "" for col in rows.columns} | row for row in new_rows],
+        columns=rows.columns,
+        index=range(-1, -len(new_rows) - 1, -1),
+        dtype=str,
+    )
 
 
 def _existing(path: Path | None) -> str | None:

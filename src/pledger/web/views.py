@@ -14,12 +14,12 @@ ACCOUNT_TYPE_ORDER = list(AccountType)
 
 def months_of(snapshot: Snapshot) -> list[str]:
     """Months with movements, newest first."""
-    return sorted({d[:7] for d in snapshot.rows.move_date}, reverse=True)
+    return sorted({d[:7] for d in snapshot.all_rows.move_date}, reverse=True)
 
 
 def build_view(snapshot: Snapshot, month: str = "", account: str = "") -> dict:
     """Filtered movements and results for the ledger view."""
-    rows = snapshot.rows
+    rows = snapshot.all_rows
     mask = rows.move_date.str.startswith(month) if month else rows.move_date.notna()
     if account:
         mask &= (rows.acc_debit == account) | (rows.acc_credit == account)
@@ -74,7 +74,7 @@ def build_accounts(snapshot: Snapshot, month: str = "", values: dict | None = No
     Balances per account and per type, grouped by currency and by liquidity,
     plus the state of the new account form.
     """
-    rows = snapshot.rows
+    rows = snapshot.all_rows
     # Balances are cumulative: as of the end of the selected month.
     upto = rows[rows.move_date.str[:7] <= month] if month else rows
     balances = snapshot.ledger(upto).balances()
@@ -468,7 +468,7 @@ def equity_chart(series: list[dict]) -> dict | None:
 
 def build_charts(snapshot: Snapshot, month: str = "") -> dict:
     """Composition of balances and results, and equity over time."""
-    rows = snapshot.rows
+    rows = snapshot.all_rows
     months = months_of(snapshot)
     # Balances as of the end of the month; gains and losses within it.
     upto = rows[rows.move_date.str[:7] <= month] if month else rows

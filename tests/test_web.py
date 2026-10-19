@@ -324,7 +324,7 @@ class TestPages:
         assert r.status_code == 200
         assert "New movement" in r.text
         assert "$1,000.50" in r.text
-        assert "$960.25" in r.text  # profit card
+        assert "$1,060.75" in r.text  # profit card, with Bk's initial 100.50
         assert "Balances" not in r.text and "New account" not in r.text
         assert card_labels(r.text) == ["Gains", "Losses", "Profit"]
 
@@ -334,7 +334,7 @@ class TestPages:
         assert 'href="/accounts" aria-current="page"' in r.text
         assert card_labels(r.text) == ["Assets", "Liabilities", "Equity"]
         cards = r.text.split('<div class="cards">')[1].split("</div>\n    </div>")[0]
-        assert cards.count("$960.25") == 2  # assets (800.50 + 159.75) and equity
+        assert cards.count("$1,060.75") == 2  # assets (901.00 + 159.75) and equity
         assert "$0.00" in cards  # no liabilities
         assert "Balances" in r.text and "New account" in r.text
         assert "<td class=\"muted\">Bank account</td>" in r.text  # descriptions
@@ -589,10 +589,10 @@ class TestPages:
         assert r.status_code == 200
         assert 'href="/charts" aria-current="page"' in r.text
         assert "Assets &amp; liabilities" in r.text and "Equity over time" in r.text
-        assert "$800.50" in r.text and "$159.75" in r.text  # Bk and Ca balances
+        assert "$901.00" in r.text and "$159.75" in r.text  # Bk and Ca balances
         assert "Salary" in r.text and "Food" in r.text
         assert "by result type" in r.text and "Result by type" in r.text
-        assert "$960.25" in r.text  # final equity
+        assert "$1,060.75" in r.text  # final equity
         assert 'data-sortable="equity"' in r.text
 
     def test_charts_partial_for_month(self, client, settings):
@@ -602,7 +602,7 @@ class TestPages:
         assert "<html" not in r.text
         assert "as of end of 2026-02" in r.text
         assert "Salary" in r.text  # no gains in February, but still listed at zero
-        assert "-$100.00" in r.text and "$860.25" in r.text
+        assert "-$100.00" in r.text and "$960.75" in r.text
 
 
 class TestCharts:
@@ -674,22 +674,23 @@ class TestCharts:
         snapshot = LedgerStore(settings).load()
         series = equity_series(snapshot)
         assert [(p["date"], p["value"]) for p in series] == [
-            ("2026-01-01", 1000.5), ("2026-01-03", 950.25), ("2026-01-04", 960.25),
+            ("2025-12-31", 100.5), ("2026-01-01", 1101.0), ("2026-01-03", 1050.75),
+            ("2026-01-04", 1060.75),
         ]
         chart = build_charts(snapshot)["equity"]
         assert chart["points"][0]["x"] == 0 and chart["points"][-1]["x"] == 100
-        assert chart["change"] == pytest.approx(-40.25)  # since the first entry
-        assert build_charts(snapshot, "2025-12")["equity"] is None
+        assert chart["change"] == pytest.approx(960.25)  # since the first entry
+        assert build_charts(snapshot, "2025-11")["equity"] is None
 
 
 class TestApi:
     def test_summary(self, client):
         data = client.get("/api/summary").json()
-        assert data["profit"] == pytest.approx(960.25)
-        assert data["balances"]["Bk"] == pytest.approx(800.50)
-        assert data["assets"] == pytest.approx(960.25)
+        assert data["profit"] == pytest.approx(1060.75)
+        assert data["balances"]["Bk"] == pytest.approx(901.0)
+        assert data["assets"] == pytest.approx(1060.75)
         assert data["liabilities"] == pytest.approx(0)
-        assert data["equity"] == pytest.approx(960.25)
+        assert data["equity"] == pytest.approx(1060.75)
 
     def test_summary_balances_are_cumulative_by_month(self, client, settings):
         LedgerStore(settings).add("2026-03-01", "Gift", "Ca", "Eq", "100")
@@ -781,15 +782,61 @@ class TestInvestments:
 
 
 class TestInternalResultTypes:
-    def test_new_asset_records_its_initial_amount(self, settings):
-        LedgerStore(settings).add_account("Sv", "asset", "Savings", "1,234.5", "USD", False, "2026-01-15")
-        assert settings.ledger_path.read_text().splitlines()[-1] == "2026-01-15;Initial (G);Sv;1,234.50;Eq;"
-        assert LedgerStore(settings).load().ledger().balances()["Sv"] == 1234.5
+    @staticmethod
+    def initial_rows(settings) -> list[tuple]:
+        df = LedgerStore(settings).load().initial_rows
+        return list(df[["move_date", "base_movement", "acc_debit", "amount", "acc_credit"]].itertuples())
 
-    def test_new_liability_records_its_initial_amount_on_the_first_date(self, settings):
+    def test_are_generated_from_the_accounts_yaml(self, settings):
+        # Bk sets 100.5 on 2025-12-31; Ca and Cc start at zero
+        assert self.initial_rows(settings) == [(-1, "2025-12-31", "Initial (G)", "Bk", "100.5", "Eq")]
+        snapshot = LedgerStore(settings).load()
+        assert len(snapshot.rows) == 4 and snapshot.ledger().balances()["Bk"] == 901.0
+        assert snapshot.ledger(snapshot.rows).balances()["Bk"] == 800.5  # the CSV alone
+
+    def test_new_accounts_get_one_without_touching_the_csv(self, settings):
+        before = settings.ledger_path.read_text()
+        store = LedgerStore(settings)
+        store.add_account("Sv", "asset", "Savings", "1,234.5", "USD", False, "2026-01-15")
+        store.add_account("Lo", "liability", "Loan", 300)
+        store.add_account("Zr", "asset", "Zero", 0)
+        assert settings.ledger_path.read_text() == before
+        assert self.initial_rows(settings)[1:] == [
+            (-2, "2026-01-15", "Initial (G)", "Sv", "1234.5", "Eq"),
+            (-3, "2026-01-01", "Initial (L)", "Eq", "300.0", "Lo"),  # on the first ledger date
+        ]
+        balances = store.load().ledger().balances()
+        assert (balances["Sv"], balances["Lo"]) == (1234.5, 300.0)
+
+    def test_without_ledger_rows_start_on_the_first_initial_date(self, settings):
+        settings.ledger_path.write_text("move_date;base_movement;acc_debit;amount;acc_credit;comment\n")
         LedgerStore(settings).add_account("Lo", "liability", "Loan", 300)
-        assert settings.ledger_path.read_text().splitlines()[-1] == "2026-01-01;Initial (L);Eq;300.00;Lo;"
-        assert LedgerStore(settings).load().ledger().balances()["Lo"] == 300.0
+        assert [r[1] for r in self.initial_rows(settings)] == ["2025-12-31", "2025-12-31"]
+
+    def test_a_negative_debt_is_a_gain(self, settings, tmp_path):
+        text = settings.accounts_path.read_text()
+        settings.accounts_path.write_text(text.replace("equity:\n", "  Db:\n    description: Debts\nequity:\n"))
+        path = tmp_path / "creditors.yaml"
+        path.write_text("Db:\n  Ann: 50\n  Bob: -80\n")
+        settings = replace(settings, creditors_path=path)
+        assert self.initial_rows(settings)[1:] == [(-2, "2026-01-01", "Initial (G)", "Db", "30.0", "Eq")]
+
+    def test_are_shown_but_cannot_be_deleted(self, client):
+        movements = client.get("/api/movements").json()
+        assert movements[-1]["base"] == "Initial (G)"  # the oldest
+        r = client.get("/")
+        assert r.text.count('hx-post="/movements/') == 4  # only the CSV rows
+
+    def test_cannot_be_added_by_hand(self, settings):
+        with pytest.raises(ValueError, match=re.escape("'Initial (G)' is internal")):
+            LedgerStore(settings).add("2026-01-05", "Initial (G)", "Ca", "Eq", "5")
+
+    def test_cannot_be_in_the_ledger_csv(self, settings, client):
+        with settings.ledger_path.open("a") as f:
+            f.write("2026-01-05;Initial (G);Ca;5;Eq;\n")
+        with pytest.raises(LedgerDataError, match=re.escape("cannot have movements of ['Initial (G)']")):
+            LedgerStore(settings).load()
+        assert client.get("/").status_code == 500
 
     @pytest.mark.parametrize(
         ("old", "new", "missing"),
@@ -809,11 +856,6 @@ class TestInternalResultTypes:
             LedgerStore(settings).load()
         r = client.get("/")
         assert r.status_code == 500 and f"{missing!r} is required" in r.text.replace("&#39;", "'")
-
-    def test_new_account_without_initial_amount_records_nothing(self, settings):
-        before = settings.ledger_path.read_text()
-        LedgerStore(settings).add_account("Sv", "asset", "Savings", 0)
-        assert settings.ledger_path.read_text() == before
 
     def test_cannot_get_new_base_movements(self, settings, client):
         with pytest.raises(ValueError, match="'Init' is internal"):
