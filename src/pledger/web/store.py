@@ -9,7 +9,7 @@ import math
 import os
 import re
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import yaml
@@ -129,6 +129,21 @@ class Snapshot:
         initial_rt = self.base_movements[INITIAL_GAIN].result_type
         return {n for n, b in self.base_movements.items() if b.result_type is initial_rt}
 
+    def debt_accounts(self, month: str = "") -> list[DebtAccount]:
+        """
+        Copies of the debt accounts as of the end of `month` (all the ledger by default):
+        their initial amounts, once they start, plus the CSV movements up to then.
+        """
+        debts = {}
+        for a in self.accounts.values():
+            if isinstance(a, DebtAccount):
+                started = not month or a.initial_date is None or a.initial_date.isoformat()[:7] <= month
+                creditors = {n: replace(c, amount=c.amount if started else 0.0) for n, c in a.creditors.items()}
+                debts[a.name] = replace(a, creditors=creditors)
+        rows = self.rows[self.rows.move_date.str[:7] <= month] if month else self.rows
+        _apply_debts({**self.accounts, **debts}, rows)
+        return list(debts.values())
+
     def manual_base_movements(self) -> dict[str, MovementBase]:
         """Base movements that can be picked for a new movement (not internal ones)."""
         return {n: b for n, b in self.base_movements.items() if not b.internal}
@@ -201,7 +216,6 @@ class LedgerStore:
                 accounts, base_movements, result_types, rows, currencies, initial_rows
             )
             snapshot.ledger()  # validate the whole ledger up front
-            _apply_debts(accounts, rows)
         except (OSError, KeyError, ValueError, AssertionError) as e:
             raise LedgerDataError(f"{type(e).__name__}: {e}") from e
         return snapshot

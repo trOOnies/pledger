@@ -1132,6 +1132,38 @@ class TestDebtPage:
         for name, role in (("Dad", "Creditor"), ("Ana", "Debtor"), ("Leo", "Settled")):
             assert f"<strong>{name}</strong></td>\n        <td>{role}</td>" in r.text
 
+    def test_month_filter(self, settings, client):
+        with settings.ledger_path.open("a", encoding="utf-8") as f:
+            f.write("2026-01-05;Card fee;Eq;20;Cc;dad\n2026-02-05;Card fee;Eq;30;Cc;Dad\n")
+        snapshot = LedgerStore(settings).load()
+        amounts = {
+            month: snapshot.debt_accounts(month)[0].creditors["Dad"].amount
+            for month in ("", "2025-12", "2026-01", "2026-02")
+        }
+        assert amounts == {"": 150, "2025-12": 100, "2026-01": 120, "2026-02": 150}
+        assert snapshot.accounts["Cc"].creditors["Dad"].amount == 100  # left as loaded
+        r = client.get("/debt", params={"month": "2026-01"})
+        assert '<option value="2026-01" selected>' in r.text
+        assert "by people, services and companies, as of end of 2026-01</small>" in r.text
+        cards = r.text.split('<div class="cards">')[1].split("</div>\n  </div>")[0]
+        assert "$170.50" in cards  # Dad 120 and Bank 50.50
+        # The month is shared with the other tabs
+        assert '<option value="2026-01" selected>' in client.get("/accounts").text
+        client.get("/charts", params={"month": "2025-12"})
+        assert '<option value="2025-12" selected>' in client.get("/debt").text
+        r = client.get("/debt", params={"month": "2026-02"}, headers=HTMX)
+        assert "<html" not in r.text and '<div class="view">' in r.text and "$200.50" in r.text
+
+    def test_initial_amounts_count_from_the_initial_date(self, settings):
+        text = settings.accounts_path.read_text(encoding="utf-8")
+        settings.accounts_path.write_text(
+            text.replace("    description: Credit card\n", "    description: Credit card\n    initial_date: 2026-01-02\n"),
+            encoding="utf-8",
+        )
+        snapshot = LedgerStore(settings).load()
+        assert snapshot.debt_accounts("2025-12")[0].creditors["Dad"].amount == 0
+        assert snapshot.debt_accounts("2026-01")[0].creditors["Dad"].amount == 100
+
     def test_no_alerts_when_all_is_as_expected(self, client):
         r = client.get("/debt")
         assert 'class="msg warn alert"' not in r.text
@@ -1156,7 +1188,7 @@ class TestDebtPage:
         settings.ledger_path.write_text(
             settings.ledger_path.read_text().replace("2026-01-04;Gift;Ca;10;", "2026-01-04;Gift;Ca;2000;")
         )
-        cc = LedgerStore(settings).load().accounts["Cc"]
+        [cc] = LedgerStore(settings).load().debt_accounts()
         # The initial amounts are only counted once, from the creditors YAML
         assert {n: c.amount for n, c in cc.creditors.items()} == {"Dad": 120, "Bank": -990, "Ana": -30, "Leo": 0}
         assert cc.unassigned == -5
@@ -1456,7 +1488,7 @@ class TestDebtKinds:
         store.save_month("2026-02", "Initech", "Dev", "10", "8")
         with settings.ledger_path.open("a", encoding="utf-8") as f:
             f.write("2026-02-05;Card fee;Eq;7;Cc;initech bonus\n")
-        assert store.load().accounts["Cc"].creditors["Initech"].amount == 7
+        assert store.load().debt_accounts()[0].creditors["Initech"].amount == 7
 
     def test_a_company_cannot_be_another_kind(self, settings):
         text = settings.creditors_path.read_text(encoding="utf-8")

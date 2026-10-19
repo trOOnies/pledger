@@ -199,15 +199,15 @@ CREDITOR_KIND_LABELS = {
 }
 
 
-def build_debts(snapshot: Snapshot) -> dict:
+def build_debts(snapshot: Snapshot, month: str = "") -> dict:
     """
     The people, services and companies in each debt account: the ones we owe
     (creditors) and the ones that owe us (debtors), with what we owe and are owed
     as positive amounts, plus the debt of the movements whose comment names no
-    one (unassigned). Lists who isn't in their expected role, and the unassigned
-    debt of each account by comment.
+    one (unassigned), as of the end of `month` (all the ledger by default). Lists
+    who isn't in their expected role, and the unassigned debt of each account by comment.
     """
-    accounts = [a for a in snapshot.accounts.values() if isinstance(a, DebtAccount)]
+    accounts = snapshot.debt_accounts(month)
 
     def label(a: DebtAccount, name: str) -> str:
         # Names are only unique within an account.
@@ -252,6 +252,8 @@ def build_debts(snapshot: Snapshot) -> dict:
             for a in accounts
         ],
         "kinds": kinds,
+        "months": months_of(snapshot),
+        "month": month,
         "unmet": [
             {**r, "kind": k["title"]} for k in kinds for r in k["rows"] if not r["met"]
         ],

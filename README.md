@@ -20,7 +20,7 @@ statement, equity over time and, at each month end, debt (the liabilities) over 
 liquidity (liquid assets minus liquid liabilities) over equity, and the share of each
 currency in the assets. The Work tab charts the gross and net salary of each month (0 for
 the months without a job), each in its own color. The Help page explains the concepts for everyday users.
-The month filter is shared by Ledger, Accounts and Charts (remembered in a cookie).
+The month filter is shared by Ledger, Accounts, Debt and Charts (remembered in a cookie).
 
 ```sh
 make serve     # http://127.0.0.1:8000 (API docs at /docs)
@@ -73,7 +73,8 @@ history). The account's initial amount is the sum of its initial amounts, and it
 can go below 0 (we are owed more than we owe). The ledger movements with a debt account on
 either side add to whoever is named in their `comment` (as a whole word, ignoring case;
 the earliest name there, and the longest one if several start there): a credit is more
-that we owe them, a debit less. The Debt tab lists people, services and companies apart,
+that we owe them, a debit less. Like Accounts, the Debt tab shows everyone as of the end of
+the month picked. It lists people, services and companies apart,
 and the movements naming no one as unassigned. It alerts when there is unassigned debt
 (listing it by comment) and when anyone is in the opposite role to the expected one.
 

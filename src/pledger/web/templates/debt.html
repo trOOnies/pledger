@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% from "_bars.html" import bars with context %}
 {% block title %}Debt · pledger{% endblock %}
 {% block content %}
 {% if not accounts %}
@@ -11,97 +10,15 @@
     owe them, negative if they owe you.</p>
 </div>
 {% else %}
-<div class="view">
-  {% if unassigned_accounts %}
-  <details class="msg warn alert" role="alert">
-    <summary>⚠ Unassigned debt of <span class="money">{{ unassigned | money }}</span>: some movements of the debt
-      accounts don't name anyone in their comment.</summary>
-    <p class="small">Name someone of <code>{{ settings.creditors_path.name if settings.creditors_path else "creditors.yaml" }}</code> in their comment, or add who they are about there.</p>
-    {% for a in unassigned_accounts %}
-    <ul class="small">
-      {% for comment, amount in a.comments %}
-      <li>{{ comment }}{% if unassigned_accounts | length > 1 %} <span class="muted">({{ a.name }})</span>{% endif %}: <span class="money">{{ amount | money }}</span></li>
-      {% endfor %}
-    </ul>
-    {% endfor %}
-  </details>
-  {% endif %}
-  {% if unmet %}
-  <details class="msg warn alert" role="alert">
-    <summary>⚠ {{ unmet | length }} {{ "is" if unmet | length == 1 else "are" }} not in the expected role.</summary>
-    <ul class="small">
-      {% for p in unmet %}
-      <li><strong>{{ p.name }}</strong> <span class="muted">({{ p.kind | lower }}{{ ", " ~ p.account if multiple_accounts }})</span>
-        is a {{ p.role | lower }} (<span class="money">{{ p.amount | money }}</span>), but is expected to be a {{ p.expected | lower }}.</li>
-      {% endfor %}
-    </ul>
-  </details>
-  {% endif %}
-  <div class="cards">
-    <div class="card" title="What we owe our creditors"><span class="label">We owe</span><span class="num money">{{ we_owe | money }}</span></div>
-    <div class="card" title="What our debtors owe us"><span class="label">Owed to us</span><span class="num money">{{ owed_to_us | money }}</span></div>
-    {% if unassigned | abs > 1e-9 %}
-    <div class="card" title="Debt of the movements whose comment names no one"><span class="label">Unassigned</span><span class="num money">{{ unassigned | money }}</span></div>
-    {% endif %}
-    <div class="card" title="What we owe minus what we are owed"><span class="label">Net debt</span><span class="num money">{{ net | money }}</span></div>
-  </div>
+<form id="filters" class="filters" hx-get="/debt" hx-target="#debt-view" hx-push-url="true" hx-trigger="change">
+  <label>Month
+    <select name="month">
+      <option value="">All time</option>
+      {% for m in months %}<option value="{{ m }}" {% if m == month %}selected{% endif %}>{{ m }}</option>{% endfor %}
+    </select>
+  </label>
+</form>
 
-  <section class="panel">
-    <h2>Who <small>by people, services and companies</small></h2>
-    <div class="composition-pair">
-      {{ bars("We owe", creditors, "liability", "We owe no one.", open=True) }}
-      {{ bars("Owed to us", debtors, "asset", "No one owes us.", open=True) }}
-    </div>
-  </section>
-
-  <div class="charts-grid">
-  {% for k in kinds %}
-  <div class="panel">
-    <h2>{{ k.title }} <small>{{ k.rows | length }}</small></h2>
-    <table data-sortable="debts-{{ k.kind }}">
-      <thead><tr><th>Name</th><th>Role</th><th title="The role they should have: services are expected to be creditors and companies debtors, unless set in the creditors YAML">Expected</th>{% if multiple_accounts %}<th>Account</th>{% endif %}<th class="num">Amount</th></tr></thead>
-      <tbody>
-      {% for p in k.rows %}
-      <tr>
-        <td class="nowrap"><strong>{{ p.name }}</strong></td>
-        {% if p.met %}<td>{{ p.role }}</td>{% else %}<td class="nowrap hint warn" title="Expected to be a {{ p.expected | lower }}">⚠ {{ p.role }}</td>{% endif %}
-        <td class="{{ 'muted' if not p.expected }}">{{ p.expected or "-" }}</td>
-        {% if multiple_accounts %}<td>{{ p.account }}</td>{% endif %}
-        <td class="num money {{ 'gain' if p.amount < 0 }}" data-sort="{{ p.amount }}">{{ p.amount | money }}</td>
-      </tr>
-      {% else %}
-      <tr><td colspan="{{ 5 if multiple_accounts else 4 }}" class="muted">No {{ k.title | lower }} in the debt accounts.</td></tr>
-      {% endfor %}
-      </tbody>
-      {% if k.rows %}
-      <tfoot><tr><th colspan="{{ 4 if multiple_accounts else 3 }}">Net</th><th class="num money {{ 'gain' if k.net < 0 }}">{{ k.net | money }}</th></tr></tfoot>
-      {% endif %}
-    </table>
-    {% if k.kind == "companies" %}<p class="muted small">The companies of the Work tab, at no initial debt unless set in <code>{{ settings.creditors_path.name if settings.creditors_path else "creditors.yaml" }}</code>.</p>{% endif %}
-  </div>
-  {% endfor %}
-  </div>
-  <p class="muted small">Positive amounts are what we owe; negative ones, what we are owed. The movements
-    of a debt account add to whoever is named in their comment; the ones naming no one are unassigned.</p>
-
-  <div class="panel">
-    <h2>Debt accounts</h2>
-    <table data-sortable="debt-accounts">
-      <thead><tr><th>Account</th><th>Description</th><th>Currency</th>{% for title in accounts[0].counts %}<th class="num">{{ title }}</th>{% endfor %}<th class="num" title="Debt of the movements whose comment names no one">Unassigned</th><th class="num">Net debt</th></tr></thead>
-      <tbody>
-      {% for a in accounts %}
-      <tr>
-        <td class="nowrap"><strong>{{ a.name }}</strong></td>
-        <td class="muted">{{ a.description }}</td>
-        <td>{{ a.currency }}</td>
-        {% for n in a.counts.values() %}<td class="num">{{ n }}</td>{% endfor %}
-        <td class="num money {{ 'muted' if not a.unassigned }}" data-sort="{{ a.unassigned }}">{{ a.unassigned | money }}</td>
-        <td class="num money {{ 'gain' if a.net < 0 }}" data-sort="{{ a.net }}">{{ a.net | money }}</td>
-      </tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
+<div id="debt-view">{% include "_debt.html" %}</div>
 {% endif %}
 {% endblock %}

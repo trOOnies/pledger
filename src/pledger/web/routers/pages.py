@@ -61,11 +61,12 @@ def investments(request: Request, store: StoreDep):
 
 
 @router.get("/debt")
-def debt(request: Request, store: StoreDep):
-    context = build_debts(store.load())
-    return templates.TemplateResponse(
-        request, "debt.html", {**context, "settings": store.settings}
-    )
+def debt(request: Request, store: StoreDep, month: str | None = None):
+    snapshot = store.load()
+    month = remembered_month(request, month, months_of(snapshot))
+    context = {**build_debts(snapshot, month), "settings": store.settings}
+    template = "_debt.html" if is_partial(request) else "debt.html"
+    return remember_month(templates.TemplateResponse(request, template, context), month)
 
 
 @router.get("/work")
