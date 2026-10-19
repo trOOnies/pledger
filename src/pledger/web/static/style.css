@@ -74,6 +74,18 @@ code { font-size: .9em; }
 .topbar nav { display: flex; gap: 1rem; }
 .topbar nav a { color: var(--muted); text-decoration: none; }
 .topbar nav a[aria-current="page"] { color: var(--text); font-weight: 600; }
+.visibility {
+  margin-left: auto; display: inline-flex; width: auto; padding: .3rem; border: 1px solid var(--border); border-radius: 6px;
+  background: none; color: var(--muted); cursor: pointer;
+}
+.visibility:hover, .visibility[aria-pressed="true"] { color: var(--text); }
+.visibility svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.visibility .eye-closed, .hide-money .visibility .eye-open { display: none; }
+.hide-money .visibility .eye-closed { display: block; }
+/* Hidden amounts show a fixed mask (set by the visibility toggle), in a neutral color so
+   not even the sign shows. Not yet masked ones (e.g. mid-swap) stay invisible. */
+.hide-money .money { color: var(--muted); }
+.hide-money .money:not([data-masked]) { visibility: hidden; }
 
 main { padding: 1rem 1.5rem 3rem; max-width: 1400px; width: 100%; margin: 0 auto; flex: 1; }
 

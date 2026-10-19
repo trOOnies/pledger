@@ -1,4 +1,3 @@
-{% from "_bars.html" import bars with context %}
 {% set as_of = ("as of end of " ~ month) if month else "today" %}
 <div class="layout">
   <aside class="panel">
@@ -49,26 +48,10 @@
 
   <section class="view">
     <div class="cards">
-      <div class="card" title="Total balance of all asset accounts"><span class="label">Assets <small>{{ as_of }}</small></span><span class="num">{{ assets | money }}</span></div>
-      <div class="card" title="Total balance of all liability accounts"><span class="label">Liabilities <small>{{ as_of }}</small></span><span class="num">{{ liabilities | money }}</span></div>
-      <div class="card" title="Assets minus liabilities"><span class="label">Equity <small>{{ as_of }}</small></span><span class="num {{ 'loss' if equity < 0 }}">{{ equity | money }}</span></div>
+      <div class="card" title="Total balance of all asset accounts"><span class="label">Assets <small>{{ as_of }}</small></span><span class="num money">{{ assets | money }}</span></div>
+      <div class="card" title="Total balance of all liability accounts"><span class="label">Liabilities <small>{{ as_of }}</small></span><span class="num money">{{ liabilities | money }}</span></div>
+      <div class="card" title="Assets minus liabilities"><span class="label">Equity <small>{{ as_of }}</small></span><span class="num money {{ 'loss' if equity < 0 }}">{{ equity | money }}</span></div>
     </div>
-
-    <section class="panel grouped-bars">
-      <div class="panel-head">
-        <h2>Assets &amp; liabilities <small>{{ as_of }}</small></h2>
-        <div class="segmented" role="radiogroup" aria-label="Group accounts by">
-          <label><input type="radio" name="accounts-group" value="currency" checked> By currency</label>
-          <label><input type="radio" name="accounts-group" value="liquidity"> By liquidity</label>
-        </div>
-      </div>
-      {% for group, comp in groupings.items() %}
-      <div class="composition-pair" data-group="{{ group }}">
-        {{ bars("Assets", comp.assets, "asset", "No asset accounts.", open=True) }}
-        {{ bars("Liabilities", comp.liabilities, "liability", "No liability accounts.", open=True) }}
-      </div>
-      {% endfor %}
-    </section>
 
     <div class="panel">
       <h2>Balances <small>{{ as_of }}</small></h2>
@@ -84,7 +67,7 @@
           <td>{{ a.currency }}</td>
           <td data-sort="{{ 1 if a.is_liquid else 0 }}">{{ "Yes" if a.is_liquid else "No" }}</td>
           <td {% if a.special == "-" %}class="muted"{% endif %}>{{ a.special }}</td>
-          <td class="num {{ 'loss' if a.balance < 0 and type != 'equity' }}" data-sort="{{ a.balance }}">{{ a.balance | money }}</td>
+          <td class="num money {{ 'loss' if a.balance < 0 and type != 'equity' }}" data-sort="{{ a.balance }}">{{ a.balance | money }}</td>
         </tr>
         {% endfor %}
         </tbody>

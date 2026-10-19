@@ -12,9 +12,9 @@
 {% else %}
 <div class="view">
   <div class="cards">
-    <div class="card" title="What we owe our creditors"><span class="label">We owe</span><span class="num">{{ we_owe | money }}</span></div>
-    <div class="card" title="What our debtors owe us"><span class="label">Owed to us</span><span class="num">{{ owed_to_us | money }}</span></div>
-    <div class="card" title="What we owe minus what we are owed"><span class="label">Net debt</span><span class="num">{{ net | money }}</span></div>
+    <div class="card" title="What we owe our creditors"><span class="label">We owe</span><span class="num money">{{ we_owe | money }}</span></div>
+    <div class="card" title="What our debtors owe us"><span class="label">Owed to us</span><span class="num money">{{ owed_to_us | money }}</span></div>
+    <div class="card" title="What we owe minus what we are owed"><span class="label">Net debt</span><span class="num money">{{ net | money }}</span></div>
   </div>
 
   <section class="panel">
@@ -35,7 +35,7 @@
         <td class="nowrap"><strong>{{ p.name }}</strong></td>
         <td>{{ p.role }}</td>
         <td>{{ p.account }}</td>
-        <td class="num {{ 'gain' if p.amount < 0 }}" data-sort="{{ p.amount }}">{{ p.amount | money }}</td>
+        <td class="num money {{ 'gain' if p.amount < 0 }}" data-sort="{{ p.amount }}">{{ p.amount | money }}</td>
       </tr>
       {% else %}
       <tr><td colspan="4" class="muted">No one in the debt accounts.</td></tr>
@@ -56,7 +56,7 @@
         <td class="muted">{{ a.description }}</td>
         <td>{{ a.currency }}</td>
         <td class="num">{{ a.people }}</td>
-        <td class="num {{ 'gain' if a.net < 0 }}" data-sort="{{ a.net }}">{{ a.net | money }}</td>
+        <td class="num money {{ 'gain' if a.net < 0 }}" data-sort="{{ a.net }}">{{ a.net | money }}</td>
       </tr>
       {% endfor %}
       </tbody>

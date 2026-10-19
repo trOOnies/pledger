@@ -112,6 +112,15 @@ class Snapshot:
             return [a for a in self.accounts.values() if isinstance(a, special)]
         return self.free_accounts()
 
+    @property
+    def initial_base_names(self) -> set[str]:
+        """
+        Base movements of the result type of the initial movements, left out of
+        results by default: they set opening balances, they aren't gains or losses.
+        """
+        initial_rt = self.base_movements[INITIAL_GAIN].result_type
+        return {n for n, b in self.base_movements.items() if b.result_type is initial_rt}
+
     def manual_base_movements(self) -> dict[str, MovementBase]:
         """Base movements that can be picked for a new movement (not internal ones)."""
         return {n: b for n, b in self.base_movements.items() if not b.internal}

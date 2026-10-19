@@ -13,6 +13,9 @@
       {% for a in accounts %}<option value="{{ a }}" {% if a == account %}selected{% endif %}>{{ a }}</option>{% endfor %}
     </select>
   </label>
+  <label class="check" title="Movements that set the initial amounts of the accounts; they are left out of results by default">
+    <input type="checkbox" name="initial" value="true" {% if initial %}checked{% endif %}> Initial movements
+  </label>
 </form>
 
 <div class="layout">

@@ -11,9 +11,10 @@ router = APIRouter(prefix="/api/summary", tags=["summary"])
 
 
 @router.get("")
-def get_summary(store: StoreDep, month: str = "", account: str = ""):
+def get_summary(store: StoreDep, month: str = "", account: str = "", initial: bool = False):
+    """Results leave out the initial movements unless `initial`; balances include them."""
     snapshot = store.load()
-    view = build_view(snapshot, month, account)
+    view = build_view(snapshot, month, account, initial)
     accounts = build_accounts(snapshot, month)
     return {
         "gains": view["gains"],

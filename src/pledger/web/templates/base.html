@@ -6,6 +6,12 @@
   <title>{% block title %}pledger{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}?v={{ static_version('style.css') }}">
   <script src="{{ url_for('static', path='htmx.min.js') }}?v={{ static_version('htmx.min.js') }}" defer></script>
+  <script>
+    // Apply the hidden amounts setting before the first paint, so amounts never flash.
+    try {
+      if (localStorage.getItem("pledger-hide-money") === "true") document.documentElement.classList.add("hide-money");
+    } catch {}
+  </script>
 </head>
 <body>
   <header class="topbar">
@@ -20,6 +26,10 @@
       <a href="/help" {% if request.url.path == '/help' %}aria-current="page"{% endif %}>Help</a>
       <a href="/docs">API</a>
     </nav>
+    <button type="button" id="visibility" class="visibility" aria-pressed="false" aria-label="Hide amounts" title="Hide amounts">
+      <svg class="eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      <svg class="eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+    </button>
   </header>
   <div id="flash" class="flash" role="alert" hidden></div>
   <main>{% block content %}{% endblock %}</main>
@@ -28,6 +38,58 @@
     <p>Made with Claude Code</p>
   </footer>
   <script>
+    // Visibility toggle: replace every amount (elements marked .money) with the same
+    // fixed mask, keeping the real text aside until amounts are shown again.
+    const MONEY_MASK = "******";
+    const visibility = document.getElementById("visibility");
+    const moneyHidden = () => document.documentElement.classList.contains("hide-money");
+
+    function setMoney(el, text) {
+      if (moneyHidden()) {
+        el.dataset.value = text;
+        el.textContent = MONEY_MASK;
+        el.dataset.masked = "";
+      } else {
+        el.textContent = text;
+      }
+    }
+
+    function maskMoney(root) {
+      root.querySelectorAll(".money:not([data-masked])").forEach((el) => setMoney(el, el.textContent));
+    }
+
+    function unmaskMoney(root) {
+      root.querySelectorAll(".money[data-masked]").forEach((el) => {
+        el.textContent = el.dataset.value;
+        delete el.dataset.value;
+        delete el.dataset.masked;
+      });
+    }
+
+    function showVisibility() {
+      const hidden = moneyHidden();
+      const label = hidden ? "Show amounts" : "Hide amounts";
+      visibility.setAttribute("aria-pressed", String(hidden));
+      visibility.setAttribute("aria-label", label);
+      visibility.title = label;
+    }
+    visibility.addEventListener("click", () => {
+      const hidden = document.documentElement.classList.toggle("hide-money");
+      try { localStorage.setItem("pledger-hide-money", String(hidden)); } catch {}
+      if (hidden) maskMoney(document); else unmaskMoney(document);
+      showVisibility();
+    });
+    if (moneyHidden()) maskMoney(document);
+    showVisibility();
+    document.addEventListener("htmx:afterSwap", () => { if (moneyHidden()) maskMoney(document); });
+    // Confirmation questions mentioning an amount (data-confirm-money) mask it too.
+    document.addEventListener("htmx:confirm", (e) => {
+      const amount = e.detail.elt.dataset.confirmMoney;
+      if (!moneyHidden() || !amount || !e.detail.question) return;
+      e.preventDefault();
+      if (window.confirm(e.detail.question.replace(amount, MONEY_MASK))) e.detail.issueRequest(true);
+    });
+
     // Show server errors (e.g. a stale delete) instead of failing silently.
     document.addEventListener("htmx:responseError", (e) => {
       const flash = document.getElementById("flash");

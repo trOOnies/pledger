@@ -1,11 +1,19 @@
 {% from "_bars.html" import bars with context %}
 <div class="charts-grid">
-  <section class="panel">
-    <h2>Assets &amp; liabilities{% if month %} <small>as of end of {{ month }}</small>{% endif %}</h2>
-    <div class="composition-pair">
-      {{ bars("Assets", assets, "asset", "No asset balances.") }}
-      {{ bars("Liabilities", liabilities, "liability", "No liability balances.") }}
+  <section class="panel grouped-bars">
+    <div class="panel-head">
+      <h2>Assets &amp; liabilities{% if month %} <small>as of end of {{ month }}</small>{% endif %}</h2>
+      <div class="segmented" role="radiogroup" aria-label="Group accounts by">
+        <label><input type="radio" name="accounts-group" value="currency" checked> By currency</label>
+        <label><input type="radio" name="accounts-group" value="liquidity"> By liquidity</label>
+      </div>
     </div>
+    {% for group, comp in groupings.items() %}
+    <div class="composition-pair" data-group="{{ group }}">
+      {{ bars("Assets", comp.assets, "asset", "No asset accounts.", open=True) }}
+      {{ bars("Liabilities", comp.liabilities, "liability", "No liability accounts.", open=True) }}
+    </div>
+    {% endfor %}
   </section>
 
   <section class="panel">
@@ -27,10 +35,10 @@
       {% for r in statement %}
       <tr title="{{ r.description }}">
         <td>{{ r.name }}</td>
-        <td class="num {{ 'muted' if not r.gains }}">{{ r.gains | money }}</td>
-        <td class="num {{ 'muted' if not r.losses else 'loss' }}">{{ r.losses | money }}</td>
-        <td class="num {{ 'gain' if r.net > 0 else 'loss' if r.net < 0 else 'muted' }}">{{ r.net | money }}</td>
-        <td class="num">{{ r.cumulative | money }}</td>
+        <td class="num money {{ 'muted' if not r.gains }}">{{ r.gains | money }}</td>
+        <td class="num money {{ 'muted' if not r.losses else 'loss' }}">{{ r.losses | money }}</td>
+        <td class="num money {{ 'gain' if r.net > 0 else 'loss' if r.net < 0 else 'muted' }}">{{ r.net | money }}</td>
+        <td class="num money">{{ r.cumulative | money }}</td>
       </tr>
       {% endfor %}
       </tbody>
@@ -39,9 +47,9 @@
       <tfoot>
       <tr>
         <th>Profit</th>
-        <th class="num">{{ statement | sum(attribute='gains') | money }}</th>
-        <th class="num">{{ statement | sum(attribute='losses') | money }}</th>
-        <th class="num {{ 'gain' if net >= 0 else 'loss' }}">{{ net | money }}</th>
+        <th class="num money">{{ statement | sum(attribute='gains') | money }}</th>
+        <th class="num money">{{ statement | sum(attribute='losses') | money }}</th>
+        <th class="num money {{ 'gain' if net >= 0 else 'loss' }}">{{ net | money }}</th>
         <th></th>
       </tr>
       </tfoot>
@@ -54,8 +62,8 @@
   <h2>Equity over time <small>{{ ("in " ~ month) if month else "all time" }}, at each entry date</small></h2>
   {% if equity %}
   <p class="equity-headline">
-    <span class="num-lg">{{ equity.last.value | money }}</span>
-    <span class="{{ 'gain' if equity.change >= 0 else 'loss' }}">{{ '+' if equity.change >= 0 }}{{ equity.change | money }}</span>
+    <span class="num-lg money">{{ equity.last.value | money }}</span>
+    <span class="money {{ 'gain' if equity.change >= 0 else 'loss' }}">{{ '+' if equity.change >= 0 }}{{ equity.change | money }}</span>
     <span class="muted">{{ equity.since }}</span>
   </p>
   {% set ns = namespace(points=[]) %}
@@ -68,7 +76,7 @@
   {% endfor %}
   <div class="line-chart" data-points='{{ ns.points | tojson }}'>
     <div class="y-axis" aria-hidden="true">
-      {% for t in equity.y_ticks %}<span style="top: {{ t.y }}%">{{ t.label }}</span>{% endfor %}
+      {% for t in equity.y_ticks %}<span class="money" style="top: {{ t.y }}%">{{ t.label }}</span>{% endfor %}
     </div>
     <div class="plot">
       <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img"
@@ -83,8 +91,8 @@
       <span class="dot hover-dot"></span>
       <div class="tooltip" aria-hidden="true">
         <div class="tip-date muted"></div>
-        <div class="tip-value"></div>
-        <div class="tip-change"></div>
+        <div class="tip-value money"></div>
+        <div class="tip-change money"></div>
       </div>
     </div>
     <div class="x-axis" aria-hidden="true">
@@ -100,8 +108,8 @@
         {% for p in equity_series | reverse %}
         <tr>
           <td class="nowrap">{{ p.date }}</td>
-          <td class="num {{ 'gain' if p.change >= 0 else 'loss' }}" data-sort="{{ p.change }}">{{ p.change | money }}</td>
-          <td class="num" data-sort="{{ p.value }}">{{ p.value | money }}</td>
+          <td class="num money {{ 'gain' if p.change >= 0 else 'loss' }}" data-sort="{{ p.change }}">{{ p.change | money }}</td>
+          <td class="num money" data-sort="{{ p.value }}">{{ p.value | money }}</td>
         </tr>
         {% endfor %}
         </tbody>

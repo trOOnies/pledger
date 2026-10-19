@@ -8,11 +8,24 @@
       {% for m in months %}<option value="{{ m }}" {% if m == month %}selected{% endif %}>{{ m }}</option>{% endfor %}
     </select>
   </label>
+  <label class="check" title="Movements that set the initial amounts of the accounts; they are left out of results by default">
+    <input type="checkbox" name="initial" value="true" {% if initial %}checked{% endif %}> Initial movements
+  </label>
 </form>
 
 <div id="charts">{% include "_charts.html" %}</div>
 
 <script>
+  // Keep the grouping picked for the Assets & liabilities bars when the charts re-render.
+  let accountsGroup = "currency";
+  document.addEventListener("change", (e) => {
+    if (e.target.name === "accounts-group") accountsGroup = e.target.value;
+  });
+  document.addEventListener("htmx:afterSwap", () => {
+    const radio = document.querySelector(`input[name="accounts-group"][value="${accountsGroup}"]`);
+    if (radio) radio.checked = true;
+  });
+
   // Equity chart hover: snap a crosshair, dot and tooltip to the nearest day.
   document.addEventListener("pointermove", (e) => {
     const chart = e.target.closest(".line-chart");
@@ -31,9 +44,9 @@
     dot.style.top = `${p.y}%`;
     const tip = chart.querySelector(".tooltip");
     tip.querySelector(".tip-date").textContent = p.date;
-    tip.querySelector(".tip-value").textContent = p.value_text;
-    tip.querySelector(".tip-change").textContent = p.change_text;
-    tip.querySelector(".tip-change").className = "tip-change " + (p.change >= 0 ? "gain" : "loss");
+    setMoney(tip.querySelector(".tip-value"), p.value_text);
+    setMoney(tip.querySelector(".tip-change"), p.change_text);
+    tip.querySelector(".tip-change").className = "tip-change money " + (p.change >= 0 ? "gain" : "loss");
     tip.style.left = `${p.x}%`;
     tip.style.top = `${p.y}%`;
     tip.classList.toggle("flip", p.x > 60);

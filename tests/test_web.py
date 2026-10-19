@@ -324,7 +324,7 @@ class TestPages:
         assert r.status_code == 200
         assert "New movement" in r.text
         assert "$1,000.50" in r.text
-        assert "$1,060.75" in r.text  # profit card, with Bk's initial 100.50
+        assert "$960.25" in r.text  # profit card, without Bk's initial 100.50
         assert "Balances" not in r.text and "New account" not in r.text
         assert card_labels(r.text) == ["Gains", "Losses", "Profit"]
 
@@ -348,8 +348,9 @@ class TestPages:
         assert "<th>Currency</th><th>Liquid</th>" in r.text
         assert "<td>USD</td>" in r.text
 
-    def test_accounts_grouped_by_currency_or_liquidity(self, client):
-        r = client.get("/accounts")
+    def test_charts_balances_grouped_by_currency_or_liquidity(self, client):
+        assert 'name="accounts-group"' not in client.get("/accounts").text  # only in Charts
+        r = client.get("/charts")
         assert 'name="accounts-group" value="currency" checked' in r.text
         assert 'name="accounts-group" value="liquidity"' in r.text
         by_currency = r.text.split('data-group="currency"')[1].split('data-group="liquidity"')[0]
@@ -376,6 +377,15 @@ class TestPages:
         client.cookies.set("pledger_month", "2030-01")
         assert "as of end of" not in client.get("/accounts").text
         assert client.get("/", params={"month": "<x>"}).status_code == 200
+
+    def test_visibility_toggle_marks_the_amounts(self, client):
+        for path in ["/", "/accounts", "/charts", "/investments", "/debt"]:
+            r = client.get(path)
+            assert 'id="visibility"' in r.text and 'class="eye-closed"' in r.text, path
+        r = client.get("/")
+        assert '<span class="num money gain">$1,010.50</span>' in r.text  # gains card
+        assert 'data-confirm-money="$10.00"' in r.text  # masked in the delete question too
+        assert 'class="total money"' in client.get("/charts").text
 
     def test_currency_setting(self, settings):
         client = TestClient(create_app(replace(settings, currency="ARS")))
@@ -624,43 +634,48 @@ class TestCharts:
         with settings.ledger_path.open("a") as f:
             f.write("2026-01-05;Card fee;Eq;500;Cc;\n")  # makes Cc a liability, Card fee the top loss
         charts = build_charts(LedgerStore(settings).load())
-        assert [r["name"] for r in charts["assets"]] == ["Ca", "Bk"]  # accounts.yaml order
-        assert [r["name"] for r in charts["liabilities"]] == ["Cc"]
+        assets = charts["groupings"]["liquidity"]["assets"][0]["children"]
+        assert [r["name"] for r in assets] == ["Ca", "Bk"]  # accounts.yaml order
+        assert [r["name"] for r in charts["groupings"]["currency"]["assets"]] == ["ARS", "USD"]
+        assert [r["name"] for r in charts["groupings"]["liquidity"]["liabilities"]] == ["Illiquid"]
         losses = charts["losses"][0]["children"]
         assert [r["name"] for r in losses] == ["Food", "Card fee"]  # definition order, not size
         gains = charts["gains"]
-        assert [r["name"] for r in gains] == ["Operative", "Gifts", "Initial"]  # result type id order
+        assert [r["name"] for r in gains] == ["Operative", "Gifts"]  # result type id order, no Initial
+        gains = build_charts(LedgerStore(settings).load(), initial=True)["gains"]
+        assert [r["name"] for r in gains] == ["Operative", "Gifts", "Initial"]
 
     def test_charts_list_everything_even_at_zero(self, settings):
         with settings.ledger_path.open("a") as f:
             f.write("2026-02-01;Food;Eq;100;Ca;\n")
         charts = build_charts(LedgerStore(settings).load(), "2026-02")
         # Only Food moved in February; every other bar is still there, at zero
-        assert [r["name"] for r in charts["assets"]] == ["Ca", "Bk"]
-        assert [r["name"] for r in charts["liabilities"]] == ["Cc"]
+        by_currency = charts["groupings"]["currency"]
+        assert [c["name"] for r in by_currency["assets"] for c in r["children"]] == ["Ca", "Bk"]
+        assert [c["name"] for r in by_currency["liabilities"] for c in r["children"]] == ["Cc"]
         gains = charts["gains"]
-        assert [(r["name"], r["value"]) for r in gains] == [("Operative", 0), ("Gifts", 0), ("Initial", 0)]
+        assert [(r["name"], r["value"]) for r in gains] == [("Operative", 0), ("Gifts", 0)]
         assert [c["name"] for c in gains[0]["children"]] == ["Salary"]
         assert [c["name"] for c in gains[1]["children"]] == ["Gift"]
         losses = charts["losses"]
-        assert [r["name"] for r in losses] == ["Operative", "Gifts", "Initial"]
+        assert [r["name"] for r in losses] == ["Operative", "Gifts"]
         assert [(c["name"], c["value"]) for c in losses[0]["children"]] == [("Food", 100), ("Card fee", 0)]
         assert losses[1]["children"] == []  # Gifts has no loss base movements
 
     def test_gains_and_losses_by_result_type(self, settings):
         charts = build_charts(LedgerStore(settings).load())
         gains = {r["name"]: r for r in charts["gains"]}
-        assert set(gains) == {"Operative", "Gifts", "Initial"}
+        assert set(gains) == {"Operative", "Gifts"}
         assert gains["Operative"]["value"] == pytest.approx(1000.5)
         assert [c["name"] for c in gains["Operative"]["children"]] == ["Salary"]
         # Children are drawn on the parent's scale
         gift = gains["Gifts"]["children"][0]
         assert gift["share"] == pytest.approx(gains["Gifts"]["share"])
         assert gift["width"] == pytest.approx(gains["Gifts"]["width"])
-        assert [r["name"] for r in charts["losses"]] == ["Operative", "Gifts", "Initial"]  # at zero
+        assert [r["name"] for r in charts["losses"]] == ["Operative", "Gifts"]  # at zero
 
         statement = charts["statement"]
-        assert [r["name"] for r in statement] == ["Operative", "Gifts", "Initial"]  # id order
+        assert [r["name"] for r in statement] == ["Operative", "Gifts"]  # id order
         assert statement[0]["gains"] == pytest.approx(1000.5)
         assert statement[0]["losses"] == pytest.approx(-50.25)
         assert statement[0]["net"] == pytest.approx(950.25)
@@ -673,20 +688,24 @@ class TestCharts:
     def test_equity_series(self, settings):
         snapshot = LedgerStore(settings).load()
         series = equity_series(snapshot)
-        assert [(p["date"], p["value"]) for p in series] == [
-            ("2025-12-31", 100.5), ("2026-01-01", 1101.0), ("2026-01-03", 1050.75),
-            ("2026-01-04", 1060.75),
+        # Bk's initial 100.50 is in the equity, but not a change of its own
+        assert [(p["date"], p["value"], p["change"]) for p in series] == [
+            ("2026-01-01", 1101.0, 1000.5), ("2026-01-03", 1050.75, -50.25),
+            ("2026-01-04", 1060.75, 10),
         ]
+        assert next(p["date"] for p in equity_series(snapshot, initial=True)) == "2025-12-31"
         chart = build_charts(snapshot)["equity"]
         assert chart["points"][0]["x"] == 0 and chart["points"][-1]["x"] == 100
-        assert chart["change"] == pytest.approx(960.25)  # since the first entry
-        assert build_charts(snapshot, "2025-11")["equity"] is None
+        assert chart["change"] == pytest.approx(960.25)  # the profit
+        assert build_charts(snapshot, "2025-12")["equity"] is None
+        assert build_charts(snapshot, "2025-12", initial=True)["equity"]["change"] == pytest.approx(100.5)
 
 
 class TestApi:
     def test_summary(self, client):
         data = client.get("/api/summary").json()
-        assert data["profit"] == pytest.approx(1060.75)
+        assert data["profit"] == pytest.approx(960.25)  # without the initial movements
+        assert client.get("/api/summary", params={"initial": True}).json()["profit"] == pytest.approx(1060.75)
         assert data["balances"]["Bk"] == pytest.approx(901.0)
         assert data["assets"] == pytest.approx(1060.75)
         assert data["liabilities"] == pytest.approx(0)
@@ -821,11 +840,20 @@ class TestInternalResultTypes:
         settings = replace(settings, creditors_path=path)
         assert self.initial_rows(settings)[1:] == [(-2, "2026-01-01", "Initial (G)", "Db", "30.0", "Eq")]
 
-    def test_are_shown_but_cannot_be_deleted(self, client):
-        movements = client.get("/api/movements").json()
-        assert movements[-1]["base"] == "Initial (G)"  # the oldest
+    def test_are_hidden_by_default(self, client):
+        assert all(m["base"] != "Initial (G)" for m in client.get("/api/movements").json())
         r = client.get("/")
+        assert "Initial (G)" not in r.text and 'name="initial" value="true" >' in r.text
+        assert "Initial (G)" not in client.get("/charts").text
+
+    def test_can_be_shown_but_not_deleted(self, client):
+        movements = client.get("/api/movements", params={"initial": True}).json()
+        assert movements[-1]["base"] == "Initial (G)"  # the oldest
+        r = client.get("/", params={"initial": True})
+        assert 'name="initial" value="true" checked>' in r.text
         assert r.text.count('hx-post="/movements/') == 4  # only the CSV rows
+        assert "$1,060.75" in r.text  # the profit, with Bk's initial 100.50
+        assert ">Initial<" in client.get("/charts", params={"initial": True}).text
 
     def test_cannot_be_added_by_hand(self, settings):
         with pytest.raises(ValueError, match=re.escape("'Initial (G)' is internal")):
@@ -1018,7 +1046,7 @@ class TestInvestmentsPage:
         assert r.status_code == 200
         assert 'href="/investments" aria-current="page"' in r.text
         assert card_labels(r.text) == ["Invested", "Investments", "Investment accounts"]
-        assert '<span class="num ">$500.00</span>' in r.text
+        assert '<span class="num money ">$500.00</span>' in r.text
         assert 'data-sortable="investments"' in r.text
         assert "<td>Public bond</td>" in r.text and "<td>ETF</td>" in r.text
         assert ">1,000</td>" in r.text and ">1.5</td>" in r.text and ">0.25</td>" in r.text

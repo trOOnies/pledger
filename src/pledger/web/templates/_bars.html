@@ -1,8 +1,8 @@
 {# Horizontal bar compositions, shared by the Charts and Accounts pages. #}
 {% macro bar_row(item, kind, tag="div") %}
-<{{ tag }} class="bar-row" title="{{ item.name }}: {{ item.value | money }} ({{ '%.1f' | format(item.share) }}%)">
+<{{ tag }} class="bar-row" title="{{ item.name }} ({{ '%.1f' | format(item.share) }}%)">
   <span class="bar-name">{{ item.name }}</span>
-  <span class="num {{ 'loss' if item.value < 0 }}">{{ item.value | money }}</span>
+  <span class="num money {{ 'loss' if item.value < 0 }}">{{ item.value | money }}</span>
   <span class="num muted share">{{ '%.1f' | format(item.share) }}%</span>
   <span class="bar-track">{% if item.value > 0 %}<span class="bar {{ kind }}" style="width: {{ '%.2f' | format(item.width) }}%"></span>{% endif %}</span>
 </{{ tag }}>
@@ -24,7 +24,7 @@
 {# With `open`, expandable rows start expanded. #}
 {% macro bars(title, items, kind, empty, open=False) %}
 <div class="composition">
-  <h3>{{ title }} <span class="total">{{ items | sum(attribute='value') | money }}</span></h3>
+  <h3>{{ title }} <span class="total money">{{ items | sum(attribute='value') | money }}</span></h3>
   {% for item in items %}
   {{ bar_item(item, kind, open) }}
   {% else %}

@@ -1,8 +1,8 @@
 {% set period = ("in " ~ month) if month else "all time" %}
 <div class="cards">
-  <div class="card"><span class="label">Gains <small>{{ period }}{% if account %}, {{ account }}{% endif %}</small></span><span class="num gain">{{ gains | money }}</span></div>
-  <div class="card"><span class="label">Losses <small>{{ period }}{% if account %}, {{ account }}{% endif %}</small></span><span class="num loss">{{ losses | money }}</span></div>
-  <div class="card"><span class="label">Profit <small>{{ period }}{% if account %}, {{ account }}{% endif %}</small></span><span class="num {{ 'gain' if profit >= 0 else 'loss' }}">{{ profit | money }}</span></div>
+  <div class="card"><span class="label">Gains <small>{{ period }}{% if account %}, {{ account }}{% endif %}</small></span><span class="num money gain">{{ gains | money }}</span></div>
+  <div class="card"><span class="label">Losses <small>{{ period }}{% if account %}, {{ account }}{% endif %}</small></span><span class="num money loss">{{ losses | money }}</span></div>
+  <div class="card"><span class="label">Profit <small>{{ period }}{% if account %}, {{ account }}{% endif %}</small></span><span class="num money {{ 'gain' if profit >= 0 else 'loss' }}">{{ profit | money }}</span></div>
 </div>
 
 <div class="panel">
@@ -18,7 +18,7 @@
           <td class="nowrap">{{ m.date }}</td>
           <td><span class="badge {{ m.type }}">{{ m.type[0] | upper }}</span> {{ m.base }}</td>
           <td>{{ m.debit }}</td>
-          <td class="num" data-sort="{{ m.amount }}">{{ m.amount | money }}</td>
+          <td class="num money" data-sort="{{ m.amount }}">{{ m.amount | money }}</td>
           <td>{{ m.credit }}</td>
           <td class="muted">{{ m.comment }}</td>
           <td>
@@ -29,6 +29,7 @@
               hx-post="/movements/{{ m.index }}/delete"
               hx-vals='{{ {"fingerprint": m.fingerprint} | tojson }}'
               hx-confirm="Delete {{ m.date }} {{ m.base }} ({{ m.amount | money }})?"
+              data-confirm-money="{{ m.amount | money }}"
               hx-swap="none">&times;</button>
             {% endif %}
           </td>

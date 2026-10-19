@@ -12,7 +12,7 @@
 {% else %}
 <div class="view">
   <div class="cards">
-    <div class="card" title="Sum of the amounts of all investments"><span class="label">Invested</span><span class="num {{ 'loss' if total < 0 }}">{{ total | money }}</span></div>
+    <div class="card" title="Sum of the amounts of all investments"><span class="label">Invested</span><span class="num money {{ 'loss' if total < 0 }}">{{ total | money }}</span></div>
     <div class="card" title="Number of investments across all investment accounts"><span class="label">Investments</span><span class="num">{{ holdings | length }}</span></div>
     <div class="card" title="Asset accounts listed in the investments file"><span class="label">Investment accounts</span><span class="num">{{ accounts | length }}</span></div>
   </div>
@@ -43,7 +43,7 @@
         <td>{{ h.type }}</td>
         <td>{{ h.account }}</td>
         <td class="num" data-sort="{{ h.quantity }}">{{ h.quantity | quantity }}</td>
-        <td class="num {{ 'loss' if h.amount < 0 }}" data-sort="{{ h.amount }}">{{ h.amount | money }}</td>
+        <td class="num money {{ 'loss' if h.amount < 0 }}" data-sort="{{ h.amount }}">{{ h.amount | money }}</td>
         <td class="num muted" data-sort="{{ h.share }}">{{ '%.1f' | format(h.share) }}%</td>
       </tr>
       {% else %}
@@ -64,7 +64,7 @@
         <td class="muted">{{ a.description }}</td>
         <td>{{ a.currency }}</td>
         <td class="num">{{ a.holdings }}</td>
-        <td class="num {{ 'loss' if a.amount < 0 }}" data-sort="{{ a.amount }}">{{ a.amount | money }}</td>
+        <td class="num money {{ 'loss' if a.amount < 0 }}" data-sort="{{ a.amount }}">{{ a.amount | money }}</td>
       </tr>
       {% endfor %}
       </tbody>

@@ -36,7 +36,7 @@ leaving the rest of each file as it was.
 Every account but the equity, investment and debt ones must set an `initial_amount` (those must not).
 Accounts also take optional `currency` (the base currency by default), `is_liquid`
 (`false`) and `initial_date` (the first date of the ledger) keys; the
-Accounts tab groups their balances by currency or by liquidity.
+Charts tab groups their balances by currency or by liquidity.
 
 Investment accounts are the asset accounts listed as top-level keys in `investment.yaml`,
 each mapping its investments to their `type`, initial `amount` and initial `quantity`, or
@@ -59,7 +59,13 @@ their movements can't be deleted by hand, and its result types can't get new bas
 The internal gain `Initial (G)` and loss `Initial (L)` are required (with no fixed debit or
 credit account, respectively): every account with a non-zero initial amount gets one such
 movement against equity, on its initial date. These movements are generated when the
-ledger is loaded and are never stored in `ledger.csv`, which can't contain them.
+ledger is loaded and are never stored in `ledger.csv`, which can't contain them. They
+count towards balances and equity, but the movements, gains, losses, profit and result
+charts leave out the movements of their result type unless the *Initial movements* filter
+(or the `initial` API parameter) is on.
+
+The eye button in the top bar replaces every amount with `******` until clicked again; the
+choice is remembered by the browser.
 
 Amounts are shown with a `$` currency symbol and two decimals; set `PLEDGER_CURRENCY`
 (e.g. `ARS`) to use another one.

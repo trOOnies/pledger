@@ -27,10 +27,13 @@ router = APIRouter(tags=["pages"], default_response_class=HTMLResponse)
 
 
 @router.get("/")
-def index(request: Request, store: StoreDep, month: str | None = None, account: str = ""):
+def index(
+    request: Request, store: StoreDep, month: str | None = None, account: str = "",
+    initial: bool = False,
+):
     snapshot = store.load()
     month = remembered_month(request, month, months_of(snapshot))
-    view = build_view(snapshot, month, account)
+    view = build_view(snapshot, month, account, initial)
     if is_partial(request):
         return remember_month(templates.TemplateResponse(request, "_view.html", view), month)
     form = render_form(request, snapshot, {}).body.decode()
@@ -65,10 +68,10 @@ def debt(request: Request, store: StoreDep):
 
 
 @router.get("/charts")
-def charts(request: Request, store: StoreDep, month: str | None = None):
+def charts(request: Request, store: StoreDep, month: str | None = None, initial: bool = False):
     snapshot = store.load()
     month = remembered_month(request, month, months_of(snapshot))
-    context = build_charts(snapshot, month)
+    context = build_charts(snapshot, month, initial)
     template = "_charts.html" if is_partial(request) else "charts.html"
     return remember_month(templates.TemplateResponse(request, template, context), month)
 
