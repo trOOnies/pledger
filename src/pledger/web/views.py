@@ -181,7 +181,7 @@ def build_investments(snapshot: Snapshot) -> dict:
     unattributed: list[dict] = []
     accounts = snapshot.investment_accounts(unattributed)
     bases = snapshot.invest_base_movements()
-    sign = {n: -1 if b.move_type == MovementType.LOSS else 1 for n, b in bases.items()}
+    sign = result_signs(snapshot)
     capital = {n for n, b in bases.items() if is_capital(b)}
     # The other base movements with results, in their defined order, and whether they are losses.
     result_bases = {
@@ -271,6 +271,43 @@ def build_investments(snapshot: Snapshot) -> dict:
             "type": grouped_composition(by_type),
             "account": grouped_composition(by_account),
         },
+        **investment_charts(snapshot),
+    }
+
+
+def result_signs(snapshot: Snapshot) -> dict[str, int]:
+    """The sign each investment base movement adds to a result with: -1 for losses."""
+    return {
+        n: -1 if b.move_type == MovementType.LOSS else 1
+        for n, b in snapshot.invest_base_movements().items()
+    }
+
+
+def investment_charts(snapshot: Snapshot) -> dict:
+    """
+    The total invested (the amounts of all investments) and the total result of
+    the investments, held or not, at the end of each month of the ledger.
+    """
+    dates = snapshot.all_rows.move_date
+    if not len(dates):
+        return {"invested_chart": None, "invested_series": [], "result_chart": None, "result_series": []}
+    sign = result_signs(snapshot)
+    invested, result = [], []
+    month, last = min(dates)[:7], max(dates)[:7]
+    while month <= last:
+        accounts = snapshot.investment_accounts(month=month)
+        for series, value in (
+            (invested, sum(h["total_amount"] for a in accounts for h in a.investments.values())),
+            (result, sum(sign[n] * v for a in accounts for r in a.results.values() for n, v in r.items())),
+        ):
+            change = value - series[-1]["value"] if series else value
+            series.append({"date": f"{month}-01", "month": month, "value": value, "change": change})
+        month = next_month(month)
+    return {
+        "invested_chart": line_chart(invested),
+        "invested_series": invested,
+        "result_chart": line_chart(result),
+        "result_series": result,
     }
 
 

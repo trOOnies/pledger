@@ -169,22 +169,33 @@ class Snapshot:
         _apply_debts({**self.accounts, **debts}, rows)
         return list(debts.values())
 
-    def investment_accounts(self, unattributed: list[dict] | None = None) -> list[InvestmentAccount]:
+    def investment_accounts(
+        self, unattributed: list[dict] | None = None, month: str = ""
+    ) -> list[InvestmentAccount]:
         """
-        Copies of the investment accounts with the CSV movements of the investment
-        base movements applied to their investments (see _apply_investments). The
-        results that can't be attributed to an investment are added to `unattributed`.
+        Copies of the investment accounts as of the end of `month` (all the ledger by
+        default), with the CSV movements of the investment base movements up to then
+        applied to their investments (see _apply_investments). Their initial amounts
+        and quantities count once they start. The results that can't be attributed
+        to an investment are added to `unattributed`.
         """
+        def started(a: InvestmentAccount) -> bool:
+            return not month or a.initial_date is None or a.initial_date.isoformat()[:7] <= month
+
         accounts = {
             a.name: replace(
                 a,
-                investments={n: dict(h) for n, h in a.investments.items()},
+                investments={
+                    n: dict(h) if started(a) else {**h, "total_amount": 0.0, "total_quantity": 0.0}
+                    for n, h in a.investments.items()
+                },
                 results={n: dict(r) for n, r in a.results.items()},
             )
             for a in self.accounts.values()
             if isinstance(a, InvestmentAccount)
         }
-        found = _apply_investments(self, {**self.accounts, **accounts}, self.rows)
+        rows = self.rows[self.rows.move_date.str[:7] <= month] if month else self.rows
+        found = _apply_investments(self, {**self.accounts, **accounts}, rows)
         if unattributed is not None:
             unattributed.extend(found)
         return list(accounts.values())

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_bars.html" import bars with context %}
+{% from "_line.html" import line_chart with context %}
 {% block title %}Investments · pledger{% endblock %}
 {# The results of an investment: net capital gains, the other results by base movement and their total. #}
 {% macro signed(value) %}<td class="num money {{ 'gain' if value > 0 else 'loss' if value < 0 }}" data-sort="{{ value }}">{{ value | money }}</td>{% endmacro %}
@@ -47,8 +48,7 @@
   {% endif %}
   <div class="cards">
     <div class="card" title="Sum of the amounts of all investments"><span class="label">Invested</span><span class="num money {{ 'loss' if total < 0 }}">{{ total | money }}</span></div>
-    <div class="card" title="Number of investments across all investment accounts"><span class="label">Investments</span><span class="num">{{ holdings | length }}</span></div>
-    <div class="card" title="Asset accounts listed in the investments file"><span class="label">Investment accounts</span><span class="num">{{ accounts | length }}</span></div>
+    <div class="card" title="Number of investments held across all investment accounts"><span class="label">Current holdings</span><span class="num">{{ holdings | length }}</span></div>
     {% if has_capital %}
     <div class="card" title="Capital gains minus capital losses of the investments, held or not"><span class="label">Net capital gains</span><span class="num money {{ 'gain' if result_totals.capital > 0 else 'loss' if result_totals.capital < 0 }}">{{ result_totals.capital | money }}</span></div>
     {% endif %}
@@ -59,6 +59,51 @@
     <div class="card" title="Net capital gains, plus the gains and minus the losses above, of the investments, held or not"><span class="label">Total result</span><span class="num money {{ 'gain' if result_totals.total > 0 else 'loss' if result_totals.total < 0 }}">{{ result_totals.total | money }}</span></div>
     {% endif %}
   </div>
+
+  {% if invested_chart %}
+  <div class="charts-grid">
+    {% for key, title, what, chart, series, signed, show in (
+      ("invested", "Total invested", "Invested", invested_chart, invested_series, False, True),
+      ("result", "Total result", "Total result", result_chart, result_series, True, has_results),
+    ) if show %}
+    <section class="panel">
+      <h2>{{ title }} <small>all time, at each month end</small></h2>
+      <p class="equity-headline">
+        <span class="num-lg money {{ ('gain' if chart.last.value > 0 else 'loss' if chart.last.value < 0) if signed }}">{{ chart.last.value | money }}</span>
+        <span class="muted">in {{ chart.last.month }}</span>
+      </p>
+      {% set ns = namespace(points=[]) %}
+      {% for p in chart.points %}
+        {% set ns.points = ns.points + [{
+          "x": p.x, "y": p.y, "label": p.month, "change": p.change,
+          "value_text": p.value | money,
+          "change_text": ("+" if p.change >= 0 else "") ~ (p.change | money) ~ " in the month",
+        }] %}
+      {% endfor %}
+      {{ line_chart(chart, ns.points, title ~ " from " ~ series[0].month ~ " to " ~ chart.last.month ~ ", ending at " ~ (chart.last.value | money), series=loop.index) }}
+      <details class="chart-table">
+        <summary>Show table</summary>
+        <div class="table-wrap">
+          <table data-sortable="{{ key }}-over-time">
+            <thead><tr><th>Month</th><th class="num">Change</th><th class="num">{{ what }}</th></tr></thead>
+            <tbody>
+            {% for p in series | reverse %}
+            <tr>
+              <td class="nowrap">{{ p.month }}</td>
+              <td class="num money {{ 'gain' if p.change > 0 else 'loss' if p.change < 0 }}" data-sort="{{ p.change }}">{{ p.change | money }}</td>
+              <td class="num money" data-sort="{{ p.value }}">{{ p.value | money }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </details>
+    </section>
+    {% endfor %}
+  </div>
+  <p class="muted small">The amounts of all investments, and their total result (as in the Total result card), at the
+    end of each month.</p>
+  {% endif %}
 
   <section class="panel grouped-bars">
     <div class="panel-head">

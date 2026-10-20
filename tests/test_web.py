@@ -28,6 +28,7 @@ from pledger.web.views import (
     build_credit_cards,
     composition,
     equity_series,
+    investment_charts,
     nice_ticks,
 )
 
@@ -1089,7 +1090,7 @@ class TestInvestmentsPage:
         r = client.get("/investments")
         assert r.status_code == 200
         assert 'href="/investments" aria-current="page"' in r.text
-        assert card_labels(r.text) == ["Invested", "Investments", "Investment accounts"]
+        assert card_labels(r.text) == ["Invested", "Current holdings"]
         assert '<span class="num money ">$500.00</span>' in r.text
         assert 'data-sortable="investments"' in r.text
         held, closed = r.text.split("<h2>No longer held <small>1</small></h2>")
@@ -1607,6 +1608,20 @@ class TestInvestMovements:
         assert 'href="/investments" title="Added and deleted from the Investments tab"' in index
         assert index.count('aria-label="Delete movement"') == 4
 
+    def test_invested_and_result_over_time(self, settings, client):
+        snapshot = LedgerStore(settings).load()
+        charts = investment_charts(snapshot)
+        # T starts at 100 on the first ledger date, then gains 5 in 2026-01
+        assert [(p["month"], p["value"], p["change"]) for p in charts["invested_series"]] == [
+            ("2025-12", 100.0, 100.0), ("2026-01", 105.0, 5.0)
+        ]
+        assert [(p["month"], p["value"]) for p in charts["result_series"]] == [("2025-12", 0.0), ("2026-01", 5.0)]
+        assert snapshot.investment_accounts(month="2025-12")[0].investments["T"]["total_amount"] == 100
+        r = client.get("/investments")
+        assert "Total invested <small>all time, at each month end</small>" in r.text
+        assert "Total result <small>all time, at each month end</small>" in r.text
+        assert 'data-sortable="invested-over-time"' in r.text and 'data-sortable="result-over-time"' in r.text
+
     def test_internal_investment_transfers_too(self, settings, client):
         r = client.get("/investments")
         assert '<optgroup label="Transfer">' in r.text and "<option >Investment - Bought</option>" in r.text
@@ -1789,7 +1804,7 @@ class TestCreditCards:
         r = client.get("/credit-cards", params={"month": ""})
         assert r.status_code == 200
         assert 'href="/credit-cards" aria-current="page"' in r.text
-        assert card_labels(r.text) == ["Owed", "Charged", "Paid", "Credit cards"]
+        assert card_labels(r.text) == ["Owed", "Charged", "Paid"]
         cards = r.text.split('<div class="cards">')[1].split("</div>\n  </div>")[0]
         # Owed 80 + 20; charged 30 + 20 and paid 50, without the initial 100
         assert "$100.00" in cards and "$50.00" in cards

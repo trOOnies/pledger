@@ -18,7 +18,6 @@
     <div class="card" title="What we owe on the credit cards{% if month %} at the end of {{ month }}{% endif %}"><span class="label">Owed</span><span class="num money {{ 'gain' if owed < 0 }}">{{ owed | money }}</span></div>
     <div class="card" title="Charged to the credit cards (credits){% if month %} in {{ month }}{% endif %}"><span class="label">Charged</span><span class="num money">{{ charged | money }}</span></div>
     <div class="card" title="Paid off the credit cards (debits){% if month %} in {{ month }}{% endif %}"><span class="label">Paid</span><span class="num money">{{ paid | money }}</span></div>
-    <div class="card" title="Accounts listed in the credit cards file"><span class="label">Credit cards</span><span class="num">{{ accounts | length }}</span></div>
   </div>
 
   <section class="panel">

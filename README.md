@@ -72,8 +72,9 @@ any, else in the one with an investment of that name. The Investments tab shows 
 investment, held or not, and overall: its net capital gains (the gains and losses with an
 `INVESTMENT` side, e.g. `Capital gains` minus `Capital losses`, which add up over time
 whatever is bought or sold), the total of each other one (`Dividends & Interest`,
-`Broker fees`...) and the total result (all of them, losses subtracted). It warns about
-the movements naming an investment of no investment account.
+`Broker fees`...) and the total result (all of them, losses subtracted), and charts the
+total invested and the total result at each month end. It warns about the movements naming
+an investment of no investment account.
 
 Credit card accounts are the top-level keys of `credit_cards.yaml`, set like the accounts of
 `accounts.yaml` (a `description`, an `initial_amount` and the optional `currency` and
