@@ -332,6 +332,13 @@ section.panel > .msg, .panel > .msg.warn { margin-bottom: .75rem; }
 .line-chart .line { fill: none; stroke: var(--line, var(--series-asset)); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .line-chart .crosshair { stroke: var(--muted); stroke-width: 1; }
 .line-chart .area { stroke: var(--surface); stroke-width: 2; stroke-linejoin: round; }
+.line-chart .column {
+  position: absolute; bottom: 0; transform: translateX(-50%); pointer-events: none;
+  background: var(--line, var(--series-asset)); border-radius: 4px 4px 0 0;
+}
+.line-chart.columns.hover .column:not(.active) { opacity: .55; }
+.line-chart.columns .crosshair, .line-chart.columns .hover-dot { display: none; }
+.line-chart.columns .x-axis span:first-child { transform: translateX(-50%); }
 .tip-rows { font-size: .8rem; }
 .legend { display: flex; flex-wrap: wrap; gap: .25rem 1rem; list-style: none; margin: 0 0 .5rem; padding: 0; font-size: .85rem; }
 .legend li { display: flex; align-items: center; gap: .35rem; }

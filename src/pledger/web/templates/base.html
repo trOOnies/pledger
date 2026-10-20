@@ -202,6 +202,8 @@
         change.classList.remove("gain", "loss", "muted");
         change.classList.add(p.change === undefined ? "muted" : p.change >= 0 ? "gain" : "loss");
       }
+      // A column chart highlights the column of the point.
+      chart.querySelectorAll(".column").forEach((c, i) => c.classList.toggle("active", points[i] === p));
       tip.style.left = `${p.x}%`;
       tip.style.top = `${y}%`;
       tip.classList.toggle("flip", p.x > 60);

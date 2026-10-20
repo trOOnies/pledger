@@ -80,8 +80,9 @@ Credit card accounts are the top-level keys of `credit_cards.yaml`, set like the
 `accounts.yaml` (a `description`, an `initial_amount` and the optional `currency` and
 `initial_date`), but not listed there: they are always liquid liabilities, and can't be
 investment or debt accounts. The Credit Cards tab warns about the cards with a negative
-balance (more paid than charged): rare, so it may be an error. It also charts the net
-owed on them over equity at each month end, and lists the movements of the cards in the
+balance (more paid than charged): rare, so it may be an error. It also charts what was charged to
+them in each month (their credits, without the payments) and the net owed on them over
+equity at each month end, and lists the movements of the cards in the
 month picked, the initial ones included.
 
 ```yaml

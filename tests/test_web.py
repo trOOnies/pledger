@@ -1844,6 +1844,20 @@ class TestCreditCards:
         r = client.get("/credit-cards", params={"month": "2026-01"}, headers=HTMX)
         assert "<h2>Movements <small>2, in 2026-01</small></h2>" in r.text  # with the initial one
 
+    def test_charged_per_month_chart(self, settings, client):
+        with settings.ledger_path.open("a", encoding="utf-8") as f:
+            f.write("2026-02-07;Food;Eq;5;Vi;\n")
+        series = build_credit_cards(LedgerStore(settings).load())["charged_series"]
+        # Only the charges (credits): not the initial 100 nor the payment of 50
+        assert [(p["month"], p["value"], p["count"]) for p in series] == [
+            ("2025-12", 0.0, 0), ("2026-01", 30.0, 1), ("2026-02", 25.0, 2)
+        ]
+        r = client.get("/credit-cards", params={"month": "2026-01"})
+        assert "Charged per month <small>up to 2026-01</small>" in r.text
+        chart = r.text.split('class="line-chart columns"')[1].split('<div class="x-axis"')[0]
+        assert chart.count('class="column"') == 2 and "height: 100.0%" in chart
+        assert '"change_text": "1 charge"' in r.text and 'data-sortable="charged"' in r.text
+
     def test_owed_over_equity_chart(self, settings, client):
         series = build_credit_cards(LedgerStore(settings).load())["owed_series"]
         # Vi starts at 100 on the first ledger date; equity counts every account

@@ -28,6 +28,34 @@
 </div>
 {% endmacro %}
 
+{# A column chart from views.column_chart, in the color of a categorical `series` slot. Each
+   point of `points` adds its tooltip texts: `label`, `value_text` and `change_text`. #}
+{% macro column_chart(chart, points, aria, series=1) %}
+<div class="line-chart columns" data-points='{{ points | tojson }}' style="--line: var(--series-{{ series }})">
+  <div class="y-axis" aria-hidden="true">
+    {% for t in chart.y_ticks %}<span class="money" style="top: {{ t.y }}%">{{ t.label }}</span>{% endfor %}
+  </div>
+  <div class="plot">
+    <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="{{ aria }}">
+      {% for t in chart.y_ticks %}
+      <line class="{{ 'axis' if loop.first else 'grid' }}" x1="0" x2="100" y1="{{ t.y }}" y2="{{ t.y }}"/>
+      {% endfor %}
+      <line class="crosshair" x1="0" x2="0" y1="0" y2="100"/>
+    </svg>
+    {% for c in chart.columns %}<span class="column" style="left: {{ c.x }}%; width: {{ chart.width }}%; height: {{ c.height }}%"></span>{% endfor %}
+    <span class="dot hover-dot"></span>
+    <div class="tooltip" aria-hidden="true">
+      <div class="tip-date muted"></div>
+      <div class="tip-value money"></div>
+      <div class="tip-change muted"></div>
+    </div>
+  </div>
+  <div class="x-axis" aria-hidden="true">
+    {% for t in chart.x_ticks %}<span style="left: {{ t.x }}%">{{ t.label }}</span>{% endfor %}
+  </div>
+</div>
+{% endmacro %}
+
 {# A 100% stacked area chart from views.stacked_chart, with its legend. #}
 {% macro stacked_chart(chart, aria) %}
 <ul class="legend">

@@ -317,7 +317,8 @@ def build_credit_cards(snapshot: Snapshot, month: str = "") -> dict:
     `month` (all the ledger by default), and what was charged to it (credits) and
     paid (debits) in that month, leaving out the initial movements. Lists the
     cards with a negative balance (we are owed): rare, so possibly an error. Charts
-    the net owed on them over equity at each month end, up to `month`.
+    the net owed on them over equity at each month end, and what was charged to them
+    in each month, up to `month`.
     """
     cards = [a for a in snapshot.accounts.values() if isinstance(a, CreditCardAccount)]
     rows = snapshot.all_rows
@@ -349,7 +350,28 @@ def build_credit_cards(snapshot: Snapshot, month: str = "") -> dict:
         "negative": [a for a in accounts if a["balance"] < 0 and not rounds_to_zero(a["balance"])],
         "movements": account_movements(snapshot, [a.name for a in cards], month),
         **owed_ratio_chart(snapshot, [a.name for a in cards], month),
+        **charged_chart(snapshot, [a.name for a in cards], month),
     }
+
+
+def charged_chart(snapshot: Snapshot, cards: list[str], month: str = "") -> dict:
+    """
+    What was charged to the credit cards (their credits, leaving out the initial
+    movements and the payments) in each month, from the first month of the ledger
+    to the last one (or to `month`).
+    """
+    rows = snapshot.all_rows
+    if not len(rows):
+        return {"charged_chart": None, "charged_series": []}
+    charges = rows[rows.acc_credit.isin(cards) & ~rows.base_movement.isin(snapshot.initial_base_names)]
+    totals: dict[str, list[float]] = {}  # month to its charges
+    for move in snapshot.ledger(charges).movements:
+        totals.setdefault(str(move.move_date)[:7], []).append(move.amount)
+    series, cur, last = [], min(rows.move_date)[:7], month or max(rows.move_date)[:7]
+    while cur <= last:
+        series.append({"month": cur, "value": sum(totals.get(cur, [])), "count": len(totals.get(cur, []))})
+        cur = next_month(cur)
+    return {"charged_chart": column_chart(series), "charged_series": series}
 
 
 def account_movements(snapshot: Snapshot, names: list[str], month: str = "") -> list[dict]:
@@ -809,6 +831,38 @@ def line_chart(series: list[dict], tick_label=compact) -> dict | None:
         "y_ticks": [{"y": y(t), "label": tick_label(t)} for t in ticks],
         "x_ticks": x_ticks,
         "last": points[-1],
+    }
+
+
+def column_chart(series: list[dict]) -> dict | None:
+    """
+    Columns and axes to draw a non-negative {month, value} series, one band per
+    month. Coordinates are percentages of the plot area. None if every value is 0.
+    """
+    top = max((p["value"] for p in series), default=0.0)
+    if top < 1e-9:
+        return None
+    ticks = nice_ticks(0.0, top)
+    band = 100 / len(series)
+    every = math.ceil(len(series) / 8)
+    columns = [
+        {
+            **p,
+            "x": round(band * (i + 0.5), 2),
+            "y": round(100 * (1 - p["value"] / ticks[-1]), 2),
+            "height": round(100 * p["value"] / ticks[-1], 2),
+        }
+        for i, p in enumerate(series)
+    ]
+    return {
+        "columns": columns,
+        "width": round(band * 0.7, 2),  # the rest of the band is the gap between columns
+        "y_ticks": [{"y": round(100 * (1 - t / ticks[-1]), 2), "label": compact(t)} for t in ticks],
+        "x_ticks": [
+            {"x": c["x"], "label": dt.date.fromisoformat(f"{c['month']}-01").strftime("%b %Y")}
+            for c in columns[::every]
+        ],
+        "last": columns[-1],
     }
 
 

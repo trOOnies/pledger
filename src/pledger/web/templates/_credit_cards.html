@@ -1,5 +1,5 @@
 {% from "_bars.html" import bars with context %}
-{% from "_line.html" import ratio_panel with context %}
+{% from "_line.html" import column_chart, ratio_panel with context %}
 {% from "_account_movements.html" import account_movements with context %}
 <div class="view">
   {% if negative %}
@@ -24,6 +24,45 @@
   <section class="panel">
     <h2>Owed <small>by credit card{% if month %}, as of end of {{ month }}{% endif %}</small></h2>
     {{ bars("Credit cards", composition, "liability", "Nothing owed.") }}
+  </section>
+
+  <section class="panel">
+    <h2>Charged per month <small>{{ ("up to " ~ month) if month else "all time" }}</small></h2>
+    {% if charged_chart %}
+    <p class="equity-headline">
+      <span class="num-lg money">{{ charged_chart.last.value | money }}</span>
+      <span class="muted">in {{ charged_chart.last.month }}</span>
+    </p>
+    {% set ns = namespace(points=[]) %}
+    {% for c in charged_chart.columns %}
+      {% set ns.points = ns.points + [{
+        "x": c.x, "y": c.y, "label": c.month, "value_text": c.value | money,
+        "change_text": c.count ~ (" charge" if c.count == 1 else " charges"),
+      }] %}
+    {% endfor %}
+    {{ column_chart(charged_chart, ns.points, "Charged to the credit cards per month from " ~ charged_series[0].month ~ " to " ~ charged_chart.last.month ~ ", " ~ (charged_chart.last.value | money) ~ " in the last one", series=2) }}
+    <p class="muted small">What was charged to the credit cards (their credits) in each month, without the payments
+      nor the initial amounts.</p>
+    <details class="chart-table">
+      <summary>Show table</summary>
+      <div class="table-wrap">
+        <table data-sortable="charged">
+          <thead><tr><th>Month</th><th class="num">Charges</th><th class="num">Charged</th></tr></thead>
+          <tbody>
+          {% for p in charged_series | reverse %}
+          <tr>
+            <td class="nowrap">{{ p.month }}</td>
+            <td class="num">{{ p.count }}</td>
+            <td class="num money" data-sort="{{ p.value }}">{{ p.value | money }}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+    {% else %}
+    <p class="muted">Nothing charged to the credit cards in this period.</p>
+    {% endif %}
   </section>
 
   {{ ratio_panel("owed-ratio", "Owed over equity", "Net owed on the credit cards", owed_ratio, owed_series,
