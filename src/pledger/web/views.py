@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import math
 
-from pandas import DataFrame
+from pandas import DataFrame, Period, Series, Timedelta, Timestamp
 
 from pledger.enums import (
     AccountType,
@@ -19,6 +19,7 @@ from pledger.models import (
     INVESTMENT,
     SPECIAL_LABELS,
     CreditCardAccount,
+    Currency,
     DebtAccount,
     InvestmentAccount,
     next_month,
@@ -834,35 +835,87 @@ def line_chart(series: list[dict], tick_label=compact) -> dict | None:
     }
 
 
-def column_chart(series: list[dict]) -> dict | None:
+def column_chart(series: list[dict], tick_label=compact) -> dict | None:
     """
-    Columns and axes to draw a non-negative {month, value} series, one band per
-    month. Coordinates are percentages of the plot area. None if every value is 0.
+    Columns and axes to draw a {month, value} series, one band per month, up from
+    0 (or down, for a negative value). Coordinates are percentages of the plot
+    area. None if every value is 0.
     """
-    top = max((p["value"] for p in series), default=0.0)
-    if top < 1e-9:
+    lo = min(0.0, *(p["value"] for p in series))
+    hi = max(0.0, *(p["value"] for p in series))
+    if hi - lo < 1e-9:
         return None
-    ticks = nice_ticks(0.0, top)
+    ticks = nice_ticks(lo, hi)
+
+    def y(v: float) -> float:
+        return round(100 * (1 - (v - ticks[0]) / (ticks[-1] - ticks[0])), 2)
+
     band = 100 / len(series)
     every = math.ceil(len(series) / 8)
     columns = [
         {
             **p,
             "x": round(band * (i + 0.5), 2),
-            "y": round(100 * (1 - p["value"] / ticks[-1]), 2),
-            "height": round(100 * p["value"] / ticks[-1], 2),
+            "y": y(p["value"]),
+            "top": y(max(p["value"], 0.0)),
+            "height": round(abs(y(p["value"]) - y(0.0)), 2),
+            "negative": p["value"] < 0,
         }
         for i, p in enumerate(series)
     ]
     return {
         "columns": columns,
         "width": round(band * 0.7, 2),  # the rest of the band is the gap between columns
-        "y_ticks": [{"y": round(100 * (1 - t / ticks[-1]), 2), "label": compact(t)} for t in ticks],
+        "y_ticks": [{"y": y(t), "label": tick_label(t), "axis": abs(t) < 1e-9} for t in ticks],
         "x_ticks": [
             {"x": c["x"], "label": dt.date.fromisoformat(f"{c['month']}-01").strftime("%b %Y")}
             for c in columns[::every]
         ],
         "last": columns[-1],
+    }
+
+
+def multi_line_chart(lines: list[dict], value_text=lambda v: f"{v:,.2f}") -> dict | None:
+    """
+    Paths and axes to draw several lines of {date, value} points (a None value
+    breaks a line) on one y axis. `lines` are {name, series, ...} dicts, returned
+    with their path and last point. The tooltip of each date lists the lines with a value on it.
+    """
+    shown = [p["value"] for line in lines for p in line["series"] if p["value"] is not None]
+    if not shown:
+        return None
+    ticks = nice_ticks(min(shown), max(shown))
+
+    def y(v: float) -> float:
+        return round(100 * (1 - (v - ticks[0]) / (ticks[-1] - ticks[0])), 2)
+
+    dates = sorted({p["date"] for line in lines for p in line["series"]})
+    x, x_ticks = time_axis([dt.date.fromisoformat(d) for d in dates])
+    drawn, values = [], {}
+    for line in lines:
+        path, joined, last = [], False, None
+        for p in line["series"]:
+            if p["value"] is None:
+                joined = False
+                continue
+            values[line["name"], p["date"]] = p["value"]
+            last = {"x": x(p["date"]), "y": y(p["value"])}
+            path.append(f"{'L' if joined else 'M'}{last['x']},{last['y']}")
+            joined = True
+        drawn.append({**line, "path": " ".join(path), "last": last})
+    points = []
+    for d in dates:
+        on_date = [values.get((line["name"], d)) for line in lines]
+        shown_y = next((y(v) for v in on_date if v is not None), None)
+        points.append({
+            "x": x(d), "y": shown_y, "date": d,
+            "rows": [[line["name"], value_text(v)] for line, v in zip(lines, on_date) if v is not None],
+        })
+    return {
+        "lines": drawn,
+        "points": points,
+        "y_ticks": [{"y": y(t), "label": compact(t)} for t in ticks],
+        "x_ticks": x_ticks,
     }
 
 
@@ -884,7 +937,11 @@ def time_axis(dates: list[dt.date]) -> tuple:
         for mo in range(1, 13)
         if first <= dt.date(yr, mo, 1) <= last
     ]
-    if len(month_starts) >= 2:
+    year_starts = [m for m in month_starts if m.month == 1]
+    if len(year_starts) >= 3:  # a long span: the start of each year, labelled by its year
+        every = math.ceil(len(year_starts) / 8)
+        x_ticks = [{"x": x(m), "label": m.strftime("%Y")} for m in year_starts[::every]]
+    elif len(month_starts) >= 2:
         every = math.ceil(len(month_starts) / 8)
         x_ticks = [{"x": x(m), "label": m.strftime("%b %Y")} for m in month_starts[::every]]
     else:
@@ -1080,8 +1137,7 @@ def build_charts(snapshot: Snapshot, month: str = "", initial: bool = False) -> 
 def over_time_charts(snapshot: Snapshot, month: str = "") -> dict:
     """
     Month-end charts up to `month` (all the ledger by default): liabilities over
-    equity, net liquidity (liquid assets minus liquid liabilities) over equity, and
-    the share of each currency in the assets.
+    equity and net liquidity (liquid assets minus liquid liabilities) over equity.
     """
     monthly = month_end_balances(snapshot, month)
     debt = ratio_series(snapshot, monthly, lambda b, total: total(b, AccountType.LIABILITY))
@@ -1089,16 +1145,177 @@ def over_time_charts(snapshot: Snapshot, month: str = "") -> dict:
         snapshot, monthly,
         lambda b, total: total(b, AccountType.ASSET, True) - total(b, AccountType.LIABILITY, True),
     )
-    assets = [a for a in snapshot.accounts.values() if a.acc_type == AccountType.ASSET]
-    currencies = {
-        c: [a.name for a in assets if a.currency.name == c]
-        for c in snapshot.currencies
-        if any(a.currency.name == c for a in assets)
-    }
     return {
         "debt_ratio": line_chart(debt, percent),
         "debt_series": debt,
         "liquidity_ratio": line_chart(liquidity, percent),
         "liquidity_series": liquidity,
-        "currency_shares": stacked_chart(monthly, currencies),
+    }
+
+
+AVERAGE_MONTH_DAYS = 365.25 / 12
+MAX_CHART_POINTS = 400  # long daily series are sampled down to about this many points to draw
+
+
+def value_series(values: Series) -> list[dict]:
+    """The {date, value} points of a series by date, with the change over the previous one (a ratio)."""
+    series, prev = [], None
+    for date, value in values.items():
+        series.append({
+            "date": date.date().isoformat(), "value": float(value),
+            "change": value / prev - 1 if prev else None,
+        })
+        prev = value
+    return series
+
+
+def sampled(values: Series, limit: int = MAX_CHART_POINTS) -> Series:
+    """Every k-th value of a series, so there are at most about `limit`, always with the last one."""
+    step = math.ceil(len(values) / limit) if len(values) > limit else 1
+    picked = list(range(0, len(values), step))
+    if picked and picked[-1] != len(values) - 1:
+        picked.append(len(values) - 1)
+    return values.iloc[picked]
+
+
+def growth(values: Series) -> dict | None:
+    """
+    How much a series by date grew from its first value to its last one (a ratio),
+    and the same growth as an average per month. None without two dates.
+    """
+    if len(values) < 2:
+        return None
+    total = float(values.iloc[-1] / values.iloc[0])
+    days = (values.index[-1] - values.index[0]).days
+    return {
+        "first": values.index[0].date().isoformat(),
+        "total": total - 1,
+        "monthly": total ** (AVERAGE_MONTH_DAYS / days) - 1,
+    }
+
+
+def real_values(values: Series, cpi: Series) -> tuple[Series, str | None]:
+    """
+    Values in the base currency deflated by the CPI of their dates, in the base
+    currency of the last of their dates with a CPI (also returned). NaN on the dates
+    without a CPI.
+    """
+    on_dates = cpi.reindex(values.index)
+    known = on_dates.dropna()
+    if not len(known):
+        return values * math.nan, None
+    return values * known.iloc[-1] / on_dates, known.index[-1].date().isoformat()
+
+
+def inflation_months(base: Currency, today: dt.date) -> list[dict]:
+    """
+    The inflation of each month of the base currency, with the CPI at its end and the
+    inflation of the 12 months up to it (None before 12 months). A month that hasn't
+    ended by `today` is `projected`: its inflation can't be known yet.
+    """
+    inflation, cpi = base.monthly_inflation, base.customer_price_index
+    current = Period(today, freq="M")
+    yearly = (1 + inflation).rolling(12).apply(lambda g: g.prod(), raw=True) - 1
+    return [
+        {
+            "month": str(month),
+            "value": float(value),
+            "cpi": float(cpi[month.end_time.normalize()]),
+            "last_12": None if math.isnan(yearly[month]) else float(yearly[month]),
+            "projected": month >= current,
+        }
+        for month, value in inflation.items()
+    ]
+
+
+def cpi_chart(base: Currency, today: dt.date) -> dict | None:
+    """
+    The daily CPI of the base currency, sampled to draw: one line up to the end of
+    the last month that has ended by `today`, and a dashed one, projected, after it.
+    """
+    cpi = base.customer_price_index
+    boundary = Timestamp(today.replace(day=1)) - Timedelta(days=1)  # the end of the last month ended
+
+    def line(name: str, values: Series, dashed: bool) -> dict:
+        return {"name": name, "dashed": dashed, "series": [
+            {"date": d.date().isoformat(), "value": float(v)} for d, v in sampled(values).items()
+        ]}
+
+    lines = [line("CPI", cpi[:boundary], False), line("Projected", cpi[boundary:], True)]
+    return multi_line_chart([ln for ln in lines if ln["series"]])
+
+
+def build_currencies(snapshot: Snapshot, today: dt.date | None = None) -> dict:
+    """
+    The currencies: the daily CPI of the base currency and its inflation in each month
+    (projected for the months that haven't ended by `today`), and, for each other
+    currency, its value in the base currency (nominal) and that value deflated by the
+    CPI (real) over time; the balances of the accounts in each currency; and the
+    share of each currency in the assets at each month end.
+    """
+    today = today or dt.date.today()
+    base = snapshot.base_currency
+    cpi = base.customer_price_index
+    balances = snapshot.ledger().balances()
+
+    def totals(name: str) -> dict:
+        accs = [
+            a for a in snapshot.accounts.values()
+            if a.currency.name == name and a.acc_type != AccountType.EQUITY
+        ]
+        return {
+            "accounts": len(accs),
+            "assets": sum(balances.get(a.name, 0.0) for a in accs if a.acc_type == AccountType.ASSET),
+            "liabilities": sum(
+                balances.get(a.name, 0.0) for a in accs if a.acc_type == AccountType.LIABILITY
+            ),
+        }
+
+    # Each currency is charted in the series color of its order, the base one (the CPI) first.
+    others = []
+    for i, c in enumerate(snapshot.currencies.values()):
+        if c.is_base_currency:
+            continue
+        values = c.base_currency_mapping
+        real, real_date = real_values(values, cpi)
+        series = [
+            {**p, "real": None if math.isnan(r) else float(r)}
+            for p, r in zip(value_series(values), real)
+        ]
+        others.append({
+            "name": c.name,
+            "description": c.description,
+            "slot": i % 8 + 1,
+            **totals(c.name),
+            "last": series[-1] if series else None,
+            "growth": growth(values),
+            "real_growth": growth(real.dropna()),
+            "real_date": real_date,
+            "series": series,
+            "chart": multi_line_chart([
+                {"name": "Nominal", "series": series, "dashed": False},
+                {"name": "Real", "series": [{"date": p["date"], "value": p["real"]} for p in series], "dashed": True},
+            ]),
+        })
+
+    months = inflation_months(base, today)
+    known = [m for m in months if not m["projected"]]
+    monthly = month_end_balances(snapshot)
+    assets = [a for a in snapshot.accounts.values() if a.acc_type == AccountType.ASSET]
+    shares = {
+        c: [a.name for a in assets if a.currency.name == c]
+        for c in snapshot.currencies
+        if any(a.currency.name == c for a in assets)
+    }
+    return {
+        "base": {"name": base.name, "description": base.description, **totals(base.name)},
+        "others": others,
+        "last_month": known[-1] if known else None,  # the last month ended
+        "last_12_monthly": (
+            (1 + known[-1]["last_12"]) ** (1 / 12) - 1 if known and known[-1]["last_12"] is not None else None
+        ),
+        "cpi_chart": cpi_chart(base, today),
+        "inflation_months": months,
+        "inflation_chart": column_chart(months, percent) if months else None,
+        "currency_shares": stacked_chart(monthly, shares),
     }

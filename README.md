@@ -18,9 +18,14 @@ and adds and deletes the movements of the internal `Invest` base movements; Debt
 owe and who owes us in the debt accounts; Credit Cards lists what we owe on each credit card
 and what was charged and paid in the month; Work lists the salary, company and job position of each month; Setup adds result types and base movements. The Charts page
 shows the composition of assets and liabilities, gains and losses by result type, a result
-statement, equity over time and, at each month end, debt (the liabilities) over equity, net
-liquidity (liquid assets minus liquid liabilities) over equity, and the share of each
-currency in the assets. The Work tab charts the gross and net salary of each month (0 for
+statement, equity over time and, at each month end, debt (the liabilities) over equity and net
+liquidity (liquid assets minus liquid liabilities) over equity. The Currencies tab shows the
+balances of the accounts in each currency, the daily customer price index of the base
+currency, a column chart of its monthly inflation, a chart per other currency with its
+nominal value in the base one and its real value (deflated by the daily CPI, in the base
+currency of its last date with a CPI), and, at the bottom, the share of each currency in the
+assets at each month end. The months that haven't ended yet are projected: dashed in the CPI
+chart and faded in the inflation one. The Work tab charts the gross and net salary of each month (0 for
 the months without a job), each in its own color. The Help page explains the concepts for everyday users.
 The month filter is shared by Ledger, Accounts, Debt, Credit Cards and Charts (remembered in a cookie).
 
@@ -29,7 +34,7 @@ make serve     # http://127.0.0.1:8000 (API docs at /docs)
 ```
 
 It reads `info/accounts.yaml`, `info/result_types.yaml`, `info/ledger.csv`,
-`info/currencies.yaml` (with each other currency's rates in `info/currencies/<NAME>.csv`)
+`info/currencies.yaml` (with `info/base_currency.csv` and `info/currencies.csv` next to it)
 and, if present, `info/investment.yaml`, `info/creditors.yaml`, `info/credit_cards.yaml` and
 `info/work.csv` from the current directory. Override with `PLEDGER_ACCOUNTS`,
 `PLEDGER_BASE_MOVEMENTS`, `PLEDGER_LEDGER`, `PLEDGER_CURRENCIES`, `PLEDGER_INVESTMENTS`,
@@ -38,6 +43,31 @@ deleting removes one line, and the rest of the file is left byte-for-byte as it 
 New accounts and base movements are inserted at the end of their section in the YAML files
 (gains and losses under their result type, transfers under `transfer`),
 leaving the rest of each file as it was.
+
+`currencies.yaml` names the `base_currency` and the `other_currencies`, each with its
+`description`. `base_currency.csv` has the `monthly_inflation` of the base currency for each
+`month`, a percentage (the `%` is optional), with no month missing:
+
+```csv
+month;monthly_inflation
+2026-01;2.90%
+2026-02;2.90%
+```
+
+From it, pledger builds a daily customer price index (CPI): 100 at the end of the day before
+the first month, and each month's inflation compounding evenly over its days, so on the
+month's last day the CPI has grown by the whole month's inflation (on its day `d` of `n`, the
+previous month's CPI times `(1 + inflation) ** (d / n)`).
+
+`currencies.csv` has, for each `date`, the value of each other currency in the base one, a
+column each (no other columns). Values must be positive, dates can't repeat, and an empty
+cell is a date without that value. Without other currencies, it is optional.
+
+```csv
+date;USD;USC
+2026-01-05;1504.7200;1504.7200
+2026-01-12;1473.0600;1473.0600
+```
 
 Every account but the equity, investment and debt ones must set an `initial_amount` (those must not).
 Accounts also take optional `currency` (the base currency by default), `is_liquid`

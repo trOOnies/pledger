@@ -26,10 +26,13 @@ from pledger.web.templating import money, quantity
 from pledger.web.views import (
     build_charts,
     build_credit_cards,
+    build_currencies,
+    column_chart,
     composition,
     equity_series,
     investment_charts,
     nice_ticks,
+    percent,
 )
 
 HTMX = {"HX-Request": "true"}
@@ -723,12 +726,6 @@ class TestCharts:
         # Liquid assets (Bk, Ca) minus liquid liabilities (none: Cc isn't liquid)
         assert charts["liquidity_series"][-1]["value"] == pytest.approx(1060.75 / 1000)
         assert charts["debt_ratio"]["y_ticks"][-1]["label"] == "8%"
-        shares = charts["currency_shares"]
-        assert [a["name"] for a in shares["areas"]] == ["ARS", "USD"]  # base first, at the bottom
-        assert [p["rows"] for p in shares["points"]][:2] == [
-            [["USD", "100.0%"], ["ARS", "0.0%"]], [["USD", "84.9%"], ["ARS", "15.1%"]],
-        ]
-        assert shares["areas"][1]["last"] == pytest.approx(901 / 1060.75)
         # Up to the month picked
         assert [p["month"] for p in build_charts(snapshot, "2026-01")["debt_series"]] == ["2025-12", "2026-01"]
 
@@ -740,10 +737,110 @@ class TestCharts:
 
     def test_month_end_charts_render(self, client):
         r = client.get("/charts")
-        for title in ("Debt over equity", "Net liquidity over equity", "Currencies over time"):
+        for title in ("Debt over equity", "Net liquidity over equity"):
             assert f"<h2>{title} <small>all time, " in r.text
-        assert 'class="line-chart stacked"' in r.text and "var(--series-2)" in r.text
-        assert 'data-sortable="currencies"' in r.text
+        # The currency shares are in the Currencies tab
+        assert "Currencies over time" not in r.text and 'class="line-chart stacked"' not in r.text
+
+
+class TestCurrencies:
+    TODAY = dt.date(2026, 3, 10)  # March hasn't ended: projected
+
+    @pytest.fixture
+    def values(self, settings):
+        folder = settings.currencies_path.parent
+        (folder / "base_currency.csv").write_text("month;monthly_inflation\n2026-01;10%\n2026-02;10%\n2026-03;5%\n")
+        (folder / "currencies.csv").write_text(
+            "date;USD\n2026-01-31;1000\n2026-02-14;\n2026-02-28;1210\n2027-01-01;2000\n"
+        )
+        return settings
+
+    def test_build_currencies(self, values):
+        currencies = build_currencies(LedgerStore(values).load(), self.TODAY)
+        assert currencies["base"] == {
+            "name": "ARS", "description": "Pesos", "accounts": 2,
+            "assets": pytest.approx(159.75), "liabilities": pytest.approx(0),
+        }
+        # Each month's inflation, the CPI at its end; March is projected
+        assert [(m["month"], m["value"], m["cpi"], m["projected"]) for m in currencies["inflation_months"]] == [
+            ("2026-01", 0.1, pytest.approx(110), False),
+            ("2026-02", 0.1, pytest.approx(121), False),
+            ("2026-03", 0.05, pytest.approx(127.05), True),
+        ]
+        assert currencies["last_month"]["month"] == "2026-02"
+        assert currencies["last_month"]["last_12"] is None and currencies["last_12_monthly"] is None
+        assert [c["projected"] for c in currencies["inflation_chart"]["columns"]] == [False, False, True]
+        # The daily CPI: known up to the end of February, projected after it
+        cpi, projected = currencies["cpi_chart"]["lines"]
+        assert (cpi["name"], cpi["dashed"], projected["name"], projected["dashed"]) == ("CPI", False, "Projected", True)
+        assert (cpi["series"][0]["date"], cpi["series"][-1]["date"]) == ("2025-12-31", "2026-02-28")
+        assert (projected["series"][0]["date"], projected["series"][-1]["date"]) == ("2026-02-28", "2026-03-31")
+        assert cpi["series"][-1]["value"] == pytest.approx(121) and len(cpi["series"]) == 60  # every day
+        (usd,) = currencies["others"]
+        assert (usd["name"], usd["slot"], usd["accounts"], usd["assets"]) == ("USD", 2, 1, pytest.approx(901))
+        assert [p["value"] for p in usd["series"]] == [1000, 1210, 2000]  # without the empty cell
+        # Deflated by the daily CPI, in ARS of its last date with a CPI: 1000 at 110 is 1100 at 121
+        assert usd["real_date"] == "2026-02-28"
+        assert [p["real"] for p in usd["series"]] == [pytest.approx(1100), pytest.approx(1210), None]
+        assert usd["real_growth"]["total"] == pytest.approx(0.1)
+        # Nominal and real on one chart, the tooltip listing the lines with a value
+        assert [line["name"] for line in usd["chart"]["lines"]] == ["Nominal", "Real"]
+        assert usd["chart"]["points"][0]["rows"] == [["Nominal", "1,000.00"], ["Real", "1,100.00"]]
+        assert usd["chart"]["points"][-1]["rows"] == [["Nominal", "2,000.00"]]
+
+    def test_inflation_of_the_last_12_months(self, values):
+        rows = "".join(f"2025-{m:02};1%\n" for m in range(1, 13)) + "2026-01;2%\n"
+        (values.currencies_path.parent / "base_currency.csv").write_text("month;monthly_inflation\n" + rows)
+        currencies = build_currencies(LedgerStore(values).load(), dt.date(2026, 2, 1))
+        months = currencies["inflation_months"]
+        assert months[10]["last_12"] is None and months[11]["last_12"] == pytest.approx(1.01 ** 12 - 1)
+        assert currencies["last_month"]["last_12"] == pytest.approx(1.01 ** 11 * 1.02 - 1)
+        assert currencies["last_12_monthly"] == pytest.approx((1.01 ** 11 * 1.02) ** (1 / 12) - 1)
+
+    def test_long_daily_series_are_sampled(self, values):
+        rows = "".join(f"{y}-{m:02};1%\n" for y in range(2016, 2026) for m in range(1, 13))
+        (values.currencies_path.parent / "base_currency.csv").write_text("month;monthly_inflation\n" + rows)
+        currencies = build_currencies(LedgerStore(values).load(), self.TODAY)
+        (cpi,) = currencies["cpi_chart"]["lines"]  # every month has ended
+        assert len(cpi["series"]) <= 400 and cpi["series"][-1]["date"] == "2025-12-31"
+        assert [t["label"] for t in currencies["cpi_chart"]["x_ticks"]][:2] == ["2016", "2018"]  # by year
+
+    def test_currency_shares(self, settings):
+        with settings.ledger_path.open("a") as f:
+            f.write("2026-03-01;Card fee;Eq;60.75;Cc;\n")
+        shares = build_currencies(LedgerStore(settings).load())["currency_shares"]
+        assert [a["name"] for a in shares["areas"]] == ["ARS", "USD"]  # base first, at the bottom
+        assert [p["rows"] for p in shares["points"]][:2] == [
+            [["USD", "100.0%"], ["ARS", "0.0%"]], [["USD", "84.9%"], ["ARS", "15.1%"]],
+        ]
+        assert shares["areas"][1]["last"] == pytest.approx(901 / 1060.75)
+
+    def test_currencies_page(self, client, values):
+        r = client.get("/currencies")
+        assert r.status_code == 200
+        assert '<a href="/currencies" aria-current="page">Currencies</a>' in r.text
+        titles = ("Customer price index", "Monthly inflation", "USD in ARS", "Currencies over time")
+        positions = [r.text.index(f"<h2>{title} <small>") for title in titles]
+        assert positions == sorted(positions)  # in this order, the currency shares at the bottom
+        assert 'class="line dashed"' in r.text and "10.00%" in r.text  # the monthly inflation
+        assert 'class="line-chart stacked"' in r.text and 'data-sortable="currencies"' in r.text
+        assert 'data-sortable="inflation-monthly"' in r.text
+
+    def test_column_chart_with_negative_values(self):
+        chart = column_chart([{"month": "2026-01", "value": 0.02}, {"month": "2026-02", "value": -0.01}], percent)
+        up, down = chart["columns"]
+        zero = next(t for t in chart["y_ticks"] if t["axis"])
+        assert zero["label"] == "0%" and not up["negative"] and down["negative"]
+        assert up["top"] + up["height"] == pytest.approx(zero["y"]) and down["top"] == zero["y"]
+
+    def test_currencies_page_without_values(self, client, settings):
+        folder = settings.currencies_path.parent
+        (folder / "currencies.csv").write_text("date;USD\n")
+        (folder / "base_currency.csv").write_text("month;monthly_inflation\n")
+        r = client.get("/currencies")
+        assert r.status_code == 200
+        assert "No months in <code>base_currency.csv</code> yet." in r.text
+        assert "No values of USD in <code>currencies.csv</code> yet." in r.text
 
 
 class TestApi:

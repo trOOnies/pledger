@@ -333,16 +333,22 @@ section.panel > .msg, .panel > .msg.warn { margin-bottom: .75rem; }
 .line-chart .crosshair { stroke: var(--muted); stroke-width: 1; }
 .line-chart .area { stroke: var(--surface); stroke-width: 2; stroke-linejoin: round; }
 .line-chart .column {
-  position: absolute; bottom: 0; transform: translateX(-50%); pointer-events: none;
+  position: absolute; transform: translateX(-50%); pointer-events: none;
   background: var(--line, var(--series-asset)); border-radius: 4px 4px 0 0;
 }
+.line-chart .column.negative { border-radius: 0 0 4px 4px; }
+.line-chart .column.projected { opacity: .45; }
+.line-chart .line.dashed { stroke-dasharray: 5 4; }
 .line-chart.columns.hover .column:not(.active) { opacity: .55; }
 .line-chart.columns .crosshair, .line-chart.columns .hover-dot { display: none; }
 .line-chart.columns .x-axis span:first-child { transform: translateX(-50%); }
 .tip-rows { font-size: .8rem; }
 .legend { display: flex; flex-wrap: wrap; gap: .25rem 1rem; list-style: none; margin: 0 0 .5rem; padding: 0; font-size: .85rem; }
 .legend li { display: flex; align-items: center; gap: .35rem; }
-.legend .swatch { width: 10px; height: 10px; border-radius: 2px; }
+.legend .swatch, td .swatch { width: 10px; height: 10px; border-radius: 2px; }
+td .swatch { display: inline-block; }
+.legend .line-swatch { width: 18px; border-top: 2px solid var(--line, var(--series-asset)); }
+.legend .line-swatch.dashed { border-top-style: dashed; }
 .line-chart .dot {
   position: absolute; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%;
   background: var(--line, var(--series-asset)); border: 2px solid var(--surface); pointer-events: none;

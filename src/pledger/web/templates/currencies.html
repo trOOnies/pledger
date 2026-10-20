@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% from "_line.html" import column_chart, multi_line_chart, stacked_chart with context %}
+{% block title %}Currencies · pledger{% endblock %}
+{% macro change_cell(value) %}<td class="num {{ 'muted' if value is none }}" data-sort="{{ value if value is not none else '' }}">{{ value | signed_percent }}</td>{% endmacro %}
+{% block content %}
+<div class="view">
+  <div class="cards">
+    <div class="card" title="Customer price index of {{ base.name }} at the end of the last month ended: 100 before the first month of base_currency.csv">
+      <span class="label">CPI</span><span class="num">{{ (last_month.cpi | number) if last_month else "-" }}</span>
+      {% if last_month %}<span class="muted small">at the end of {{ last_month.month }}</span>{% endif %}
+    </div>
+    <div class="card" title="The inflation of {{ base.name }} in the last month ended">
+      <span class="label">Inflation{% if last_month %} <small>in {{ last_month.month }}</small>{% endif %}</span>
+      <span class="num">{{ ("%.2f%%" | format(100 * last_month.value)) if last_month else "-" }}</span>
+    </div>
+    <div class="card" title="The inflation of {{ base.name }} in the 12 months up to the last one ended, and the same as an average per month">
+      <span class="label">Inflation <small>last 12 months</small></span>
+      <span class="num">{{ ("%.2f%%" | format(100 * last_month.last_12)) if last_month and last_month.last_12 is not none else "-" }}</span>
+      {% if last_12_monthly is not none %}<span class="muted small">{{ "%.2f%%" | format(100 * last_12_monthly) }} a month on average</span>{% endif %}
+    </div>
+  </div>
+
+  <section class="panel">
+    <h2>Currencies <small>with the balances of their accounts, all time</small></h2>
+    <div class="table-wrap">
+      <table data-sortable="currencies-summary">
+        <thead><tr>
+          <th>Currency</th><th>Description</th><th class="num">Accounts</th><th class="num">Assets</th><th class="num">Liabilities</th>
+          <th class="num" title="Its last value in {{ base.name }}">Value in {{ base.name }}</th><th>On</th>
+          <th class="num" title="Change of its value over the previous date">Last change</th>
+          <th class="num" title="Change of its value since its first date">Since first</th>
+          <th class="num" title="The change since its first date, as an average per month">Monthly avg.</th>
+          <th class="num" title="Change of its value over the CPI (its real value in {{ base.name }}) since its first date: below 0, it grew less than inflation">Real since first</th>
+        </tr></thead>
+        <tbody>
+        <tr>
+          <td>{{ base.name }} <span class="muted small">(base)</span></td>
+          <td>{{ base.description }}</td>
+          <td class="num">{{ base.accounts }}</td>
+          <td class="num money" data-sort="{{ base.assets }}">{{ base.assets | money }}</td>
+          <td class="num money" data-sort="{{ base.liabilities }}">{{ base.liabilities | money }}</td>
+          <td class="num muted">-</td><td class="muted">-</td>
+          <td class="num muted">-</td><td class="num muted">-</td><td class="num muted">-</td><td class="num muted">-</td>
+        </tr>
+        {% for c in others %}
+        <tr>
+          <td><span class="swatch" style="background: var(--series-{{ c.slot }})"></span> {{ c.name }}</td>
+          <td>{{ c.description }}</td>
+          <td class="num">{{ c.accounts }}</td>
+          <td class="num money" data-sort="{{ c.assets }}">{{ c.assets | money }}</td>
+          <td class="num money" data-sort="{{ c.liabilities }}">{{ c.liabilities | money }}</td>
+          {% if c.last %}
+          <td class="num" data-sort="{{ c.last.value }}">{{ c.last.value | number }}</td>
+          <td class="nowrap">{{ c.last.date }}</td>
+          {{ change_cell(c.last.change) }}
+          {% else %}
+          <td class="num muted">-</td><td class="muted">-</td><td class="num muted">-</td>
+          {% endif %}
+          {{ change_cell(c.growth.total if c.growth else none) }}
+          {{ change_cell(c.growth.monthly if c.growth else none) }}
+          {{ change_cell(c.real_growth.total if c.real_growth else none) }}
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if not others %}<p class="muted small">No other currencies: list them under <code>other_currencies</code> in
+      <code>{{ settings.currencies_path.name }}</code>, each with its column in <code>currencies.csv</code>.</p>{% endif %}
+  </section>
+
+  <div class="charts-grid">
+    <section class="panel">
+      <h2>Customer price index <small>at the end of each day, from the monthly inflation</small></h2>
+      {% if cpi_chart %}
+      {% if last_month %}
+      <p class="equity-headline">
+        <span class="num-lg">{{ last_month.cpi | number }}</span>
+        <span class="muted">at the end of {{ last_month.month }}</span>
+      </p>
+      {% endif %}
+      {{ multi_line_chart(cpi_chart, "Customer price index of " ~ base.name ~ " from " ~ inflation_months[0].month ~ " to " ~ inflation_months[-1].month, series=1) }}
+      <p class="muted small">100 before {{ inflation_months[0].month }}. Each month's inflation grows it evenly over its
+        days. Dashed, the months that haven't ended yet, with their projected inflation.</p>
+      {% else %}
+      <p class="muted">No months in <code>base_currency.csv</code> yet.</p>
+      {% endif %}
+    </section>
+
+    <section class="panel">
+      <h2>Monthly inflation <small>from base_currency.csv</small></h2>
+      {% if inflation_chart %}
+      {% if last_month %}
+      <p class="equity-headline">
+        <span class="num-lg">{{ "%.2f%%" | format(100 * last_month.value) }}</span>
+        <span class="muted">in {{ last_month.month }}</span>
+      </p>
+      {% endif %}
+      {% set ns = namespace(points=[]) %}
+      {% for c in inflation_chart.columns %}
+        {% set ns.points = ns.points + [{
+          "x": c.x, "y": c.y, "label": c.month ~ (" (projected)" if c.projected else ""),
+          "value_text": "%.2f%%" | format(100 * c.value),
+          "change_text": ("%.2f%% in the last 12 months" | format(100 * c.last_12)) if c.last_12 is not none else "",
+        }] %}
+      {% endfor %}
+      {{ column_chart(inflation_chart, ns.points, "Monthly inflation of " ~ base.name ~ " from " ~ inflation_months[0].month ~ " to " ~ inflation_months[-1].month, series=1, money=False) }}
+      <p class="muted small">Faded, the months that haven't ended yet: their inflation is projected.</p>
+      <details class="chart-table">
+        <summary>Show table</summary>
+        <div class="table-wrap">
+          <table data-sortable="inflation-monthly">
+            <thead><tr><th>Month</th><th class="num">Inflation</th><th class="num" title="At the end of the month">CPI</th><th class="num" title="The inflation of the 12 months up to this one">Last 12 months</th></tr></thead>
+            <tbody>
+            {% for m in inflation_months | reverse %}
+            <tr>
+              <td class="nowrap">{{ m.month }}{% if m.projected %} <span class="muted small">(projected)</span>{% endif %}</td>
+              <td class="num" data-sort="{{ m.value }}">{{ "%.2f%%" | format(100 * m.value) }}</td>
+              <td class="num" data-sort="{{ m.cpi }}">{{ m.cpi | number }}</td>
+              <td class="num {{ 'muted' if m.last_12 is none }}" data-sort="{{ m.last_12 if m.last_12 is not none else '' }}">{{ ("%.2f%%" | format(100 * m.last_12)) if m.last_12 is not none else "-" }}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </details>
+      {% else %}
+      <p class="muted">No months in <code>base_currency.csv</code> yet.</p>
+      {% endif %}
+    </section>
+  </div>
+
+  {% if others %}
+  <div class="charts-grid">
+    {% for c in others %}
+    <section class="panel">
+      <h2>{{ c.name }} in {{ base.name }} <small>nominal and real, at each date of the currencies CSV</small></h2>
+      {% if c.chart %}
+      <p class="equity-headline">
+        <span class="num-lg">{{ c.last.value | number }}</span>
+        {% if c.real_growth %}<span class="muted">real {{ c.real_growth.total | signed_percent }} since {{ c.real_growth.first }},</span>{% endif %}
+        <span class="muted">on {{ c.last.date }}</span>
+      </p>
+      {{ multi_line_chart(c.chart, c.name ~ " in " ~ base.name ~ ", nominal and real, from " ~ c.series[0].date ~ " to " ~ c.last.date ~ ", ending at " ~ (c.last.value | number), series=c.slot) }}
+      <p class="muted small"><strong>Nominal</strong>: what one {{ c.name }} ({{ c.description }}) is worth in {{ base.name }}.
+        <strong>Real</strong>: that value deflated by the CPI, in {{ base.name }} of {{ c.real_date }}. When the real
+        value goes down, {{ c.name }} grew less than prices.</p>
+      <details class="chart-table">
+        <summary>Show table</summary>
+        <div class="table-wrap">
+          <table data-sortable="{{ c.name }}-value">
+            <thead><tr><th>Date</th><th class="num">Nominal</th><th class="num" title="In {{ base.name }} of {{ c.real_date }}">Real</th><th class="num" title="Change of the nominal value over the previous date">Change</th></tr></thead>
+            <tbody>
+            {% for p in c.series | reverse %}
+            <tr>
+              <td class="nowrap">{{ p.date }}</td>
+              <td class="num" data-sort="{{ p.value }}">{{ p.value | number }}</td>
+              <td class="num {{ 'muted' if p.real is none }}" data-sort="{{ p.real if p.real is not none else '' }}">{{ (p.real | number) if p.real is not none else "-" }}</td>
+              {{ change_cell(p.change) }}
+            </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </details>
+      {% else %}
+      <p class="muted">No values of {{ c.name }} in <code>currencies.csv</code> yet.</p>
+      {% endif %}
+    </section>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <section class="panel">
+    <h2>Currencies over time <small>all time, share of the assets at each month end</small></h2>
+    {% if currency_shares %}
+    {{ stacked_chart(currency_shares, "Share of each currency in the assets from " ~ currency_shares.first ~ " to " ~ currency_shares.last) }}
+    <details class="chart-table">
+      <summary>Show table</summary>
+      <div class="table-wrap">
+        <table data-sortable="currencies">
+          <thead><tr><th>Month</th>{% for a in currency_shares.areas | reverse %}<th class="num">{{ a.name }}</th>{% endfor %}</tr></thead>
+          <tbody>
+          {% for p in currency_shares.points | reverse %}
+          <tr><td class="nowrap">{{ p.date }}</td>{% for r in p.rows %}<td class="num">{{ r[1] }}</td>{% endfor %}</tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+    {% else %}
+    <p class="muted">No assets yet.</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

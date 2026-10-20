@@ -17,9 +17,15 @@ other_currencies:
     description: Dollar
 """
 
-USD_CSV = """\
-date;unit_value_in_base_currency
+CURRENCIES_CSV = """\
+date;USD
 2026-01-01;1000
+"""
+
+BASE_CURRENCY_CSV = """\
+month;monthly_inflation
+2025-12;2.00%
+2026-01;3.00%
 """
 
 ACCOUNTS_YAML = """\
@@ -129,8 +135,8 @@ def base_movements(accounts, result_types) -> dict[str, MovementBase]:
 
 @pytest.fixture
 def currencies_yaml(tmp_path):
-    (tmp_path / "currencies").mkdir(exist_ok=True)
-    (tmp_path / "currencies" / "USD.csv").write_text(USD_CSV, encoding="utf-8")
+    (tmp_path / "currencies.csv").write_text(CURRENCIES_CSV, encoding="utf-8")
+    (tmp_path / "base_currency.csv").write_text(BASE_CURRENCY_CSV, encoding="utf-8")
     path = tmp_path / "currencies.yaml"
     path.write_text(CURRENCIES_YAML, encoding="utf-8")
     return str(path)

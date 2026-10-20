@@ -42,6 +42,20 @@ def quantity(value: float) -> str:
 templates.env.filters["quantity"] = quantity
 
 
+def number(value: float) -> str:
+    """Format a value that isn't an amount, like a CPI or an exchange rate, e.g. 1,234.50."""
+    return f"{value:,.2f}"
+
+
+def signed_percent(value: float | None) -> str:
+    """Format a ratio as a signed percentage, e.g. 0.0123 -> +1.23%, or - without one."""
+    return "-" if value is None else f"{100 * value:+.2f}%"
+
+
+templates.env.filters["number"] = number
+templates.env.filters["signed_percent"] = signed_percent
+
+
 def static_version(path: str) -> int:
     """A version for static URLs that changes with the file, so browsers never use a stale copy."""
     return int((HERE / "static" / path).stat().st_mtime)

@@ -37,6 +37,9 @@ def _load_yaml(path: str) -> dict:
 INVESTMENT = "INVESTMENT"
 DEBT = "DEBT"
 
+INFLATION_COLUMN = "monthly_inflation"  # of the base currency, in base_currency.csv
+CPI_BASE = 100.0  # the CPI at the end of the day before the first month of base_currency.csv
+
 
 def _coalesce_mt_account(
     accounts: dict,
@@ -80,16 +83,47 @@ def _special_side(acc: Account | None, value: str | None) -> str | None:
 # * ---------------------------------------
 
 
+def daily_cpi(monthly_inflation: pd.Series) -> pd.Series:
+    """
+    The customer price index at the end of each day, from the inflation of each
+    month (ratios, indexed by consecutive monthly Periods). It is CPI_BASE at the end
+    of the day before the first month, and each month's inflation compounds evenly
+    over its days: on its day `d` of `n`, the CPI is the previous month's last one
+    times (1 + inflation) ** (d / n), so on its last day it is grown by the whole
+    month's inflation.
+    """
+    if not len(monthly_inflation):
+        return pd.Series(dtype=float, index=pd.DatetimeIndex([]))
+    growth = 1 + monthly_inflation
+    month_start = CPI_BASE * growth.cumprod().shift(1, fill_value=1.0)  # the CPI before each month
+    dates = pd.date_range(
+        monthly_inflation.index[0].start_time, monthly_inflation.index[-1].end_time.normalize(), freq="D"
+    )
+    months = dates.to_period("M")
+    cpi = (
+        month_start.reindex(months).to_numpy()
+        * growth.reindex(months).to_numpy() ** (dates.day / dates.days_in_month).to_numpy()
+    )
+    before = dates[0] - pd.Timedelta(days=1)
+    return pd.concat([pd.Series([CPI_BASE], index=[before]), pd.Series(cpi, index=dates)])
+
+
 @dataclass
 class Currency:
     """Ledger currency."""
 
     name: str
     description: str
-    base_currency_mapping: pd.Series | None
+    base_currency_mapping: pd.Series | None  # its value in the base currency by date; None for the base one
+    # The inflation of each month (a ratio, by monthly Period), only for the base currency
+    monthly_inflation: pd.Series | None = None
 
     def __post_init__(self):
         self.is_base_currency = self.base_currency_mapping is None
+        # The CPI at the end of each day, from the monthly inflation (see daily_cpi)
+        self.customer_price_index = (
+            None if self.monthly_inflation is None else daily_cpi(self.monthly_inflation)
+        )
 
     @classmethod
     def load_yaml(cls, path: str) -> tuple[Currency, dict[str, Currency]]:
@@ -101,46 +135,102 @@ class Currency:
 
         Returns:
             Currency: Base currency for all general information layout.
-            dict[str, Currency]: Other mapped currencies (if any), whose value
-                mappings are read from `currencies/<NAME>.csv` next to the YAML.
+            dict[str, Currency]: Other mapped currencies (if any).
+
+        Their values are read from the CSVs next to the YAML: `base_currency.csv`
+        has the `monthly_inflation` of the base currency for each `month`, and
+        `currencies.csv` a `date` column and one column per other currency, with its
+        value in the base currency (empty cells are dates without a value).
         """
         data = _load_yaml(path)
-        mappings_dir = os.path.join(os.path.dirname(path), "currencies")
-
-        base_currency = cls(
-            name=data["base_currency"]["name"],
-            description=data["base_currency"]["description"],
-            base_currency_mapping=None,
-        )
 
         currencies = data.get("other_currencies") or []
         assert all(
             re.match(r"^[A-Z]{1,10}$", curr["name"])
             for curr in [data["base_currency"], *currencies]
         ), "Currencies names must be A-Z from 1 to 10 characters each"
+        names = [curr["name"] for curr in currencies]
+        if data["base_currency"]["name"] in names:
+            raise ValueError(
+                f"Currency {data['base_currency']['name']!r} is both the base and another currency"
+            )
 
+        folder = os.path.dirname(path)
+        values = cls._load_values(os.path.join(folder, "currencies.csv"), names)
+        base_currency = cls(
+            name=data["base_currency"]["name"],
+            description=data["base_currency"]["description"],
+            base_currency_mapping=None,
+            monthly_inflation=cls._load_inflation(os.path.join(folder, "base_currency.csv")),
+        )
         other_currencies = {
             curr["name"]: cls(
                 name=curr["name"],
                 description=curr["description"],
-                base_currency_mapping=(
-                    pd.read_csv(
-                        os.path.join(mappings_dir, f"{curr['name']}.csv"),
-                        usecols=["date", "unit_value_in_base_currency"],
-                        sep=";",
-                        parse_dates=["date"],
-                    )
-                    .set_index("date", drop=True)
-                    .unit_value_in_base_currency
-                    .sort_index()
-                ),
+                base_currency_mapping=values[curr["name"]].dropna(),
             )
             for curr in currencies
         }
-        if base_currency.name in other_currencies:
-            raise ValueError(f"Currency {base_currency.name!r} is both the base and another currency")
-
         return base_currency, other_currencies
+
+    @staticmethod
+    def _load_inflation(path: str) -> pd.Series:
+        """
+        The base currency CSV: the inflation of each month, a percentage (e.g. `2.90%`,
+        the `%` optional), as a ratio by monthly Period. Months must be consecutive.
+        """
+        rows = pd.read_csv(path, sep=";", dtype=str, keep_default_na=False, encoding="utf-8-sig")
+        missing = [c for c in ("month", INFLATION_COLUMN) if c not in rows.columns]
+        if missing:
+            raise ValueError(f"The base currency CSV is missing the columns {missing}")
+        bad = [m for m in rows.month if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", m)]
+        if bad:
+            raise ValueError(f"The base currency CSV has months not like YYYY-MM: {bad}")
+        months = pd.PeriodIndex(rows.month, freq="M")
+        gaps = [str(b) for a, b in pairwise(months) if b != a + 1]
+        if gaps:
+            raise ValueError(
+                f"The base currency CSV months must be consecutive, in order, but {gaps} are not"
+            )
+        texts = rows[INFLATION_COLUMN].str.strip().str.removesuffix("%").str.strip()
+        if (texts == "").any():
+            raise ValueError(
+                f"The base currency CSV has no inflation for {list(rows.month[texts == ''])}"
+            )
+        inflation = pd.Series(pd.to_numeric(texts).astype(float).to_numpy() / 100, index=months)
+        if (inflation <= -1).any():
+            raise ValueError("The base currency CSV inflation must be above -100%")
+        return inflation
+
+    @staticmethod
+    def _load_values(path: str, names: list[str]) -> pd.DataFrame:
+        """
+        The currencies CSV, indexed and sorted by date, with a column per currency.
+        Optional without other currencies.
+        """
+        if not names and not os.path.exists(path):
+            return pd.DataFrame(index=pd.DatetimeIndex([], name="date"))
+        values = (
+            pd.read_csv(path, sep=";", parse_dates=["date"], encoding="utf-8-sig")
+            .set_index("date", drop=True)
+            .sort_index()
+        )
+        missing = [c for c in names if c not in values.columns]
+        if missing:
+            raise ValueError(f"The currencies CSV is missing the columns {missing}")
+        unknown = [c for c in values.columns if c not in names]
+        if unknown:
+            raise ValueError(f"The currencies CSV has columns of unknown currencies: {unknown}")
+        repeated = values.index[values.index.duplicated()]
+        if len(repeated):
+            raise ValueError(
+                f"The currencies CSV repeats the dates {[d.date().isoformat() for d in repeated]}"
+            )
+        values.index = pd.to_datetime(values.index)  # not parsed without rows
+        values = values.apply(pd.to_numeric).astype(float)
+        if (values <= 0).any().any():
+            raise ValueError("The currencies CSV values must be positive")
+        return values
 
 
 @dataclass

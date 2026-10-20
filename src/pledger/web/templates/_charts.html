@@ -1,5 +1,5 @@
 {% from "_bars.html" import bars with context %}
-{% from "_line.html" import line_chart, stacked_chart, ratio_panel with context %}
+{% from "_line.html" import line_chart, ratio_panel with context %}
 <div class="charts-grid">
   <section class="panel grouped-bars">
     <div class="panel-head">
@@ -107,25 +107,3 @@
   {{ ratio_panel(key, title, what, chart, series, upto) }}
   {% endfor %}
 </div>
-
-<section class="panel">
-  <h2>Currencies over time <small>{{ upto }}, share of the assets at each month end</small></h2>
-  {% if currency_shares %}
-  {{ stacked_chart(currency_shares, "Share of each currency in the assets from " ~ currency_shares.first ~ " to " ~ currency_shares.last) }}
-  <details class="chart-table">
-    <summary>Show table</summary>
-    <div class="table-wrap">
-      <table data-sortable="currencies">
-        <thead><tr><th>Month</th>{% for a in currency_shares.areas | reverse %}<th class="num">{{ a.name }}</th>{% endfor %}</tr></thead>
-        <tbody>
-        {% for p in currency_shares.points | reverse %}
-        <tr><td class="nowrap">{{ p.date }}</td>{% for r in p.rows %}<td class="num">{{ r[1] }}</td>{% endfor %}</tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  </details>
-  {% else %}
-  <p class="muted">No assets in this period.</p>
-  {% endif %}
-</section>

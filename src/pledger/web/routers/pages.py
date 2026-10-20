@@ -18,6 +18,7 @@ from pledger.web.views import (
     build_accounts,
     build_charts,
     build_credit_cards,
+    build_currencies,
     build_debts,
     build_invest_movements,
     build_investments,
@@ -93,6 +94,14 @@ def work(request: Request, store: StoreDep):
     context = build_work(store.load_work())
     return templates.TemplateResponse(
         request, "work.html", {**context, "settings": store.settings}
+    )
+
+
+@router.get("/currencies")
+def currencies(request: Request, store: StoreDep):
+    context = build_currencies(store.load())
+    return templates.TemplateResponse(
+        request, "currencies.html", {**context, "settings": store.settings}
     )
 
 

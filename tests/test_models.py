@@ -15,6 +15,7 @@ from pledger.enums import (
     MovementType,
 )
 from pledger.models import (
+    CPI_BASE,
     DEBT,
     INVESTMENT,
     Account,
@@ -28,6 +29,7 @@ from pledger.models import (
     MovementBase,
     ResultType,
     WorkMonth,
+    daily_cpi,
     next_month,
     parse_month,
     special_of,
@@ -448,29 +450,99 @@ class TestResultType:
             ResultType(0, "Op", "Operative", "")
 
 
+class TestDailyCpi:
+    def test_compounds_each_month_evenly_over_its_days(self):
+        inflation = pd.Series([0.1, 0.1, 0.0], index=pd.period_range("2026-01", periods=3, freq="M"))
+        cpi = daily_cpi(inflation)
+        assert cpi.index[0] == pd.Timestamp("2025-12-31") and cpi.index[-1] == pd.Timestamp("2026-03-31")
+        assert len(cpi) == 1 + 31 + 28 + 31  # every day
+        assert cpi["2025-12-31"] == CPI_BASE
+        assert cpi["2026-01-01"] == pytest.approx(100 * 1.1 ** (1 / 31))
+        assert cpi["2026-01-31"] == pytest.approx(110)  # the whole month's inflation on its last day
+        assert cpi["2026-02-14"] == pytest.approx(110 * 1.1 ** (14 / 28))
+        assert cpi["2026-02-28"] == pytest.approx(121)
+        assert cpi["2026-03-15"] == cpi["2026-03-31"] == pytest.approx(121)  # no inflation
+
+    def test_negative_inflation(self):
+        cpi = daily_cpi(pd.Series([-0.5], index=pd.period_range("2026-02", periods=1, freq="M")))
+        assert cpi["2026-02-28"] == pytest.approx(50) and cpi["2026-02-14"] == pytest.approx(100 * 0.5 ** 0.5)
+
+    def test_empty(self):
+        assert daily_cpi(pd.Series([], dtype=float, index=pd.PeriodIndex([], freq="M"))).empty
+
+
 class TestCurrency:
-    def test_load_yaml(self, tmp_path):
-        (tmp_path / "currencies").mkdir()
-        (tmp_path / "currencies" / "USD.csv").write_text(
-            "date;unit_value_in_base_currency\n2026-01-05;1500.5\n2025-12-29;1480\n"
-        )
+    YAML = (
+        "base_currency:\n  name: ARS\n  description: Pesos\n"
+        "other_currencies:\n  - name: USD\n    description: Dollar\n"
+    )
+    INFLATION = "month;monthly_inflation\n2025-12;10%\n2026-01; 2.5 %\n"
+
+    @pytest.fixture
+    def path(self, tmp_path):
+        (tmp_path / "base_currency.csv").write_text(self.INFLATION)
         path = tmp_path / "currencies.yaml"
-        path.write_text(
-            "base_currency:\n  name: ARS\n  description: Pesos\n"
-            "other_currencies:\n  - name: USD\n    description: Dollar\n"
-        )
+        path.write_text(self.YAML)
+        return path
+
+    def test_load_yaml(self, tmp_path, path):
+        (tmp_path / "currencies.csv").write_text("date;USD\n2026-01-05;1500.5\n2025-12-29;1480\n2026-01-12;\n")
         base, others = Currency.load_yaml(str(path))
         assert base.name == "ARS" and base.is_base_currency
+        assert list(base.monthly_inflation) == pytest.approx([0.1, 0.025])
+        assert base.monthly_inflation.index[0] == pd.Period("2025-12", freq="M")
+        assert base.customer_price_index["2026-01-31"] == pytest.approx(100 * 1.1 * 1.025)
         usd = others["USD"]
-        assert not usd.is_base_currency
-        assert list(usd.base_currency_mapping) == [1480, 1500.5]  # sorted by date
+        assert not usd.is_base_currency and usd.monthly_inflation is usd.customer_price_index is None
+        assert list(usd.base_currency_mapping) == [1480, 1500.5]  # sorted by date, without the empty cell
         assert usd.base_currency_mapping.index[0] == pd.Timestamp("2025-12-29")
 
-    def test_load_yaml_without_other_currencies(self, tmp_path):
-        path = tmp_path / "currencies.yaml"
+    def test_load_yaml_without_other_currencies(self, tmp_path, path):
         path.write_text("base_currency:\n  name: ARS\n  description: Pesos\nother_currencies:\n")
-        base, others = Currency.load_yaml(str(path))
-        assert base.name == "ARS" and others == {}
+        base, others = Currency.load_yaml(str(path))  # no currencies.csv needed
+        assert base.name == "ARS" and others == {} and len(base.customer_price_index) == 63
+
+    @pytest.mark.parametrize(
+        ("csv", "message"),
+        [
+            ("date\n2026-01-01\n", r"missing the columns \['USD'\]"),
+            ("date;USD;EUR\n2026-01-01;1000;1100\n", r"unknown currencies: \['EUR'\]"),
+            ("date;USD\n2026-01-01;1000\n2026-01-01;1001\n", "repeats the dates"),
+            ("date;USD\n2026-01-01;0\n", "must be positive"),
+            ("date;USD\n2026-01-01;abc\n", "Unable to parse"),
+        ],
+    )
+    def test_load_yaml_rejects_invalid_csv(self, tmp_path, path, csv, message):
+        (tmp_path / "currencies.csv").write_text(csv)
+        with pytest.raises(ValueError, match=message):
+            Currency.load_yaml(str(path))
+
+    @pytest.mark.parametrize(
+        ("csv", "message"),
+        [
+            ("month;inflation\n2026-01;1%\n", r"missing the columns \['monthly_inflation'\]"),
+            ("month;monthly_inflation\n2026-1;1%\n", "not like YYYY-MM"),
+            ("month;monthly_inflation\n2026-13;1%\n", "not like YYYY-MM"),
+            ("month;monthly_inflation\n2026-01;1%\n2026-03;1%\n", r"consecutive, in order, but \['2026-03'\]"),
+            ("month;monthly_inflation\n2026-02;1%\n2026-01;1%\n", "consecutive"),
+            ("month;monthly_inflation\n2026-01;1%\n2026-01;1%\n", "consecutive"),
+            ("month;monthly_inflation\n2026-01;\n", r"no inflation for \['2026-01'\]"),
+            ("month;monthly_inflation\n2026-01;-100%\n", "above -100%"),
+            ("month;monthly_inflation\n2026-01;abc\n", "Unable to parse"),
+        ],
+    )
+    def test_load_yaml_rejects_invalid_inflation(self, tmp_path, path, csv, message):
+        (tmp_path / "currencies.csv").write_text("date;USD\n")
+        (tmp_path / "base_currency.csv").write_text(csv)
+        with pytest.raises(ValueError, match=message):
+            Currency.load_yaml(str(path))
+
+    @pytest.mark.parametrize("name", ["currencies.csv", "base_currency.csv"])
+    def test_load_yaml_requires_the_csvs(self, tmp_path, path, name):
+        (tmp_path / "currencies.csv").write_text("date;USD\n")
+        (tmp_path / name).unlink()
+        with pytest.raises(FileNotFoundError):
+            Currency.load_yaml(str(path))
 
     def test_load_yaml_rejects_bad_names(self, tmp_path):
         path = tmp_path / "currencies.yaml"
