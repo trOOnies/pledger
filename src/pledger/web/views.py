@@ -8,6 +8,7 @@ import math
 from pandas import DataFrame, Period, Series, Timedelta, Timestamp
 
 from pledger.enums import (
+    AccountCheck,
     AccountType,
     CreditorKind,
     InvestmentType,
@@ -125,6 +126,7 @@ def build_accounts(snapshot: Snapshot, month: str = "", values: dict | None = No
                 "currency": a.currency.name,
                 "is_liquid": a.is_liquid,
                 "special": "Credit card" if isinstance(a, CreditCardAccount) else SPECIAL_LABELS.get(special_of(a), "-"),
+                "checks": [CHECK_LABELS[c] for c in a.checks],
                 "balance": balances.get(a.name, 0.0),
             }
             for a in snapshot.accounts.values()
@@ -148,8 +150,15 @@ def build_accounts(snapshot: Snapshot, month: str = "", values: dict | None = No
         # New equity accounts are not supported for now.
         "account_types": [t.value for t in ACCOUNT_TYPE_ORDER if t != AccountType.EQUITY],
         "currencies": list(snapshot.currencies.values()),
+        "check_labels": CHECK_LABELS,
         "values": values,
     }
+
+
+CHECK_LABELS = {
+    AccountCheck.NET_POSITIVE: "Net positive",
+    AccountCheck.NET_ZERO: "Net zero",
+}
 
 
 INVESTMENT_TYPE_LABELS = {

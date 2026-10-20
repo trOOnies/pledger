@@ -41,7 +41,16 @@
           <input type="date" name="initial_date" value="{{ values.acc_initial_date }}">
         </label>
       </div>
+      <label><span>Check <em class="optional">(optional)</em></span>
+        <select name="check">
+          <option value="">None</option>
+          {% for check, label in check_labels.items() %}
+          <option value="{{ check.value }}" {% if check.value == values.acc_check %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
       <p class="muted small">The initial amount is in the account's currency. Without an initial date, the account starts on the first date of the ledger.</p>
+      <p class="muted small">A check is on the balance at the end of each day: never negative (net positive) or always 0.00 (net zero). Movements breaking it are rejected.</p>
       <button type="submit">Add account</button>
     </form>
   </aside>
@@ -58,7 +67,7 @@
       {% for type, accs in accounts_by_type.items() if accs %}
       <h3>{{ type | capitalize }}</h3>
       <table data-sortable="balances-{{ type }}">
-        <thead><tr><th>Account</th><th>Description</th><th>Currency</th><th>Liquid</th><th>Special</th><th class="num">Balance</th></tr></thead>
+        <thead><tr><th>Account</th><th>Description</th><th>Currency</th><th>Liquid</th><th>Special</th><th>Checks</th><th class="num">Balance</th></tr></thead>
         <tbody>
         {% for a in accs %}
         <tr>
@@ -67,6 +76,7 @@
           <td>{{ a.currency }}</td>
           <td data-sort="{{ 1 if a.is_liquid else 0 }}">{{ "Yes" if a.is_liquid else "No" }}</td>
           <td {% if a.special == "-" %}class="muted"{% endif %}>{{ a.special }}</td>
+          <td {% if not a.checks %}class="muted"{% endif %}>{{ a.checks | join(", ") if a.checks else "-" }}</td>
           <td class="num money {{ 'loss' if a.balance < 0 and type != 'equity' }}" data-sort="{{ a.balance }}">{{ a.balance | money }}</td>
         </tr>
         {% endfor %}

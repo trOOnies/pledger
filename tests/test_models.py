@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 from pledger.enums import (
+    AccountCheck,
     AccountType,
     CreditorKind,
     DebtRole,
@@ -135,10 +136,24 @@ class TestAccount:
         assert cc.currency.name == "ARS" and cc.currency.is_base_currency
         assert (cc.is_liquid, cc.initial_amount, cc.initial_date) == (False, 0.0, None)
         assert accounts["Eq"].initial_amount == 0.0  # equity accounts don't set one
+        assert cc.checks == ()
+
+    def test_load_yaml_checks(self, tmp_path, currencies_yaml):
+        path = tmp_path / "accounts.yaml"
+        path.write_text(
+            "asset:\n  Ca:\n    description: Cash\n    initial_amount: 0\n    checks:\n    - net_positive\n"
+            "  Fi:\n    description: Fictitious\n    initial_amount: 0\n    checks: [net_zero]\n"
+        )
+        accounts = Account.load_yaml(str(path), *Currency.load_yaml(currencies_yaml))
+        assert accounts["Ca"].checks == (AccountCheck.NET_POSITIVE,)
+        assert accounts["Fi"].checks == (AccountCheck.NET_ZERO,)
 
     @pytest.mark.parametrize(
         ("extra", "message"),
         [
+            ("    checks: net_positive\n", "checks must be a list"),
+            ("    checks: [positive]\n", r"unknown checks: \['positive'\]"),
+            ("    checks: [net_zero, net_zero]\n", "repeats checks"),
             ("    currency: EUR\n", "unknown currency"),
             ("    is_liquid: maybe\n", "is_liquid must be true or false"),
             ("    initial_date: someday\n", "invalid initial date"),

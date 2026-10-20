@@ -19,6 +19,17 @@ class AccountType(str, Enum):
     EQUITY = "equity"
 
 
+class AccountCheck(str, Enum):
+    """Check on the balance of an account at the end of each day of the ledger."""
+    NET_POSITIVE = "net_positive"  # never negative
+    NET_ZERO = "net_zero"  # always zero
+
+    def holds(self, balance: float) -> bool:
+        """Whether a balance passes the check, to the cent."""
+        cents = round(balance, 2)
+        return cents >= 0 if self == AccountCheck.NET_POSITIVE else cents == 0
+
+
 class InvestmentType(str, Enum):
     """Type of investment."""
     PUBLIC_BOND = "public_bond"

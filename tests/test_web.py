@@ -11,7 +11,7 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from pledger.enums import InvestmentType
+from pledger.enums import AccountCheck, InvestmentType
 from pledger.models import DEBT, INVESTMENT, CreditCardAccount
 from pledger.web.app import create_app
 from pledger.web.store import (
@@ -103,6 +103,36 @@ class TestStore:
     def test_add_rejects_invalid_movements(self, settings, args, message):
         with pytest.raises(ValueError, match=message):
             LedgerStore(settings).add(*args)
+        assert len(rows(settings)) == 4
+
+
+class TestAccountChecks:
+    @pytest.fixture
+    def settings(self, settings):
+        path = settings.accounts_path
+        path.write_text(path.read_text().replace(
+            "    initial_amount: 0.0\n", "    initial_amount: 0.0\n    checks:\n    - net_positive\n", 1
+        ))
+        return settings
+
+    def test_load_checks_the_ledger(self, settings):
+        with settings.ledger_path.open("a") as f:
+            f.write("2026-01-05;Food;Eq;160;Ca;\n")
+        with pytest.raises(LedgerDataError, match="'Ca' breaks its net_positive check: .* -0.25 at the end of 2026-01-05"):
+            LedgerStore(settings).load()
+
+    def test_add_breaking_a_check_is_rejected(self, settings):
+        store = LedgerStore(settings)
+        store.add("2026-01-05", "Food", "Eq", "Ca", "159.75")  # down to 0.00
+        with pytest.raises(ValueError, match="net_positive"):
+            store.add("2026-01-05", "Food", "Eq", "Ca", "0.01")
+        assert len(rows(settings)) == 5
+
+    def test_delete_breaking_a_check_is_rejected(self, settings):
+        store = LedgerStore(settings)
+        withdraw = store.load().rows.iloc[1]  # the 200 that Ca spends from
+        with pytest.raises(ValueError, match="-50.25 at the end of 2026-01-03"):
+            store.delete(1, row_fingerprint(withdraw))
         assert len(rows(settings)) == 4
 
 
@@ -202,6 +232,27 @@ class TestSetupStore:
         assert (sv.currency.name, sv.is_liquid, sv.initial_amount, sv.initial_date) == (
             "USD", True, 1234.5, dt.date(2026, 1, 15)
         )
+
+    def test_add_account_with_checks(self, settings):
+        store = LedgerStore(settings)
+        store.add_account("Fi", "asset", "Fictitious", 0, checks=["net_zero"])
+        assert "  Fi:\n    description: Fictitious\n" in settings.accounts_path.read_text()
+        assert "    checks:\n    - net_zero\n" in settings.accounts_path.read_text()
+        assert store.load().accounts["Fi"].checks == (AccountCheck.NET_ZERO,)
+
+    @pytest.mark.parametrize(
+        ("amount", "checks", "message"),
+        [
+            (0, ["positive"], "Invalid checks"),
+            (0, ["net_zero", "net_zero"], "Repeated checks"),
+            (5, ["net_zero"], "breaks its net_zero check: its balance is 5.00"),  # its initial movement
+        ],
+    )
+    def test_add_account_rejects_invalid_checks(self, settings, amount, checks, message):
+        before = settings.accounts_path.read_text()
+        with pytest.raises(ValueError, match=message):
+            LedgerStore(settings).add_account("Fi", "asset", "Fictitious", amount, checks=checks)
+        assert settings.accounts_path.read_text() == before
 
     def test_insert_yaml_entry_into_missing_section(self):
         text = "asset:\n  Ca:\n    description: Cash\n\n"
@@ -362,6 +413,32 @@ class TestPages:
         assert 'name="initial_amount" inputmode="decimal" value="0.00" placeholder="0.00" required' in new_account
         assert "<th>Currency</th><th>Liquid</th>" in r.text
         assert "<td>USD</td>" in r.text
+        assert '<option value="net_positive" >Net positive</option>' in new_account
+        assert "<th>Special</th><th>Checks</th>" in r.text
+
+    def test_accounts_form_adds_an_account_with_a_check(self, client, settings):
+        form = {"name": "Fi", "acc_type": "asset", "description": "Fictitious", "initial_amount": "0", "check": "net_zero"}
+        r = client.post("/accounts", data=form, headers=HTMX)
+        assert "Added account Fi" in r.text
+        fi_row = r.text.split("<strong>Fi</strong>")[1].split("</tr>")[0]
+        assert "<td >Net zero</td>" in fi_row
+        assert '<td class="muted">-</td>' in r.text.split("<strong>Ca</strong>")[1].split("</tr>")[0]
+
+        r = client.post("/accounts", data=form | {"name": "Fi2", "initial_amount": "5"}, headers=HTMX)
+        assert "breaks its net_zero check" in r.text
+        assert '<option value="net_zero" selected>Net zero</option>' in r.text  # kept on error
+
+    def test_api_accounts_checks(self, client):
+        r = client.post("/api/accounts", json={
+            "name": "Sv", "type": "asset", "description": "Savings", "initial_amount": 0, "checks": ["net_positive"],
+        })
+        assert r.status_code == 201
+        sv = next(a for a in client.get("/api/accounts").json() if a["name"] == "Sv")
+        assert sv["checks"] == ["net_positive"]
+        r = client.post("/api/accounts", json={
+            "name": "Sv2", "type": "asset", "description": "Savings", "initial_amount": 0, "checks": ["nope"],
+        })
+        assert r.status_code == 422
 
     def test_charts_balances_grouped_by_currency_or_liquidity(self, client):
         assert 'name="accounts-group"' not in client.get("/accounts").text  # only in Charts
@@ -887,7 +964,7 @@ class TestApi:
         assert len(accounts) == 4
         assert accounts["Bk"] == {
             "name": "Bk", "description": "Bank account", "type": "asset", "currency": "USD",
-            "is_liquid": True, "initial_amount": 100.5, "initial_date": "2025-12-31",
+            "is_liquid": True, "initial_amount": 100.5, "initial_date": "2025-12-31", "checks": [],
         }
         assert accounts["Cc"]["initial_date"] is None
         bases = {b["name"]: b for b in client.get("/api/base-movements").json()}

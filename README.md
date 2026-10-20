@@ -132,6 +132,24 @@ not). Accounts also take these optional keys:
 - `currency`: the base currency by default.
 - `is_liquid`: `false` by default.
 - `initial_date`: the first date of the ledger by default.
+- `checks`: a list of checks on the account balance at the end of each day of the ledger, with
+  all the movements of the day summed. None by default.
+  - `net_positive`: the balance is never negative.
+  - `net_zero`: the balance is always 0.00, for accounts like an intermediary between
+    movements that should never hold money.
+
+  The ledger doesn't load if an account breaks a check, and a movement that would break one
+  can't be added or deleted. The New account form can set one, and the Accounts tab shows them
+  in its Checks column.
+
+```yaml
+asset:
+  Fi:
+    description: Fictitious balance as an intermediary between movements
+    initial_amount: 0.00
+    checks:
+    - net_zero
+```
 
 The Charts tab groups their balances by currency or by liquidity.
 

@@ -9,13 +9,20 @@ import math
 import os
 import re
 import tempfile
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 
 import yaml
 from pandas import DataFrame, concat, read_csv
 
-from pledger.enums import AccountType, InvestmentType, LedgerSide, MovementType
+from pledger.enums import (
+    AccountCheck,
+    AccountType,
+    InvestmentType,
+    LedgerSide,
+    MovementType,
+)
 from pledger.ledger import Ledger
 from pledger.models import (
     INVESTMENT,
@@ -288,7 +295,7 @@ class LedgerStore:
             snapshot = Snapshot(
                 accounts, base_movements, result_types, rows, currencies, initial_rows
             )
-            snapshot.ledger()  # validate the whole ledger up front
+            snapshot.ledger().check_accounts()  # validate the whole ledger up front
             snapshot.investment_accounts()
         except (OSError, KeyError, ValueError, AssertionError) as e:
             raise LedgerDataError(f"{type(e).__name__}: {e}") from e
@@ -368,6 +375,7 @@ class LedgerStore:
                 if col in new_row:
                     new_row[col] = text
             new_type = self._new_investment_type(snapshot, acc_debit, acc_credit, name, investment_type)
+        snapshot.ledger(concat([snapshot.all_rows, DataFrame([new_row])])).check_accounts()
 
         buf = io.StringIO()
         csv.writer(buf, delimiter=";", lineterminator="").writerow(new_row.values())
@@ -439,11 +447,13 @@ class LedgerStore:
         currency: str = "",
         is_liquid: bool = False,
         initial_date: str = "",
+        checks: Sequence[str] = (),
     ) -> None:
         """
         Validate a new account and add it to the accounts YAML. Without a currency,
         it is in the base currency; without an initial date, it starts on the
-        first date of the ledger. Its initial movement is generated when loading.
+        first date of the ledger. Its initial movement is generated when loading,
+        and must not break its `checks` (AccountCheck values) either.
         """
         snapshot = self.load()
         name = _check_name(name, snapshot.accounts, "account")
@@ -473,6 +483,14 @@ class LedgerStore:
                 fields["initial_date"] = dt.date.fromisoformat(initial_date.strip())
             except ValueError:
                 raise ValueError(f"Invalid initial date: {initial_date!r}") from None
+        try:
+            checks = [AccountCheck(c) for c in checks]
+        except ValueError:
+            raise ValueError(f"Invalid checks: {list(checks)}") from None
+        if len(set(checks)) != len(checks):
+            raise ValueError(f"Repeated checks: {[c.value for c in checks]}")
+        if checks:
+            fields["checks"] = [c.value for c in checks]
         self._add_yaml_entry(self.settings.accounts_path, (acc_type.value,), name, fields)
 
     def add_result_type(self, name: str, long_name: str, description: str) -> None:
@@ -701,6 +719,7 @@ class LedgerStore:
                 "The ledger changed since this page was loaded; reload and try again"
             )
         _check_invest(snapshot, rows.iloc[index]["base_movement"], invest, "deleted")
+        snapshot.ledger(snapshot.all_rows.drop(index=rows.index[index])).check_accounts()
         csv_file = self._read_file(len(rows), self.settings.ledger_path)
         del csv_file.lines[csv_file.row_lines[index]]
         self._write_file(csv_file)

@@ -15,6 +15,7 @@ from yaml import safe_load
 
 from pledger.code.models import assert_accounts
 from pledger.enums import (
+    AccountCheck,
     AccountType,
     CreditorKind,
     DebtRole,
@@ -244,9 +245,11 @@ class Account:
     initial_amount: float
     is_liquid: bool = False
     initial_date: dt.date | None = None  # None: the first date found in the ledger
+    checks: tuple[AccountCheck, ...] = ()  # on its daily balance in the ledger (see Ledger.check_accounts)
 
     def __post_init__(self):
         self.total = 0
+        self.checks = tuple(AccountCheck(c) for c in self.checks)
 
         self._check_positivity = (
             (lambda _: True)
@@ -312,6 +315,8 @@ class Account:
 
         Credit card accounts are the ones in the credit cards YAML (if given), set
         like the others but always liquid liabilities.
+
+        Any account may list `checks` (AccountCheck values) on its daily balance.
         """
         data = _load_yaml(path)
         investments_data = (_load_yaml(investments_path) if investments_path else None) or {}
@@ -366,6 +371,18 @@ class Account:
             except ValueError:
                 raise ValueError(f"Account {name!r} has an invalid initial date: {value!r}") from None
 
+        def checks_of(name: str, acc_d: dict) -> tuple[AccountCheck, ...]:
+            values = acc_d.get("checks") or []
+            if not isinstance(values, list):
+                raise ValueError(f"Account {name!r} checks must be a list: {values!r}")  # noqa: TRY004 (a bad config value)
+            valid = [c.value for c in AccountCheck]
+            unknown = [v for v in values if v not in valid]
+            if unknown:
+                raise ValueError(f"Account {name!r} has unknown checks: {unknown} (valid: {valid})")
+            if len(set(values)) != len(values):
+                raise ValueError(f"Account {name!r} repeats checks: {values}")
+            return tuple(AccountCheck(v) for v in values)
+
         credit_cards_data = (_load_yaml(credit_cards_path) if credit_cards_path else None) or {}
         special = sorted(set(credit_cards_data) & (set(investments_data) | set(creditors_data)))
         if special:
@@ -393,6 +410,7 @@ class Account:
                     "initial_amount": initial_amount_of(name, acc_type, acc_d),
                     "is_liquid": is_liquid_of(name, acc_d) or acc_cls is CreditCardAccount,
                     "initial_date": initial_date_of(name, acc_d),
+                    "checks": checks_of(name, acc_d),
                 }
                 if name in investments_data:
                     investments = InvestmentAccount.investments_from_dict(

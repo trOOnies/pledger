@@ -104,11 +104,35 @@ class Ledger:
         """
         balances: dict[str, float] = {}
         for move in self.movements:
-            for acc, sign in ((move.acc_debit, 1), (move.acc_credit, -1)):
-                if acc.acc_type != AccountType.ASSET:
-                    sign = -sign
-                balances[acc.name] = balances.get(acc.name, 0.0) + sign * move.amount
+            for acc, value in _signed_amounts(move):
+                balances[acc.name] = balances.get(acc.name, 0.0) + value
         return balances
+
+    def check_accounts(self) -> None:
+        """
+        Raise if an account breaks one of its checks with its balance (signed like
+        in balances) at the end of any day of the ledger, every movement of the day
+        summed, in date order.
+        """
+        accounts: dict[str, Account] = {}
+        daily: dict[str, dict[str, float]] = {}  # account name to date to its net movement
+        for move in self.movements:
+            for acc, value in _signed_amounts(move):
+                if acc.checks:
+                    accounts[acc.name] = acc
+                    days = daily.setdefault(acc.name, {})
+                    day = str(move.move_date)
+                    days[day] = days.get(day, 0.0) + value
+        for name, days in daily.items():
+            balance = 0.0
+            for day in sorted(days):
+                balance += days[day]
+                for check in accounts[name].checks:
+                    if not check.holds(balance):
+                        raise ValueError(
+                            f"Account {name!r} breaks its {check.value} check: its balance "
+                            f"is {balance:,.2f} at the end of {day}"
+                        )
 
     def add_movement(self, movement: Movement) -> None:
         """Add a Movement to the Ledger."""
@@ -128,3 +152,14 @@ class Ledger:
             self.total_losses += del_move.amount
         del del_move
         self.total_profits = self.total_gains + self.total_losses
+
+
+def _signed_amounts(move: Movement) -> tuple[tuple[Account, float], ...]:
+    """
+    The amount of a movement for each of its accounts, signed by its natural side:
+    debits add to assets, credits to liabilities and equity.
+    """
+    return tuple(
+        (acc, (sign if acc.acc_type == AccountType.ASSET else -sign) * move.amount)
+        for acc, sign in ((move.acc_debit, 1), (move.acc_credit, -1))
+    )
