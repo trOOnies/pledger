@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from pledger.enums import AccountType, MovementType
+from pledger.enums import AccountType, InvestmentType, MovementType
 
 
 class MovementIn(BaseModel):
@@ -14,6 +14,12 @@ class MovementIn(BaseModel):
     acc_credit: str
     amount: float
     comment: str = ""
+
+
+class InvestMovementIn(MovementIn):
+    investment: str = ""  # required with an INVESTMENT side
+    quantity: float | None = None  # required to buy, sell and split
+    investment_type: InvestmentType | None = None  # for an investment new to its account
 
 
 class AccountIn(BaseModel):

@@ -11,6 +11,7 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
+from pledger.enums import InvestmentType
 from pledger.models import DEBT, INVESTMENT, CreditCardAccount
 from pledger.web.app import create_app
 from pledger.web.store import (
@@ -1091,9 +1092,17 @@ class TestInvestmentsPage:
         assert card_labels(r.text) == ["Invested", "Investments", "Investment accounts"]
         assert '<span class="num money ">$500.00</span>' in r.text
         assert 'data-sortable="investments"' in r.text
-        assert "<td>Public bond</td>" in r.text and "<td>ETF</td>" in r.text
+        held, closed = r.text.split("<h2>No longer held <small>1</small></h2>")
+        assert "<td>Public bond</td>" in held and "<td>ETF</td>" not in held
+        assert "<strong>QQQ</strong></td>\n        <td>ETF</td>" in closed  # nothing held
         assert ">1,000</td>" in r.text and ">1.5</td>" in r.text and ">0.25</td>" in r.text
         assert ">60.0%</td>" in r.text  # T in Br: 300 of 500
+
+    def test_price_is_amount_over_quantity(self, client):
+        r = client.get("/investments")
+        assert '<th class="num" title="Amount over quantity">Price</th>' in r.text
+        assert 'data-sort="200.0">$200.00</td>' in r.text  # T in Br: 300 for 1.5
+        assert 'data-sort="0.1">$0.10</td>' in r.text  # AL30: 100 for 1,000
 
     def test_investments_grouped_by_type_or_account(self, client):
         r = client.get("/investments")
@@ -1514,6 +1523,216 @@ class TestDebtKinds:
         assert '<span class="bar-name">Services</span>' in we_owe and '<span class="bar-name">Gas</span>' in we_owe
         owed = r.text.split("Owed to us <span")[1].split("<h2>People")[0]
         assert '<span class="bar-name">Companies</span>' in owed and "People</span>" not in owed
+
+
+INVEST_YAML = (
+    "  Invest:\n    id: 4\n    long_name: Investments\n    description: d\n"
+    "    base_movements:\n      gain:\n        Capital gains:\n          description: d\n"
+    "          debit: INVESTMENT\n        Dividends: d\n      loss:\n        Broker fees: d\n"
+    "        Capital losses:\n          description: d\n          credit: INVESTMENT\n"
+    "  transfer:\n    Investment - Bought:\n      description: d\n      debit: INVESTMENT\n"
+    "    Investment - Sold:\n      description: d\n      credit: INVESTMENT\n"
+    "    Adjust: Set by pledger\n"
+)
+
+
+class TestInvestMovements:
+    """The internal Invest base movements are handled in the Investments tab, not the Ledger tab."""
+
+    @pytest.fixture
+    def settings(self, settings, tmp_path):
+        text = settings.accounts_path.read_text(encoding="utf-8")
+        settings.accounts_path.write_text(
+            text.replace("liability:\n", "  Br:\n    description: Broker\nliability:\n"), encoding="utf-8"
+        )
+        path = settings.base_movements_path
+        path.write_text(path.read_text().replace("internal:\n", "internal:\n" + INVEST_YAML, 1))
+        # The investment and quantity columns, with a capital gain of T at the end
+        lines = settings.ledger_path.read_text().splitlines()
+        settings.ledger_path.write_text(
+            lines[0] + ";additional;additional_2\n"
+            + "".join(f"{line};;\n" for line in lines[1:])
+            + "2026-01-05;Capital gains;Br;5;Eq;;;T\n"
+        )
+        investments = tmp_path / "investment.yaml"
+        investments.write_text("Br:\n  T:\n    type: stock\n    amount: 100\n    quantity: 10\n", encoding="utf-8")
+        return replace(settings, investments_path=investments)
+
+    @pytest.fixture
+    def client(self, settings):
+        return TestClient(create_app(settings))
+
+    def test_are_added_only_from_the_investments_tab(self, settings, client):
+        store = LedgerStore(settings)
+        with pytest.raises(ValueError, match="added from the Investments tab"):
+            store.add("2026-02-01", "Broker fees", "Eq", "Ca", "1")
+        with pytest.raises(ValueError, match="not an investment base movement"):
+            store.add("2026-02-01", "Food", "Eq", "Ca", "1", invest=True)
+        assert "Broker fees" not in client.get("/form/bases", params={"move_type": "loss"}).text
+
+        data = {"move_date": "2026-02-01", "base_movement": "Broker fees",
+                "acc_debit": "Eq", "acc_credit": "Ca", "amount": "1.5"}
+        r = client.post("/investments/movements", data=data, headers=HTMX)
+        assert "Added Broker fees: $1.50" in r.text and r.headers["HX-Trigger"] == "investments-changed"
+        body = {**data, "base_movement": "Capital gains", "acc_debit": "Br", "acc_credit": "Eq", "amount": 2,
+                "investment": "T"}
+        assert client.post("/api/investments/movements", json=body).status_code == 201
+        assert client.post("/api/movements", json=body).status_code == 422
+        assert list(rows(settings).base_movement[-3:]) == ["Capital gains", "Broker fees", "Capital gains"]
+        # The INVESTMENT side still takes only investment accounts
+        r = client.post("/investments/movements", data={**data, "base_movement": "Capital gains",
+                                                         "acc_debit": "Ca", "acc_credit": "Eq", "investment": "T"})
+        assert "must be an investment account" in r.text
+
+    def test_are_deleted_only_from_the_investments_tab(self, settings, client):
+        fp = row_fingerprint(rows(settings).iloc[4])
+        assert client.post("/movements/4/delete", data={"fingerprint": fp}).status_code == 422
+        assert client.delete("/api/movements/4").status_code == 422
+        assert client.post("/investments/movements/0/delete", data={
+            "fingerprint": row_fingerprint(rows(settings).iloc[0])
+        }).status_code == 422  # Salary, of the Ledger tab
+        r = client.post("/investments/movements/4/delete", data={"fingerprint": fp})
+        assert r.status_code == 200 and r.headers["HX-Trigger"] == "investments-changed"
+        assert len(rows(settings)) == 4
+
+    def test_investments_tab_lists_them(self, client):
+        r = client.get("/investments")
+        assert 'id="invest-form"' in r.text
+        assert '<optgroup label="Gain">' in r.text and "<option selected>Capital gains</option>" in r.text
+        assert "<h2>Investment movements <small>1</small></h2>" in r.text
+        assert 'hx-post="/investments/movements/4/delete"' in r.text
+        assert client.get("/api/investments/movements").json()[0]["base"] == "Capital gains"
+        # The ledger shows them with a lock that leads to the Investments tab
+        index = client.get("/").text
+        assert 'href="/investments" title="Added and deleted from the Investments tab"' in index
+        assert index.count('aria-label="Delete movement"') == 4
+
+    def test_internal_investment_transfers_too(self, settings, client):
+        r = client.get("/investments")
+        assert '<optgroup label="Transfer">' in r.text and "<option >Investment - Bought</option>" in r.text
+        assert "Adjust" not in r.text  # no INVESTMENT side: never by hand
+        data = {"move_date": "2026-02-01", "base_movement": "Investment - Bought",
+                "acc_debit": "Br", "acc_credit": "Ca", "amount": "3", "investment": "T", "quantity": "1"}
+        r = client.post("/investments/movements", data=data, headers=HTMX)
+        assert "Added Investment - Bought of T: $3.00" in r.text
+        r = client.post("/movements", data={**data, "move_type": "transfer"}, headers=HTMX)
+        assert "added from the Investments tab" in r.text
+        with pytest.raises(ValueError, match="'Adjust' is not an investment base movement"):
+            LedgerStore(settings).add("2026-02-01", "Adjust", "Bk", "Ca", "1", invest=True)
+        assert list(rows(settings).base_movement[-2:]) == ["Capital gains", "Investment - Bought"]
+
+    def holding(self, settings, name="T"):
+        br = LedgerStore(settings).load().investment_accounts()[0]
+        h = br.investments[name]
+        return h["investment"].type, h["total_amount"], h["total_quantity"]
+
+    def test_movements_update_the_investments(self, settings):
+        assert self.holding(settings) == (InvestmentType.STOCK, 105, 10)  # capital gain of 5
+        with settings.ledger_path.open("a") as f:
+            f.write("2026-01-06;Investment - Bought;Br;\"1,000\";Ca;;Q = 2.50;T\n"
+                    "2026-01-07;Investment - Sold;Ca;300;Br;;Q = 4;T\n"
+                    "2026-01-08;Broker fees;Eq;1;Ca;;;T\n"  # no investment account: no change
+                    "2026-01-09;Investment - Bought;Br;50;Ca;;Q = 1;NEW\n")
+        assert self.holding(settings) == (InvestmentType.STOCK, 805, 8.5)
+        assert self.holding(settings, "NEW") == (None, 50, 1)
+
+    @pytest.mark.parametrize(
+        ("row", "message"),
+        [
+            ("2026-01-06;Investment - Sold;Ca;1;Br;;Q = 11;T", r"quantity of 'T' .* cannot be negative"),
+            ("2026-01-06;Investment - Bought;Br;1;Ca;;;T", "must have a quantity"),
+            ("2026-01-06;Investment - Bought;Br;1;Ca;;Q = 1;", "must name their investment"),
+            ("2026-01-06;Capital gains;Br;1;Eq;;Q = 1;T", "cannot have a quantity"),
+            ("2026-01-06;Investment - Bought;Br;1;Ca;;Q = x;T", "Invalid quantity"),
+            ("2026-01-06;Broker fees;Eq;1;Br;;;T", "credit account of 'Broker fees' cannot be an investment account"),
+            ("2026-01-06;Dividends;Br;1;Eq;;;T", "debit account of 'Dividends' cannot be an investment account"),
+        ],
+    )
+    def test_invalid_rows(self, settings, row, message):
+        with settings.ledger_path.open("a") as f:
+            f.write(row + "\n")
+        with pytest.raises(LedgerDataError, match=message):
+            LedgerStore(settings).load()
+
+    def test_form_fields_follow_the_base_movement(self, client):
+        f = client.get("/form/invest-fields", params={"base_movement": "Investment - Bought"}).text
+        assert re.search(r'name="quantity"[^>]*\s+required', f) and 'name="investment_type"' in f
+        assert '<option value="T">' in f  # known investments
+        f = client.get("/form/invest-fields", params={"base_movement": "Broker fees"}).text
+        assert 'name="quantity"' not in f and 'name="investment_type"' not in f
+        assert "Investment <em class=\"optional\">(optional)</em>" in f
+
+    def test_adding_writes_the_details_and_new_types(self, settings, client):
+        data = {"move_date": "2026-02-01", "base_movement": "Investment - Bought",
+                "acc_debit": "Br", "acc_credit": "Ca", "amount": "30", "investment": "AL30", "quantity": "1234.5"}
+        r = client.post("/investments/movements", data=data)
+        assert "&#39;AL30&#39; is a new investment of the account &#39;Br&#39;: pick its type" in r.text
+        assert 'value="AL30"' in r.text  # kept in the form
+        r = client.post("/investments/movements", data={**data, "investment_type": "public_bond"})
+        assert "Added Investment - Bought of AL30" in r.text
+        assert settings.ledger_path.read_text().splitlines()[-1] == "2026-02-01;Investment - Bought;Br;30.00;Ca;;Q = 1,234.50;AL30"
+        assert "  AL30: public_bond\n" in settings.investments_path.read_text()
+        assert self.holding(settings, "AL30") == (InvestmentType.PUBLIC_BOND, 30, 1234.5)
+        # Selling more than is held rolls everything back
+        before = settings.ledger_path.read_text()
+        sell = {**data, "base_movement": "Investment - Sold", "acc_debit": "Ca", "acc_credit": "Br",
+                "quantity": "Q = 2,000"}
+        assert "cannot be negative" in client.post("/investments/movements", data=sell).text
+        assert settings.ledger_path.read_text() == before
+        with pytest.raises(ValueError, match="is a stock"):
+            LedgerStore(settings).add("2026-02-01", "Investment - Bought", "Br", "Ca", "1", invest=True,
+                                      investment="T", quantity=1, investment_type="etf")
+        body = {**data, "investment": "T", "quantity": 1, "amount": 7}
+        assert client.post("/api/investments/movements", json=body).status_code == 201
+        assert client.get("/api/investments/movements").json()[0]["quantity"] == "Q = 1.00"
+
+    def test_investments_tab_shows_held_and_untyped_ones(self, settings, client):
+        with settings.ledger_path.open("a") as f:
+            f.write("2026-01-09;Investment - Bought;Br;50;Ca;;Q = 1;NEW\n"
+                    "2026-01-10;Investment - Sold;Ca;105;Br;;Q = 10;T\n")
+        r = client.get("/investments")
+        assert "⚠ 1 investment has no type: NEW." in r.text and "<td>No type</td>" in r.text
+        held, closed = r.text.split("<h2>No longer held <small>1</small></h2>")
+        assert "<strong>T</strong>" not in held and "<strong>T</strong>" in closed.split("</table>")[0]
+        # The movements list shows the investment and the quantity without its prefix
+        moves = r.text.split("<h2>Investment movements")[1]
+        assert '<td class="">NEW</td>\n          <td class="num ">1</td>' in moves and "Q = " not in moves
+
+    def test_results_are_totalled_per_investment_whatever_the_accounts(self, settings, client):
+        with settings.ledger_path.open("a") as f:
+            f.write("2026-01-06;Dividends;Ca;10;Eq;;;T\n"
+                    "2026-01-07;Dividends;Bk;2.5;Eq;;;T\n"
+                    "2026-01-08;Broker fees;Eq;1;Ca;;;T\n"
+                    "2026-01-09;Capital losses;Eq;2;Br;;;T\n"
+                    "2026-01-10;Investment - Sold;Ca;103;Br;;Q = 10;T\n"  # all of it
+                    "2026-01-10;Broker fees;Eq;4;Ca;;;\n"  # names no investment
+                    "2026-01-11;Dividends;Ca;7;Eq;;;GHOST\n")
+        unattributed = []
+        br = LedgerStore(settings).load().investment_accounts(unattributed)[0]
+        assert br.results == {"T": {"Capital gains": 5.0, "Dividends": 12.5, "Broker fees": 1.0, "Capital losses": 2.0}}
+        assert br.investments["T"]["total_amount"] == 0  # 100 + 5 - 2 - 103
+        assert [(u["investment"], u["amount"]) for u in unattributed] == [("GHOST", 7.0)]
+        r = client.get("/investments")
+        assert card_labels(r.text)[-4:] == ["Net capital gains", "Dividends", "Broker fees", "Total result"]
+        closed = r.text.split("<h2>No longer held")[1].split("</table>")[0]
+        assert ">Net capital gains</th>" in closed and ">Total result</th>" in closed
+        # Sold, but its capital gains (5 - 2) and total result (3 + 12.50 - 1) stay
+        for value in ("3.0\">$3.00", "12.5\">$12.50", "1.0\">$1.00", "14.5\">$14.50"):
+            assert f'data-sort="{value}</td>' in closed
+        assert "⚠ 1 movement names an investment of no investment account:\n      GHOST." in r.text
+
+    def test_free_sides_never_take_investment_accounts(self, settings, client):
+        f = client.get("/form/invest-fields", params={"base_movement": "Investment - Bought"}).text
+        credit = f.split('name="acc_credit"')[1].split("</select>")[0]
+        assert "<option >Ca</option>" in credit and "<option >Br</option>" not in credit
+        with pytest.raises(ValueError, match="credit account of 'Broker fees' cannot be an investment account: Br"):
+            LedgerStore(settings).add("2026-02-01", "Broker fees", "Eq", "Br", "1", invest=True, investment="T")
+
+    def test_no_form_without_invest_base_movements(self, settings, client):
+        path = settings.base_movements_path
+        path.write_text(path.read_text().replace(INVEST_YAML, ""))
+        settings.ledger_path.write_text("".join(settings.ledger_path.read_text().splitlines(True)[:-1]))
+        assert 'id="invest-form"' not in client.get("/investments").text
 
 
 CREDIT_CARDS_YAML = """\

@@ -10,13 +10,21 @@ from fastapi.responses import HTMLResponse, Response
 
 from pledger.web.dependencies import StoreDep
 from pledger.web.store import LedgerStore, StaleRowError
-from pledger.web.templating import money, remembered_month, render_form, templates
+from pledger.web.templating import (
+    money,
+    remembered_month,
+    render_form,
+    render_invest_form,
+    templates,
+)
 from pledger.web.views import (
     account_fields,
     base_fields,
     base_sides,
     build_accounts,
+    build_invest_movements,
     build_work,
+    invest_fields,
     months_of,
     setup_context,
     work_form,
@@ -95,6 +103,71 @@ def delete_movement(store: StoreDep, index: int, fingerprint: Annotated[str, For
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from None
     return Response(status_code=200, headers={"HX-Trigger": "ledger-changed"})
+
+
+@router.get("/form/invest-fields")
+def form_invest_fields(request: Request, store: StoreDep, base_movement: str = ""):
+    return templates.TemplateResponse(
+        request, "_invest_fields.html", {**invest_fields(store.load(), base_movement), "values": {}}
+    )
+
+
+@router.get("/investments/movements")
+def investment_movements(request: Request, store: StoreDep):
+    return templates.TemplateResponse(
+        request, "_invest_movements.html", {"movements": build_invest_movements(store.load())}
+    )
+
+
+@router.post("/investments/movements")
+def create_investment_movement(
+    request: Request,
+    store: StoreDep,
+    move_date: Annotated[str, Form()],
+    base_movement: Annotated[str, Form()],
+    amount: Annotated[str, Form()],
+    acc_debit: Annotated[str, Form()] = "",
+    acc_credit: Annotated[str, Form()] = "",
+    comment: Annotated[str, Form()] = "",
+    investment: Annotated[str, Form()] = "",
+    quantity: Annotated[str, Form()] = "",
+    investment_type: Annotated[str, Form()] = "",
+):
+    values = {
+        "move_date": move_date, "base_movement": base_movement,
+        "acc_debit": acc_debit, "acc_credit": acc_credit,
+        "amount": amount, "comment": comment,
+        "investment": investment, "quantity": quantity, "investment_type": investment_type,
+    }
+    try:
+        store.add(
+            move_date, base_movement, acc_debit, acc_credit, amount, comment,
+            invest=True, investment=investment, quantity=quantity, investment_type=investment_type,
+        )
+    except ValueError as e:
+        return render_invest_form(request, store.load(), values, error=str(e))
+    # Keep date and base movement to speed up entering similar movements.
+    keep = {"move_date": move_date, "base_movement": base_movement}
+    value = float(amount.replace(",", ""))
+    of = f" of {investment.strip()}" if investment.strip() else ""
+    response = render_invest_form(
+        request, store.load(), keep,
+        success=f"Added {base_movement}{of}: {money(value, store.settings.currency)}"
+        + (" (dated in the future)" if move_date > dt.date.today().isoformat() else ""),
+    )
+    response.headers["HX-Trigger"] = "investments-changed"
+    return response
+
+
+@router.post("/investments/movements/{index}/delete", response_class=Response)
+def delete_investment_movement(store: StoreDep, index: int, fingerprint: Annotated[str, Form()]):
+    try:
+        store.delete(index, fingerprint, invest=True)
+    except StaleRowError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from None
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
+    return Response(status_code=200, headers={"HX-Trigger": "investments-changed"})
 
 
 def render_setup(request: Request, store: LedgerStore, values: dict, **extra):

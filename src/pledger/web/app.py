@@ -10,6 +10,7 @@ from pledger.web.routers import (
     accounts,
     base_movements,
     forms,
+    investments,
     movements,
     pages,
     result_types,
@@ -43,6 +44,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(result_types.router)
     app.include_router(base_movements.router)
     app.include_router(movements.router)
+    app.include_router(investments.router)
     app.include_router(summary.router)
     app.include_router(work.router)
     return app

@@ -15,14 +15,17 @@ from pathlib import Path
 import yaml
 from pandas import DataFrame, concat, read_csv
 
-from pledger.enums import AccountType, LedgerSide, MovementType
+from pledger.enums import AccountType, InvestmentType, LedgerSide, MovementType
 from pledger.ledger import Ledger
 from pledger.models import (
+    INVESTMENT,
     SPECIAL_SIDES,
     Account,
     Company,
     Currency,
     DebtAccount,
+    Investment,
+    InvestmentAccount,
     JobPosition,
     Movement,
     MovementBase,
@@ -38,6 +41,21 @@ BOM = "﻿"
 # movements are generated from the accounts YAML, never stored in the CSV.
 INITIAL_GAIN = "Initial (G)"
 INITIAL_LOSS = "Initial (L)"
+
+# Internal result type of the investment results. Its base movements, and the
+# internal transfers with an INVESTMENT side, are added and deleted from the
+# Investments tab instead of the Ledger tab.
+INVEST = "Invest"
+
+# Columns of the ledger CSV with the details of the movements of the investment
+# base movements: the investment (its name in the investment account) and its
+# quantity, written as "Q = 1,234.50".
+INVESTMENT_COLUMN, QUANTITY_COLUMN = "additional_2", "additional"
+QUANTITY_PREFIX = "Q = "
+# Investment base movements that change the quantity of the investment: it is
+# required to buy, sell and split, and optional for capital repayments.
+QUANTITY_REQUIRED = {"Investment - Bought", "Investment - Sold", "Stock split (More)", "Stock split (Less)"}
+QUANTITY_OPTIONAL = {"Capital repayments"}
 
 
 class LedgerDataError(Exception):
@@ -116,10 +134,15 @@ class Snapshot:
         return [a for a in self.accounts.values() if a.acc_type != AccountType.EQUITY]
 
     def side_accounts(self, base: MovementBase, ledger_side: LedgerSide) -> list[Account]:
-        """Accounts that can be picked on a non-fixed side of a base movement."""
+        """
+        Accounts that can be picked on a non-fixed side of a base movement: never an
+        investment account on a free side of an investment base movement.
+        """
         special = SPECIAL_SIDES.get(base.side(ledger_side))
         if special:
             return [a for a in self.accounts.values() if isinstance(a, special)]
+        if base.name in self.invest_base_movements():
+            return [a for a in self.free_accounts() if not isinstance(a, InvestmentAccount)]
         return self.free_accounts()
 
     @property
@@ -146,9 +169,42 @@ class Snapshot:
         _apply_debts({**self.accounts, **debts}, rows)
         return list(debts.values())
 
+    def investment_accounts(self, unattributed: list[dict] | None = None) -> list[InvestmentAccount]:
+        """
+        Copies of the investment accounts with the CSV movements of the investment
+        base movements applied to their investments (see _apply_investments). The
+        results that can't be attributed to an investment are added to `unattributed`.
+        """
+        accounts = {
+            a.name: replace(
+                a,
+                investments={n: dict(h) for n, h in a.investments.items()},
+                results={n: dict(r) for n, r in a.results.items()},
+            )
+            for a in self.accounts.values()
+            if isinstance(a, InvestmentAccount)
+        }
+        found = _apply_investments(self, {**self.accounts, **accounts}, self.rows)
+        if unattributed is not None:
+            unattributed.extend(found)
+        return list(accounts.values())
+
     def manual_base_movements(self) -> dict[str, MovementBase]:
         """Base movements that can be picked for a new movement (not internal ones)."""
         return {n: b for n, b in self.base_movements.items() if not b.internal}
+
+    def invest_base_movements(self) -> dict[str, MovementBase]:
+        """
+        The internal base movements handled in the Investments tab: those of the
+        INVEST result type and the transfers with an INVESTMENT side.
+        """
+        return {
+            n: b for n, b in self.base_movements.items()
+            if b.internal and (
+                b.result_type.name == INVEST if b.result_type is not None
+                else INVESTMENT in {b.debit_special, b.credit_special}
+            )
+        }
 
 
 # Columns of the work CSV; the received payment date one is optional.
@@ -218,6 +274,7 @@ class LedgerStore:
                 accounts, base_movements, result_types, rows, currencies, initial_rows
             )
             snapshot.ledger()  # validate the whole ledger up front
+            snapshot.investment_accounts()
         except (OSError, KeyError, ValueError, AssertionError) as e:
             raise LedgerDataError(f"{type(e).__name__}: {e}") from e
         return snapshot
@@ -230,8 +287,18 @@ class LedgerStore:
         acc_credit: str,
         amount: str | float,
         comment: str = "",
+        invest: bool = False,
+        investment: str = "",
+        quantity: str | float = "",
+        investment_type: str = "",
     ) -> None:
-        """Validate a new movement and append it to the CSV."""
+        """
+        Validate a new movement and append it to the CSV. With `invest` (from the
+        Investments tab), it must be of an investment base movement (see
+        Snapshot.invest_base_movements), with its investment and quantity (see
+        _investment_details) and, for an investment new to its account, its type,
+        which is added to the investments YAML; without it, of a non-internal one.
+        """
         snapshot = self.load()
         try:
             dt.date.fromisoformat(move_date)
@@ -239,8 +306,9 @@ class LedgerStore:
             raise ValueError(f"Invalid date: {move_date!r}") from None
         if base_movement not in snapshot.base_movements:
             raise ValueError(f"Unknown base movement: {base_movement!r}")
-        if snapshot.base_movements[base_movement].internal:
-            raise ValueError(f"Base movement {base_movement!r} is internal and cannot be added by hand")
+        _check_invest(snapshot, base_movement, invest, "added")
+        if not invest and (str(investment).strip() or str(quantity).strip() or investment_type):
+            raise ValueError("Only movements of the Investments tab have an investment and a quantity")
         for name in (acc_debit, acc_credit):
             if name not in snapshot.accounts:
                 raise ValueError(f"Unknown account: {name!r}")
@@ -272,12 +340,80 @@ class LedgerStore:
         )
         if "comment" in new_row:
             new_row["comment"] = comment.replace(";", ",").strip()
+        new_type = None
+        if invest:
+            _check_free_sides(
+                snapshot.base_movements[base_movement], snapshot.accounts[acc_debit], snapshot.accounts[acc_credit]
+            )
+            name, units = _investment_details(snapshot.base_movements[base_movement], investment, quantity)
+            details = {INVESTMENT_COLUMN: name, QUANTITY_COLUMN: _quantity_text(units) if units else ""}
+            for col, text in details.items():
+                if text and col not in new_row:
+                    raise ValueError(f"The ledger CSV has no {col!r} column for the investment details")
+                if col in new_row:
+                    new_row[col] = text
+            new_type = self._new_investment_type(snapshot, acc_debit, acc_credit, name, investment_type)
 
         buf = io.StringIO()
         csv.writer(buf, delimiter=";", lineterminator="").writerow(new_row.values())
         csv_file = self._read_file(len(snapshot.rows), self.settings.ledger_path)
         csv_file.lines.append(buf.getvalue())
+        if not invest:
+            self._write_file(csv_file)
+            return
+
+        # Investment movements also change the investments: roll back if they can't
+        # (e.g. selling more than is held).
+        paths = [self.settings.ledger_path]
+        if new_type is not None:
+            paths.append(self.settings.investments_path)
+        before = {path: path.read_bytes().decode("utf-8") for path in paths}
+        if new_type is not None:
+            acc_name, name, inv_type = new_type
+            yaml_text = _insert_yaml_entry(before[paths[1]], (acc_name,), name, inv_type.value)
+            _atomic_write(paths[1], yaml_text)
         self._write_file(csv_file)
+        try:
+            self.load()
+        except LedgerDataError as e:
+            for path, text in before.items():
+                _atomic_write(path, text)
+            raise ValueError(f"Could not add the movement: {e}") from None
+
+    @staticmethod
+    def _new_investment_type(
+        snapshot: Snapshot, acc_debit: str, acc_credit: str, name: str, investment_type: str
+    ) -> tuple[str, str, InvestmentType] | None:
+        """
+        The (account, investment, type) to add to the investments YAML, if any: an
+        investment new to its account needs its type, and one only in the ledger
+        can get it. Others keep the type they have.
+        """
+        account = next(
+            (snapshot.accounts[n] for n in (acc_debit, acc_credit) if isinstance(snapshot.accounts[n], InvestmentAccount)),
+            None,
+        )
+        if account is None or not name:
+            if investment_type:
+                raise ValueError("Only an investment of an investment account has a type")
+            return None
+        inv_type = None
+        if investment_type:
+            try:
+                inv_type = InvestmentType(investment_type)
+            except ValueError:
+                raise ValueError(f"Unknown investment type: {investment_type!r}") from None
+        held = next(a for a in snapshot.investment_accounts() if a.name == account.name).investments
+        if name in account.investments:  # in the investments YAML
+            current = account.investments[name]["investment"].type
+            if inv_type is not None and inv_type != current:
+                raise ValueError(f"Investment {name!r} of the account {account.name!r} is a {current.value}")
+            return None
+        if inv_type is None:
+            if name not in held:
+                raise ValueError(f"{name!r} is a new investment of the account {account.name!r}: pick its type")
+            return None
+        return account.name, name, inv_type
 
     def add_account(
         self,
@@ -535,10 +671,11 @@ class LedgerStore:
         del csv_file.lines[csv_file.row_lines[index]]
         self._write_file(csv_file)
 
-    def delete(self, index: int, fingerprint: str | None = None) -> None:
+    def delete(self, index: int, fingerprint: str | None = None, invest: bool = False) -> None:
         """
         Delete a row by position, optionally checking it is the expected one.
-        Movements of internal base movements cannot be deleted.
+        With `invest` (from the Investments tab), it must be a movement of an
+        investment base movement; without it, of a non-internal one.
         """
         snapshot = self.load()
         rows = snapshot.rows
@@ -548,9 +685,7 @@ class LedgerStore:
             raise StaleRowError(
                 "The ledger changed since this page was loaded; reload and try again"
             )
-        base_name = rows.iloc[index]["base_movement"]
-        if snapshot.base_movements[base_name].internal:
-            raise ValueError(f"Movements of the internal base movement {base_name!r} cannot be deleted")
+        _check_invest(snapshot, rows.iloc[index]["base_movement"], invest, "deleted")
         csv_file = self._read_file(len(rows), self.settings.ledger_path)
         del csv_file.lines[csv_file.row_lines[index]]
         self._write_file(csv_file)
@@ -600,6 +735,20 @@ def _work_month(row) -> WorkMonth:
         net=_parse_amount(row[NET], f"net salary of {month}") if row[NET].strip() else None,
         payment_date=_parse_date(row.get(PAYMENT_DATE, ""), f"received payment date of {month}"),
     )
+
+
+def _check_invest(snapshot: Snapshot, base_name: str, invest: bool, action: str) -> None:
+    """
+    Movements of the investment base movements are only added and deleted from the
+    Investments tab (`invest`), and those of other internal ones never by hand.
+    """
+    is_invest = base_name in snapshot.invest_base_movements()
+    if invest and not is_invest:
+        raise ValueError(f"Base movement {base_name!r} is not an investment base movement")
+    if is_invest and not invest:
+        raise ValueError(f"Movements of the base movement {base_name!r} are {action} from the Investments tab")
+    if snapshot.base_movements[base_name].internal and not is_invest:
+        raise ValueError(f"Base movement {base_name!r} is internal and its movements cannot be {action} by hand")
 
 
 def _check_initial_base_movements(base_movements: dict[str, MovementBase]) -> None:
@@ -672,6 +821,113 @@ def _apply_debts(accounts: dict[str, Account], rows: DataFrame) -> None:
             if isinstance(acc, DebtAccount):
                 value = float(amount.replace(",", "").replace(" ", "") or 0)
                 acc.add_debt(acc.creditor_in(comment), sign * value, comment)
+
+
+def _investment_details(base: MovementBase, investment: str, quantity: str | float) -> tuple[str, float | None]:
+    """
+    The investment and quantity of a movement of an investment base movement. The
+    investment is required with an INVESTMENT side; the quantity (positive, with
+    or without the QUANTITY_PREFIX) for QUANTITY_REQUIRED, and only allowed for
+    them and QUANTITY_OPTIONAL.
+    """
+    name = str(investment).strip()
+    if any(c in name for c in ";\r\n"):
+        raise ValueError("The investment cannot contain ';' or line breaks")
+    if INVESTMENT in {base.debit_special, base.credit_special} and not name:
+        raise ValueError(f"Movements of {base.name!r} must name their investment")
+    text = str(quantity).strip().removeprefix(QUANTITY_PREFIX.strip()).strip()
+    if not text:
+        if base.name in QUANTITY_REQUIRED:
+            raise ValueError(f"Movements of {base.name!r} must have a quantity")
+        return name, None
+    if base.name not in QUANTITY_REQUIRED | QUANTITY_OPTIONAL:
+        raise ValueError(f"Movements of {base.name!r} cannot have a quantity")
+    value = _parse_amount(text, "quantity")
+    if value == 0:
+        raise ValueError("The quantity must be positive")
+    return name, value
+
+
+def _check_free_sides(base: MovementBase, acc_debit: Account, acc_credit: Account) -> None:
+    """
+    A free side of an investment base movement (e.g. what pays for an investment
+    bought, or gets its dividends or pays its fees) is never an investment account:
+    only the INVESTMENT sides change the investments.
+    """
+    for ledger_side, acc in ((LedgerSide.DEBIT, acc_debit), (LedgerSide.CREDIT, acc_credit)):
+        if base.side(ledger_side) is None and isinstance(acc, InvestmentAccount):
+            raise ValueError(
+                f"The {ledger_side.value} account of {base.name!r} cannot be an investment account: {acc.name}"
+            )
+
+
+def is_capital(base: MovementBase) -> bool:
+    """A gain or loss in the value of an investment: with an INVESTMENT side, not a stock split."""
+    return (
+        base.result_type is not None
+        and INVESTMENT in {base.debit_special, base.credit_special}
+        and base.name not in QUANTITY_REQUIRED
+    )
+
+
+def _quantity_text(value: float) -> str:
+    """A quantity as written in the QUANTITY_COLUMN, e.g. Q = 1,234.50 or Q = 4.6209."""
+    whole, _, decimals = f"{value:,.6f}".rstrip("0").partition(".")
+    return f"{QUANTITY_PREFIX}{whole}.{decimals.ljust(2, '0')}"
+
+
+def _apply_investments(snapshot: Snapshot, accounts: dict[str, Account], rows: DataFrame) -> list[dict]:
+    """
+    Add the CSV movements of the investment base movements to the investment they
+    name, in the investment account on either side: the amount and quantity to a
+    debit, taken out of a credit. Investments not in the investments YAML are added
+    with no type.
+
+    Then, the gains and losses naming an investment, but stock splits, are added to
+    its results (see InvestmentAccount.results): its capital gains and losses, and
+    the ones with no INVESTMENT side (dividends, broker fees...), whatever their
+    other account. They go to the investment account on a side, if any, else to the
+    one with an investment of that name. Returns the ones naming an investment in
+    no investment account.
+    """
+    bases = snapshot.invest_base_movements()
+    rows = rows[rows.base_movement.isin(bases)]
+
+    def column(name: str):
+        return rows[name] if name in rows.columns else [""] * len(rows)
+
+    results = []
+    for date, base, debit, credit, amount, name, quantity in zip(
+        rows["move_date"], rows["base_movement"], rows["acc_debit"], rows["acc_credit"], rows["amount"],
+        column(INVESTMENT_COLUMN), column(QUANTITY_COLUMN),
+    ):
+        try:
+            _check_free_sides(bases[base], accounts[debit], accounts[credit])
+            name, units = _investment_details(bases[base], name, quantity)
+            value = float(amount.replace(",", "").replace(" ", "") or 0)
+            sides = [accounts[n] for n in (debit, credit) if isinstance(accounts[n], InvestmentAccount)]
+            for acc_name, sign in ((debit, 1), (credit, -1)):
+                acc = accounts[acc_name]
+                if isinstance(acc, InvestmentAccount) and name:
+                    acc.add_investment(Investment(name, None), sign * value, sign * (units or 0.0))
+        except ValueError as e:
+            raise ValueError(f"{e} ({date}, {base})") from None
+        b = bases[base]
+        if name and b.result_type is not None and b.name not in QUANTITY_REQUIRED:
+            results.append({"date": date, "base": base, "investment": name, "amount": value, "sides": sides})
+
+    # After every movement, so investments bought later are known too.
+    investment_accounts = [a for a in accounts.values() if isinstance(a, InvestmentAccount)]
+    unattributed = []
+    for r in results:
+        acc = next(
+            (a for a in r.pop("sides") or investment_accounts if r["investment"] in a.investments), None
+        )
+        if acc is None:
+            unattributed.append(r)
+        else:
+            acc.add_result(r["investment"], r["base"], r["amount"])
+    return unattributed
 
 
 def _existing(path: Path | None) -> str | None:

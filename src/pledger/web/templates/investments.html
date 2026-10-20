@@ -1,7 +1,22 @@
 {% extends "base.html" %}
 {% from "_bars.html" import bars with context %}
 {% block title %}Investments · pledger{% endblock %}
+{# The results of an investment: net capital gains, the other results by base movement and their total. #}
+{% macro signed(value) %}<td class="num money {{ 'gain' if value > 0 else 'loss' if value < 0 }}" data-sort="{{ value }}">{{ value | money }}</td>{% endmacro %}
+{% macro result_heads() %}
+{% if has_capital %}<th class="num" title="Capital gains minus capital losses, whatever was bought or sold since">Net capital gains</th>{% endif %}
+{% for base in result_bases %}<th class="num">{{ base }}</th>{% endfor %}
+{% if has_results %}<th class="num" title="Net capital gains, plus the gains and minus the losses of the other columns">Total result</th>{% endif %}
+{% endmacro %}
+{% macro result_cells(i) %}
+{% if has_capital %}{{ signed(i.capital) }}{% endif %}
+{% for base, is_loss in result_bases.items() %}
+{% if base in i.results %}<td class="num money {{ 'loss' if is_loss else 'gain' }}" data-sort="{{ i.results[base] }}">{{ i.results[base] | money }}</td>{% else %}<td class="num muted">-</td>{% endif %}
+{% endfor %}
+{% if has_results %}{{ signed(i.total) }}{% endif %}
+{% endmacro %}
 {% block content %}
+<div class="view">
 {% if not accounts %}
 <div class="panel">
   <h2>Investments</h2>
@@ -10,11 +25,39 @@
     and their type, initial amount and quantity.</p>
 </div>
 {% else %}
-<div class="view">
+  {% if unattributed %}
+  <details class="msg warn alert" role="alert">
+    <summary>⚠ {{ unattributed | length }} movement{{ "s name" if unattributed | length > 1 else " names" }} an investment of no investment account:
+      {{ unattributed | map(attribute="investment") | unique | join(", ") }}.</summary>
+    <p class="small">Their amounts aren't in any investment's totals. Add the investment under its account in
+      <code>{{ settings.investments_path.name if settings.investments_path else "investment.yaml" }}</code> (just its type is enough), or fix the name.</p>
+    <ul class="small">
+      {% for r in unattributed %}
+      <li>{{ r.date }} {{ r.base }} of <strong>{{ r.investment }}</strong>: <span class="money">{{ r.amount | money }}</span></li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+  {% if untyped %}
+  <details class="msg warn alert" role="alert">
+    <summary>⚠ {{ untyped | length }} investment{{ "s have" if untyped | length > 1 else " has" }} no type: {{ untyped | map(attribute="name") | join(", ") }}.</summary>
+    <p class="small">They are only in the ledger. Add their type in <code>{{ settings.investments_path.name if settings.investments_path else "investment.yaml" }}</code>,
+      under their account (e.g. <code>{{ untyped[0].name }}: stock</code>), or pick it in a new movement below.</p>
+  </details>
+  {% endif %}
   <div class="cards">
     <div class="card" title="Sum of the amounts of all investments"><span class="label">Invested</span><span class="num money {{ 'loss' if total < 0 }}">{{ total | money }}</span></div>
     <div class="card" title="Number of investments across all investment accounts"><span class="label">Investments</span><span class="num">{{ holdings | length }}</span></div>
     <div class="card" title="Asset accounts listed in the investments file"><span class="label">Investment accounts</span><span class="num">{{ accounts | length }}</span></div>
+    {% if has_capital %}
+    <div class="card" title="Capital gains minus capital losses of the investments, held or not"><span class="label">Net capital gains</span><span class="num money {{ 'gain' if result_totals.capital > 0 else 'loss' if result_totals.capital < 0 }}">{{ result_totals.capital | money }}</span></div>
+    {% endif %}
+    {% for base, is_loss in result_bases.items() %}
+    <div class="card" title="Total of the {{ base }} movements of the investments, held or not"><span class="label">{{ base }}</span><span class="num money {{ 'loss' if is_loss else 'gain' }}">{{ result_totals[base] | money }}</span></div>
+    {% endfor %}
+    {% if has_results %}
+    <div class="card" title="Net capital gains, plus the gains and minus the losses above, of the investments, held or not"><span class="label">Total result</span><span class="num money {{ 'gain' if result_totals.total > 0 else 'loss' if result_totals.total < 0 }}">{{ result_totals.total | money }}</span></div>
+    {% endif %}
   </div>
 
   <section class="panel grouped-bars">
@@ -35,7 +78,7 @@
   <div class="panel">
     <h2>Investments</h2>
     <table data-sortable="investments">
-      <thead><tr><th>Investment</th><th>Type</th><th>Account</th><th class="num">Quantity</th><th class="num">Amount</th><th class="num">Share</th></tr></thead>
+      <thead><tr><th>Investment</th><th>Type</th><th>Account</th><th class="num">Quantity</th><th class="num" title="Amount over quantity">Price</th><th class="num">Amount</th><th class="num">Share</th>{{ result_heads() }}</tr></thead>
       <tbody>
       {% for h in holdings %}
       <tr>
@@ -43,15 +86,39 @@
         <td>{{ h.type }}</td>
         <td>{{ h.account }}</td>
         <td class="num" data-sort="{{ h.quantity }}">{{ h.quantity | quantity }}</td>
+        {% if h.price is none %}<td class="num muted">-</td>{% else %}<td class="num money {{ 'loss' if h.price < 0 }}" data-sort="{{ h.price }}">{{ h.price | money }}</td>{% endif %}
         <td class="num money {{ 'loss' if h.amount < 0 }}" data-sort="{{ h.amount }}">{{ h.amount | money }}</td>
         <td class="num muted" data-sort="{{ h.share }}">{{ '%.1f' | format(h.share) }}%</td>
+        {{ result_cells(h) }}
       </tr>
       {% else %}
-      <tr><td colspan="6" class="muted">No investments.</td></tr>
+      <tr><td colspan="{{ 7 + result_bases | length + (1 if has_capital else 0) + (1 if has_results else 0) }}" class="muted">No investments.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p class="muted small">Amounts and quantities are the initial ones of the investments file plus the investment
+      movements below. The results are the totals of the movements naming each investment, whatever their
+      other account; capital gains and losses add up over time, whatever was bought or sold since.</p>
+  </div>
+
+  {% if closed %}
+  <div class="panel">
+    <h2>No longer held <small>{{ closed | length }}</small></h2>
+    <table data-sortable="closed-investments">
+      <thead><tr><th>Investment</th><th>Type</th><th>Account</th>{{ result_heads() }}</tr></thead>
+      <tbody>
+      {% for c in closed %}
+      <tr>
+        <td class="nowrap"><strong>{{ c.name }}</strong></td>
+        <td>{{ c.type }}</td>
+        <td>{{ c.account }}</td>
+        {{ result_cells(c) }}
+      </tr>
       {% endfor %}
       </tbody>
     </table>
   </div>
+  {% endif %}
 
   <div class="panel">
     <h2>Investment accounts</h2>
@@ -70,6 +137,18 @@
       </tbody>
     </table>
   </div>
+{% endif %}
+
+{% if invest_form %}
+<div class="layout">
+  <aside class="panel">
+    <h2>New investment movement</h2>
+    {{ invest_form | safe }}
+  </aside>
+  <section id="invest-movements" hx-get="/investments/movements" hx-trigger="investments-changed from:body">
+    {% include "_invest_movements.html" %}
+  </section>
 </div>
 {% endif %}
+</div>
 {% endblock %}

@@ -12,7 +12,7 @@ from jinja2 import pass_context
 
 from pledger.enums import MovementType
 from pledger.web.store import Snapshot
-from pledger.web.views import base_fields
+from pledger.web.views import base_fields, invest_fields
 
 HERE = Path(__file__).parent
 
@@ -91,6 +91,23 @@ def render_form(request: Request, snapshot: Snapshot, values: dict, **extra):
             "currency": request.app.state.store.settings.currency,
             "values": values,
             **base,
+            **extra,
+        },
+    )
+
+
+def render_invest_form(request: Request, snapshot: Snapshot, values: dict, **extra):
+    """The new movement form of the Investments tab, for the INVEST base movements."""
+    values.setdefault("move_date", dt.date.today().isoformat())
+    invest = invest_fields(snapshot, values.get("base_movement", ""))
+    values["base_movement"] = invest["base_movement"]
+    return templates.TemplateResponse(
+        request,
+        "_invest_form.html",
+        {
+            "currency": request.app.state.store.settings.currency,
+            "values": values,
+            **invest,
             **extra,
         },
     )

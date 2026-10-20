@@ -5,6 +5,8 @@ from __future__ import annotations
 import datetime as dt
 import math
 
+from pandas import DataFrame
+
 from pledger.enums import (
     AccountType,
     CreditorKind,
@@ -12,7 +14,9 @@ from pledger.enums import (
     LedgerSide,
     MovementType,
 )
+from pledger.ledger import Ledger
 from pledger.models import (
+    INVESTMENT,
     SPECIAL_LABELS,
     CreditCardAccount,
     DebtAccount,
@@ -23,8 +27,13 @@ from pledger.models import (
 )
 from pledger.web.store import (
     INITIAL_GAIN,
+    INVESTMENT_COLUMN,
+    QUANTITY_COLUMN,
+    QUANTITY_OPTIONAL,
+    QUANTITY_REQUIRED,
     Snapshot,
     Work,
+    is_capital,
     row_fingerprint,
     work_fingerprint,
 )
@@ -35,6 +44,29 @@ ACCOUNT_TYPE_ORDER = list(AccountType)
 def months_of(snapshot: Snapshot) -> list[str]:
     """Months with movements, newest first."""
     return sorted({d[:7] for d in snapshot.all_rows.move_date}, reverse=True)
+
+
+def movement_rows(snapshot: Snapshot, rows: DataFrame, ledger: Ledger) -> list[dict]:
+    """The movements of a ledger built from these rows, newest first."""
+    invest = snapshot.invest_base_movements()
+    movements = [
+        {
+            "index": int(ix),
+            "fingerprint": row_fingerprint(row),
+            "date": move.move_date,
+            "base": move.move_base.name,
+            "type": move.move_type.value,
+            "debit": move.acc_debit.name,
+            "credit": move.acc_credit.name,
+            "amount": move.amount,
+            "comment": row.get("comment", ""),
+            "internal": move.move_base.internal,
+            "invest": move.move_base.name in invest,  # added and deleted from the Investments tab
+        }
+        for (ix, row), move in zip(rows.iterrows(), ledger.movements)
+    ]
+    movements.reverse()
+    return movements
 
 
 def build_view(snapshot: Snapshot, month: str = "", account: str = "", initial: bool = False) -> dict:
@@ -48,30 +80,13 @@ def build_view(snapshot: Snapshot, month: str = "", account: str = "", initial: 
     filtered = rows[mask]
     ledger = snapshot.ledger(filtered)
 
-    movements = [
-        {
-            "index": int(ix),
-            "fingerprint": row_fingerprint(row),
-            "date": move.move_date,
-            "base": move.move_base.name,
-            "type": move.move_type.value,
-            "debit": move.acc_debit.name,
-            "credit": move.acc_credit.name,
-            "amount": move.amount,
-            "comment": row.get("comment", ""),
-            "internal": move.move_base.internal,
-        }
-        for (ix, row), move in zip(filtered.iterrows(), ledger.movements)
-    ]
-    movements.reverse()  # newest first
-
     return {
         "months": months_of(snapshot),
         "month": month,
         "account": account,
         "initial": initial,
         "accounts": list(snapshot.accounts),
-        "movements": movements,
+        "movements": movement_rows(snapshot, filtered, ledger),
         "gains": ledger.total_gains,
         "losses": ledger.total_losses,
         "profit": ledger.total_profits,
@@ -146,16 +161,67 @@ INVESTMENT_TYPE_LABELS = {
 }
 
 
+NO_TYPE = "No type"  # label of the investments only in the ledger, not in the investments YAML
+
+
+def is_closed(holding: dict) -> bool:
+    """An investment no longer held (or never held): no quantity and no amount."""
+    return holding["total_quantity"] == 0 and rounds_to_zero(holding["total_amount"])
+
+
 def build_investments(snapshot: Snapshot) -> dict:
-    """Investments held in each investment account, grouped by type and by account."""
-    accounts = [a for a in snapshot.accounts.values() if isinstance(a, InvestmentAccount)]
+    """
+    Investments held in each investment account, after the ledger movements, grouped
+    by type and by account, with their results: the net capital gains (capital
+    gains minus losses, whatever was bought or sold since), the totals of the other
+    results (dividends, broker fees...) by base movement and their net total. The
+    closed ones (see is_closed) are listed apart, and the ones with no type and the
+    results naming an unknown investment are flagged.
+    """
+    unattributed: list[dict] = []
+    accounts = snapshot.investment_accounts(unattributed)
+    bases = snapshot.invest_base_movements()
+    sign = {n: -1 if b.move_type == MovementType.LOSS else 1 for n, b in bases.items()}
+    capital = {n for n, b in bases.items() if is_capital(b)}
+    # The other base movements with results, in their defined order, and whether they are losses.
+    result_bases = {
+        n: b.move_type == MovementType.LOSS
+        for n, b in bases.items()
+        if n not in capital and any(n in r for a in accounts for r in a.results.values())
+    }
+
+    def results_of(a: InvestmentAccount, name: str) -> dict:
+        results = a.results.get(name, {})
+        return {
+            "capital": sum(sign[n] * v for n, v in results.items() if n in capital),
+            "results": {n: v for n, v in results.items() if n not in capital},
+            "total": sum(sign[n] * v for n, v in results.items()),
+        }
+
+    closed = sorted(
+        (
+            {
+                "name": name,
+                "account": a.name,
+                "type": INVESTMENT_TYPE_LABELS.get(h["investment"].type, NO_TYPE),
+                **results_of(a, name),
+            }
+            for a in accounts for name, h in a.investments.items() if is_closed(h)
+        ),
+        key=lambda c: (c["name"], c["account"]),
+    )
+    for a in accounts:
+        a.investments = {n: h for n, h in a.investments.items() if not is_closed(h)}
     holdings = [
         {
             "account": a.name,
             "name": name,
-            "type": INVESTMENT_TYPE_LABELS[h["investment"].type],
+            "type": INVESTMENT_TYPE_LABELS.get(h["investment"].type, NO_TYPE),
             "amount": h["total_amount"],
             "quantity": h["total_quantity"],
+            # Amount per unit; none without a quantity.
+            "price": h["total_amount"] / h["total_quantity"] if h["total_quantity"] else None,
+            **results_of(a, name),
         }
         for a in accounts
         for name, h in a.investments.items()
@@ -168,7 +234,7 @@ def build_investments(snapshot: Snapshot) -> dict:
     # investments. Investment names are only unique within an account.
     by_type = {
         t: {f"{h['name']} ({h['account']})": h["amount"] for h in holdings if h["type"] == t}
-        for t in INVESTMENT_TYPE_LABELS.values()
+        for t in [*INVESTMENT_TYPE_LABELS.values(), NO_TYPE]
         if any(h["type"] == t for h in holdings)
     }
     by_account = {
@@ -188,6 +254,18 @@ def build_investments(snapshot: Snapshot) -> dict:
             for a in accounts
         ],
         "holdings": holdings,
+        "closed": closed,
+        "result_bases": result_bases,
+        "has_capital": bool(capital),
+        "has_results": bool(capital or result_bases),
+        # Of the held and closed investments
+        "result_totals": {
+            "capital": sum(i["capital"] for i in [*holdings, *closed]),
+            **{n: sum(i["results"].get(n, 0.0) for i in [*holdings, *closed]) for n in result_bases},
+            "total": sum(i["total"] for i in [*holdings, *closed]),
+        },
+        "unattributed": unattributed,
+        "untyped": [h for h in holdings if h["type"] == NO_TYPE],
         "total": total,
         "groupings": {
             "type": grouped_composition(by_type),
@@ -243,6 +321,50 @@ def owed_ratio_chart(snapshot: Snapshot, cards: list[str], month: str = "") -> d
         lambda b, _total: sum(b.get(name, 0.0) for name in cards),
     )
     return {"owed_ratio": line_chart(owed, percent), "owed_series": owed}
+
+
+def build_invest_movements(snapshot: Snapshot) -> list[dict]:
+    """The movements of the investment base movements, newest first, with their investment and quantity."""
+    rows = snapshot.rows[snapshot.rows.base_movement.isin(snapshot.invest_base_movements())]
+    movements = movement_rows(snapshot, rows, snapshot.ledger(rows))
+    for m in movements:
+        row = rows.loc[m["index"]]
+        m["investment"] = row.get(INVESTMENT_COLUMN, "")
+        m["quantity"] = row.get(QUANTITY_COLUMN, "")
+    return movements
+
+
+def invest_fields(snapshot: Snapshot, base_movement: str = "") -> dict:
+    """
+    The investment base movements to pick from, by movement type, and the fields
+    of the selected one (the first one by default): its accounts, whether it names
+    an investment ("required" with an INVESTMENT side, else "optional") and has a
+    quantity ("required", "optional" or None), plus the known investments and the
+    investment types, for a new investment.
+    """
+    bases = snapshot.invest_base_movements()
+    by_type = {
+        t.value: [n for n in bases if bases[n].move_type == t]
+        for t in MovementType
+        if any(b.move_type == t for b in bases.values())
+    }
+    if base_movement not in bases:
+        base_movement = next(iter(bases), "")
+    base = bases.get(base_movement)
+    side = base is not None and INVESTMENT in {base.debit_special, base.credit_special}
+    return {
+        "bases_by_type": by_type,
+        "base_movement": base_movement,
+        "fields": account_fields(snapshot, base_movement),
+        "investment": "required" if side else "optional",
+        "quantity": (
+            "required" if base_movement in QUANTITY_REQUIRED
+            else "optional" if base_movement in QUANTITY_OPTIONAL
+            else None
+        ),
+        "investment_names": sorted({n for a in snapshot.investment_accounts() for n in a.investments}),
+        "investment_types": INVESTMENT_TYPE_LABELS if side else {},
+    }
 
 
 CREDITOR_KIND_LABELS = {

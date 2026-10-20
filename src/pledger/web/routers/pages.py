@@ -11,6 +11,7 @@ from pledger.web.templating import (
     remember_month,
     remembered_month,
     render_form,
+    render_invest_form,
     templates,
 )
 from pledger.web.views import (
@@ -18,6 +19,7 @@ from pledger.web.views import (
     build_charts,
     build_credit_cards,
     build_debts,
+    build_invest_movements,
     build_investments,
     build_view,
     build_work,
@@ -55,10 +57,17 @@ def accounts(request: Request, store: StoreDep, month: str | None = None):
 
 @router.get("/investments")
 def investments(request: Request, store: StoreDep):
-    context = build_investments(store.load())
-    return templates.TemplateResponse(
-        request, "investments.html", {**context, "settings": store.settings}
-    )
+    snapshot = store.load()
+    context = {
+        **build_investments(snapshot),
+        "settings": store.settings,
+        "movements": build_invest_movements(snapshot),
+        "invest_form": (
+            render_invest_form(request, snapshot, {}).body.decode()
+            if snapshot.invest_base_movements() else None
+        ),
+    }
+    return templates.TemplateResponse(request, "investments.html", context)
 
 
 @router.get("/debt")

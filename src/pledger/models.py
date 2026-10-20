@@ -355,10 +355,13 @@ class InvestmentAccount(Account):
     """
     Asset account that holds investments: a dict of investment name to its
     `investment` (Investment), `total_amount` ($) and `total_quantity` (float).
-    A `total_quantity` never drops below 0.0.
+    A `total_quantity` never drops below 0.0. Its `results` are the totals of
+    other movements about an investment, such as its dividends or broker fees:
+    investment name to base movement name to total ($).
     """
 
     investments: dict[str, dict] = field(default_factory=dict)
+    results: dict[str, dict[str, float]] = field(default_factory=dict)
 
     def __post_init__(self):
         super().__post_init__()
@@ -380,6 +383,10 @@ class InvestmentAccount(Account):
         holding = self.investments.get(investment.name)
         if holding is None:
             holding = {"investment": investment, "total_amount": 0.0, "total_quantity": 0.0}
+        elif investment.type is None:
+            pass  # the type it already has
+        elif holding["investment"].type is None:
+            holding["investment"] = investment
         elif holding["investment"].type != investment.type:
             raise ValueError(
                 f"Investment {investment.name!r} in the account '{self.name}' is a "
@@ -391,6 +398,13 @@ class InvestmentAccount(Account):
         holding["total_amount"] += amount
         holding["total_quantity"] = new_quantity
         self.investments[investment.name] = holding
+
+    def add_result(self, name: str, base_movement: str, amount: float) -> None:
+        """Adds an amount to the total of a base movement for one of its investments."""
+        if name not in self.investments:
+            raise ValueError(f"Investment {name!r} is not in the account '{self.name}'")
+        totals = self.results.setdefault(name, {})
+        totals[base_movement] = totals.get(base_movement, 0.0) + amount
 
     @staticmethod
     def investments_from_dict(acc_name: str, data: dict) -> dict[str, dict]:

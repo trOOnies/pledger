@@ -13,9 +13,10 @@ make lint
 
 A FastAPI + HTMX UI. The Ledger page lists, adds and deletes movements; Accounts shows
 balances and adds accounts; Investments lists the investments of the investment accounts
-and their composition by type or by account; Debt lists who we owe and who owes us in the
-debt accounts; Credit Cards lists what we owe on each credit card and what was charged and
-paid in the month; Work lists the salary, company and job position of each month; Setup adds result types and base movements. The Charts page
+(with their price, the amount over the quantity) and their composition by type or by account,
+and adds and deletes the movements of the internal `Invest` base movements; Debt lists who we
+owe and who owes us in the debt accounts; Credit Cards lists what we owe on each credit card
+and what was charged and paid in the month; Work lists the salary, company and job position of each month; Setup adds result types and base movements. The Charts page
 shows the composition of assets and liabilities, gains and losses by result type, a result
 statement, equity over time and, at each month end, debt (the liabilities) over equity, net
 liquidity (liquid assets minus liquid liabilities) over equity, and the share of each
@@ -48,6 +49,31 @@ each mapping its investments to their `type`, initial `amount` and initial `quan
 just to their type (with both at 0). The type is one of `public_bond`, `private_bond`,
 `mutual_fund`, `etf`, `forex`, `stock`, `derivative` and `fixed_term`. The account's
 initial amount is the sum of those amounts. A quantity can't go below 0.
+
+The investment movements (see the internal base movements below) then change the
+investments: the one named in the `additional_2` column of `ledger.csv`, in the investment
+account on either side, gets the amount and the quantity of the `additional` column
+(`Q = 1,234.50`) on a debit, and loses them on a credit. The investment is required when a
+side is `INVESTMENT`, and the quantity for `Investment - Bought`, `Investment - Sold`,
+`Stock split (More)` and `Stock split (Less)`; `Capital repayments` may have one, and no
+other base movement can. An investment only in the ledger has no type until it is added
+to `investment.yaml` (the Investments tab warns about them, and its form adds the type
+of a new investment there). The tab lists the investments held, with their price (amount
+over quantity), and the ones no longer held apart.
+
+A free side (neither fixed nor `INVESTMENT`) of an investment base movement can't be an
+investment account, in the form or in `ledger.csv`: what pays for an investment bought,
+gets the money of one sold, or gets its dividends or pays its fees is another account
+(e.g. `Fi`). So only the `INVESTMENT` sides change the investments.
+
+The gains and losses naming an investment, but stock splits, are totalled per investment
+and base movement, whatever their other account: in the investment account on a side, if
+any, else in the one with an investment of that name. The Investments tab shows for each
+investment, held or not, and overall: its net capital gains (the gains and losses with an
+`INVESTMENT` side, e.g. `Capital gains` minus `Capital losses`, which add up over time
+whatever is bought or sold), the total of each other one (`Dividends & Interest`,
+`Broker fees`...) and the total result (all of them, losses subtracted). It warns about
+the movements naming an investment of no investment account.
 
 Credit card accounts are the top-level keys of `credit_cards.yaml`, set like the accounts of
 `accounts.yaml` (a `description`, an `initial_amount` and the optional `currency` and
@@ -98,7 +124,11 @@ investment or debt account instead of a fixed one, and the New movement form onl
 those there; the Accounts tab marks these accounts in its Special column. The top-level `internal` key mirrors the rest of the file (result
 types, sharing their ids with the other ones, next to a `transfer` section); its base
 movements are reserved for pledger itself: they can't be picked for a new movement and
-their movements can't be deleted by hand, and its result types can't get new base movements. Balances and results don't use these yet.
+their movements can't be deleted by hand, and its result types can't get new base movements.
+The exception are the base movements of the internal `Invest` result type (capital gains and
+losses, interest, broker fees...) and the internal transfers with an `INVESTMENT` side (buying
+and selling investments...): their movements can't be added or deleted from the Ledger tab or
+`/api/movements`, but they can from the Investments tab and `/api/investments/movements`.
 The internal gain `Initial (G)` and loss `Initial (L)` are required (with no fixed debit or
 credit account, respectively): every account with a non-zero initial amount gets one such
 movement against equity, on its initial date. These movements are generated when the
