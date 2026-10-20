@@ -206,6 +206,7 @@ class Account:
         investments_path: str | None = None,
         creditors_path: str | None = None,
         companies: list[str] | None = None,
+        credit_cards_path: str | None = None,
     ) -> dict[str, Account]:
         """
         Load Accounts from YAML path. An account without a `currency` is in the
@@ -218,6 +219,9 @@ class Account:
         sum of the initial amounts of their investments or creditors. Every debt
         account has the `companies` (of the work history), with no initial debt
         unless its `companies` section sets one.
+
+        Credit card accounts are the ones in the credit cards YAML (if given), set
+        like the others but always liquid liabilities.
         """
         data = _load_yaml(path)
         investments_data = (_load_yaml(investments_path) if investments_path else None) or {}
@@ -272,10 +276,23 @@ class Account:
             except ValueError:
                 raise ValueError(f"Account {name!r} has an invalid initial date: {value!r}") from None
 
+        credit_cards_data = (_load_yaml(credit_cards_path) if credit_cards_path else None) or {}
+        special = sorted(set(credit_cards_data) & (set(investments_data) | set(creditors_data)))
+        if special:
+            raise ValueError(f"Credit card accounts cannot be investment or debt accounts: {special}")
+        for name, acc_d in credit_cards_data.items():
+            if acc_d.get("is_liquid", True) is not True:
+                raise ValueError(f"Credit card account {name!r} is always liquid: is_liquid must be true or missing")
+
         accounts = {}
-        for acc_type, at_accounts in data.items():
-            acc_type = AccountType(acc_type)
+        sections = [
+            *((AccountType(t), at_accounts, Account) for t, at_accounts in data.items()),
+            (AccountType.LIABILITY, credit_cards_data, CreditCardAccount),
+        ]
+        for acc_type, at_accounts, acc_cls in sections:
             for name, acc_d in at_accounts.items():
+                if name in accounts:
+                    raise ValueError(f"Duplicated account name: {name!r}")
                 if name in {INVESTMENT, DEBT}:
                     raise ValueError(f"{name!r} is reserved and cannot be an account name")
                 fields = {
@@ -284,7 +301,7 @@ class Account:
                     "acc_type": acc_type,
                     "currency": currency_of(name, acc_d),
                     "initial_amount": initial_amount_of(name, acc_type, acc_d),
-                    "is_liquid": is_liquid_of(name, acc_d),
+                    "is_liquid": is_liquid_of(name, acc_d) or acc_cls is CreditCardAccount,
                     "initial_date": initial_date_of(name, acc_d),
                 }
                 if name in investments_data:
@@ -298,7 +315,7 @@ class Account:
                     fields["initial_amount"] = sum(c.amount for c in creditors.values())
                     accounts[name] = DebtAccount(**fields, creditors=creditors)
                 else:
-                    accounts[name] = Account(**fields)
+                    accounts[name] = acc_cls(**fields)
 
         for what, special_data in (("investments", investments_data), ("creditors", creditors_data)):
             unknown = sorted(set(special_data) - set(accounts))
@@ -308,14 +325,29 @@ class Account:
 
 
 @dataclass
-class Investment:
-    """An investment (a bond, a stock, a fund...) held in an investment account."""
-
-    name: str
-    type: InvestmentType
+class CreditCardAccount(Account):
+    """Liability account of a credit card: what is owed on it. Always liquid."""
 
     def __post_init__(self):
-        self.type = InvestmentType(self.type)
+        super().__post_init__()
+        if self.acc_type != AccountType.LIABILITY:
+            raise ValueError(f"Credit card account {self.name!r} must be a liability account")
+        self.is_liquid = True
+
+
+@dataclass
+class Investment:
+    """
+    An investment (a bond, a stock, a fund...) held in an investment account. Its
+    type is None if unknown: only in the ledger, not in the investments YAML.
+    """
+
+    name: str
+    type: InvestmentType | None
+
+    def __post_init__(self):
+        if self.type is not None:
+            self.type = InvestmentType(self.type)
 
 
 @dataclass

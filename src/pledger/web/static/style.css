@@ -152,7 +152,7 @@ main { padding: 1rem 1.5rem 3rem; max-width: 1400px; width: 100%; margin: 0 auto
 .layout > aside { position: sticky; top: 1rem; }
 .layout.setup { grid-template-columns: 1fr 2fr; }
 .layout .column { display: grid; gap: 1rem; min-width: 0; }
-#view, .layout > .view, main > .view { display: grid; gap: 1rem; min-width: 0; }
+#view, .layout > .view, main > .view, #debt-view > .view, #credit-cards-view > .view { display: grid; gap: 1rem; min-width: 0; }
 
 .panel {
   background: var(--surface); border: 1px solid var(--border);
@@ -259,6 +259,8 @@ section.panel > .msg, .panel > .msg.warn { margin-bottom: .75rem; }
 .htmx-request #view, #view.htmx-request,
 .htmx-request #charts, #charts.htmx-request,
 .htmx-request #accounts-view, #accounts-view.htmx-request,
+.htmx-request #debt-view, #debt-view.htmx-request,
+.htmx-request #credit-cards-view, #credit-cards-view.htmx-request,
 .htmx-request #work, #work.htmx-request { opacity: .6; transition: opacity .2s; }
 
 /* Charts */

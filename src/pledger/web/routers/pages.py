@@ -16,6 +16,7 @@ from pledger.web.templating import (
 from pledger.web.views import (
     build_accounts,
     build_charts,
+    build_credit_cards,
     build_debts,
     build_investments,
     build_view,
@@ -66,6 +67,15 @@ def debt(request: Request, store: StoreDep, month: str | None = None):
     month = remembered_month(request, month, months_of(snapshot))
     context = {**build_debts(snapshot, month), "settings": store.settings}
     template = "_debt.html" if is_partial(request) else "debt.html"
+    return remember_month(templates.TemplateResponse(request, template, context), month)
+
+
+@router.get("/credit-cards")
+def credit_cards(request: Request, store: StoreDep, month: str | None = None):
+    snapshot = store.load()
+    month = remembered_month(request, month, months_of(snapshot))
+    context = {**build_credit_cards(snapshot, month), "settings": store.settings}
+    template = "_credit_cards.html" if is_partial(request) else "credit_cards.html"
     return remember_month(templates.TemplateResponse(request, template, context), month)
 
 

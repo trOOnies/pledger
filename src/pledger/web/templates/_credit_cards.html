@@ -1,0 +1,55 @@
+{% from "_bars.html" import bars with context %}
+{% from "_line.html" import ratio_panel with context %}
+<div class="view">
+  {% if negative %}
+  <details class="msg warn alert" role="alert">
+    <summary>⚠ {{ negative | length }} credit card{{ "s have" if negative | length > 1 else " has" }} a negative
+      balance{% if month %} at the end of {{ month }}{% endif %}: more was paid than charged.</summary>
+    <p class="small">It can happen (an overpayment or a refund), but it is rare: check that no movement has its
+      debit and credit swapped or the wrong account.</p>
+    <ul class="small">
+      {% for a in negative %}
+      <li><strong>{{ a.name }}</strong> <span class="muted">({{ a.description }})</span>: <span class="money">{{ a.balance | money }}</span></li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+  <div class="cards">
+    <div class="card" title="What we owe on the credit cards{% if month %} at the end of {{ month }}{% endif %}"><span class="label">Owed</span><span class="num money {{ 'gain' if owed < 0 }}">{{ owed | money }}</span></div>
+    <div class="card" title="Charged to the credit cards (credits){% if month %} in {{ month }}{% endif %}"><span class="label">Charged</span><span class="num money">{{ charged | money }}</span></div>
+    <div class="card" title="Paid off the credit cards (debits){% if month %} in {{ month }}{% endif %}"><span class="label">Paid</span><span class="num money">{{ paid | money }}</span></div>
+    <div class="card" title="Accounts listed in the credit cards file"><span class="label">Credit cards</span><span class="num">{{ accounts | length }}</span></div>
+  </div>
+
+  <section class="panel">
+    <h2>Owed <small>by credit card{% if month %}, as of end of {{ month }}{% endif %}</small></h2>
+    {{ bars("Credit cards", composition, "liability", "Nothing owed.") }}
+  </section>
+
+  {{ ratio_panel("owed-ratio", "Owed over equity", "Net owed on the credit cards", owed_ratio, owed_series,
+                 ("up to " ~ month) if month else "all time") }}
+
+  <div class="panel">
+    <h2>Credit cards</h2>
+    <table data-sortable="credit-cards">
+      <thead><tr><th>Account</th><th>Description</th><th>Currency</th><th class="num" title="Charged (credits){% if month %} in {{ month }}{% endif %}">Charged</th><th class="num" title="Paid (debits){% if month %} in {{ month }}{% endif %}">Paid</th><th class="num">Owed</th></tr></thead>
+      <tbody>
+      {% for a in accounts %}
+      <tr>
+        <td class="nowrap"><strong>{{ a.name }}</strong></td>
+        <td class="muted">{{ a.description }}</td>
+        <td>{{ a.currency }}</td>
+        <td class="num money" data-sort="{{ a.charged }}">{{ a.charged | money }}</td>
+        <td class="num money" data-sort="{{ a.paid }}">{{ a.paid | money }}</td>
+        {% if a in negative %}<td class="num money hint warn" data-sort="{{ a.balance }}" title="A negative balance is rare: it could be an error">⚠ {{ a.balance | money }}</td>{% else %}<td class="num money" data-sort="{{ a.balance }}">{{ a.balance | money }}</td>{% endif %}
+      </tr>
+      {% endfor %}
+      </tbody>
+      {% if accounts | length > 1 %}
+      <tfoot><tr><th colspan="3">Total</th><th class="num money">{{ charged | money }}</th><th class="num money">{{ paid | money }}</th><th class="num money {{ 'gain' if owed < 0 }}">{{ owed | money }}</th></tr></tfoot>
+      {% endif %}
+    </table>
+  </div>
+  <p class="muted small">Credit cards are liquid liabilities: charging them is a credit, paying them a debit.
+    Charged and paid leave out the initial amounts.</p>
+</div>

@@ -14,13 +14,14 @@ make lint
 A FastAPI + HTMX UI. The Ledger page lists, adds and deletes movements; Accounts shows
 balances and adds accounts; Investments lists the investments of the investment accounts
 and their composition by type or by account; Debt lists who we owe and who owes us in the
-debt accounts; Work lists the salary, company and job position of each month; Setup adds result types and base movements. The Charts page
+debt accounts; Credit Cards lists what we owe on each credit card and what was charged and
+paid in the month; Work lists the salary, company and job position of each month; Setup adds result types and base movements. The Charts page
 shows the composition of assets and liabilities, gains and losses by result type, a result
 statement, equity over time and, at each month end, debt (the liabilities) over equity, net
 liquidity (liquid assets minus liquid liabilities) over equity, and the share of each
 currency in the assets. The Work tab charts the gross and net salary of each month (0 for
 the months without a job), each in its own color. The Help page explains the concepts for everyday users.
-The month filter is shared by Ledger, Accounts, Debt and Charts (remembered in a cookie).
+The month filter is shared by Ledger, Accounts, Debt, Credit Cards and Charts (remembered in a cookie).
 
 ```sh
 make serve     # http://127.0.0.1:8000 (API docs at /docs)
@@ -28,10 +29,10 @@ make serve     # http://127.0.0.1:8000 (API docs at /docs)
 
 It reads `info/accounts.yaml`, `info/result_types.yaml`, `info/ledger.csv`,
 `info/currencies.yaml` (with each other currency's rates in `info/currencies/<NAME>.csv`)
-and, if present, `info/investment.yaml`, `info/creditors.yaml` and `info/work.csv` from the
-current directory. Override with `PLEDGER_ACCOUNTS`, `PLEDGER_BASE_MOVEMENTS`,
-`PLEDGER_LEDGER`, `PLEDGER_CURRENCIES`, `PLEDGER_INVESTMENTS`, `PLEDGER_CREDITORS` and
-`PLEDGER_WORK`. The CSV stays the source of truth: adding a movement appends one line,
+and, if present, `info/investment.yaml`, `info/creditors.yaml`, `info/credit_cards.yaml` and
+`info/work.csv` from the current directory. Override with `PLEDGER_ACCOUNTS`,
+`PLEDGER_BASE_MOVEMENTS`, `PLEDGER_LEDGER`, `PLEDGER_CURRENCIES`, `PLEDGER_INVESTMENTS`,
+`PLEDGER_CREDITORS`, `PLEDGER_CREDIT_CARDS` and `PLEDGER_WORK`. The CSV stays the source of truth: adding a movement appends one line,
 deleting removes one line, and the rest of the file is left byte-for-byte as it was.
 New accounts and base movements are inserted at the end of their section in the YAML files
 (gains and losses under their result type, transfers under `transfer`),
@@ -47,6 +48,19 @@ each mapping its investments to their `type`, initial `amount` and initial `quan
 just to their type (with both at 0). The type is one of `public_bond`, `private_bond`,
 `mutual_fund`, `etf`, `forex`, `stock`, `derivative` and `fixed_term`. The account's
 initial amount is the sum of those amounts. A quantity can't go below 0.
+
+Credit card accounts are the top-level keys of `credit_cards.yaml`, set like the accounts of
+`accounts.yaml` (a `description`, an `initial_amount` and the optional `currency` and
+`initial_date`), but not listed there: they are always liquid liabilities, and can't be
+investment or debt accounts. The Credit Cards tab warns about the cards with a negative
+balance (more paid than charged): rare, so it may be an error. It also charts the net
+owed on them over equity at each month end.
+
+```yaml
+Vi:
+  description: Visa Credit Card from Santander
+  initial_amount: 57236.80
+```
 
 Debt accounts are the liability accounts listed as top-level keys in `creditors.yaml`, each
 with up to three sections, `people`, `services` and `companies`, mapping who we have debts

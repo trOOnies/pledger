@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Credit Cards · pledger{% endblock %}
+{% block content %}
+{% if not accounts %}
+<div class="panel">
+  <h2>Credit Cards</h2>
+  <p class="muted">No credit card accounts yet. List them in
+    <code>{{ settings.credit_cards_path or "credit_cards.yaml" }}</code>, each with its description and
+    initial amount (what you owe on it).</p>
+</div>
+{% else %}
+<form id="filters" class="filters" hx-get="/credit-cards" hx-target="#credit-cards-view" hx-push-url="true" hx-trigger="change">
+  <label>Month
+    <select name="month">
+      <option value="">All time</option>
+      {% for m in months %}<option value="{{ m }}" {% if m == month %}selected{% endif %}>{{ m }}</option>{% endfor %}
+    </select>
+  </label>
+</form>
+
+<div id="credit-cards-view">{% include "_credit_cards.html" %}</div>
+{% endif %}
+{% endblock %}

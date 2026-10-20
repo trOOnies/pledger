@@ -14,6 +14,7 @@ from pledger.enums import (
 )
 from pledger.models import (
     SPECIAL_LABELS,
+    CreditCardAccount,
     DebtAccount,
     InvestmentAccount,
     next_month,
@@ -105,7 +106,7 @@ def build_accounts(snapshot: Snapshot, month: str = "", values: dict | None = No
                 "description": a.description,
                 "currency": a.currency.name,
                 "is_liquid": a.is_liquid,
-                "special": SPECIAL_LABELS.get(special_of(a), "-"),
+                "special": "Credit card" if isinstance(a, CreditCardAccount) else SPECIAL_LABELS.get(special_of(a), "-"),
                 "balance": balances.get(a.name, 0.0),
             }
             for a in snapshot.accounts.values()
@@ -193,6 +194,55 @@ def build_investments(snapshot: Snapshot) -> dict:
             "account": grouped_composition(by_account),
         },
     }
+
+
+def build_credit_cards(snapshot: Snapshot, month: str = "") -> dict:
+    """
+    The balance of each credit card account (what we owe on it) as of the end of
+    `month` (all the ledger by default), and what was charged to it (credits) and
+    paid (debits) in that month, leaving out the initial movements. Lists the
+    cards with a negative balance (we are owed): rare, so possibly an error. Charts
+    the net owed on them over equity at each month end, up to `month`.
+    """
+    cards = [a for a in snapshot.accounts.values() if isinstance(a, CreditCardAccount)]
+    rows = snapshot.all_rows
+    balances = snapshot.ledger(rows[rows.move_date.str[:7] <= month] if month else rows).balances()
+    in_month = rows[~rows.base_movement.isin(snapshot.initial_base_names)]
+    if month:
+        in_month = in_month[in_month.move_date.str.startswith(month)]
+    moves = snapshot.ledger(in_month).movements
+
+    accounts = [
+        {
+            "name": a.name,
+            "description": a.description,
+            "currency": a.currency.name,
+            "charged": sum(m.amount for m in moves if m.acc_credit is a),
+            "paid": sum(m.amount for m in moves if m.acc_debit is a),
+            "balance": balances.get(a.name, 0.0),
+        }
+        for a in cards
+    ]
+    return {
+        "accounts": accounts,
+        "months": months_of(snapshot),
+        "month": month,
+        "owed": sum(a["balance"] for a in accounts),
+        "charged": sum(a["charged"] for a in accounts),
+        "paid": sum(a["paid"] for a in accounts),
+        "composition": composition({a["name"]: a["balance"] for a in accounts}, ordered=True),
+        "negative": [a for a in accounts if a["balance"] < 0 and not rounds_to_zero(a["balance"])],
+        **owed_ratio_chart(snapshot, [a.name for a in cards], month),
+    }
+
+
+def owed_ratio_chart(snapshot: Snapshot, cards: list[str], month: str = "") -> dict:
+    """The net owed on the credit cards over equity at each month end, up to `month`."""
+    owed = ratio_series(
+        snapshot, month_end_balances(snapshot, month),
+        lambda b, _total: sum(b.get(name, 0.0) for name in cards),
+    )
+    return {"owed_ratio": line_chart(owed, percent), "owed_series": owed}
 
 
 CREDITOR_KIND_LABELS = {

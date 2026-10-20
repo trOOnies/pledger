@@ -11,7 +11,7 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from pledger.models import DEBT, INVESTMENT
+from pledger.models import DEBT, INVESTMENT, CreditCardAccount
 from pledger.web.app import create_app
 from pledger.web.store import (
     LedgerDataError,
@@ -22,7 +22,13 @@ from pledger.web.store import (
     work_fingerprint,
 )
 from pledger.web.templating import money, quantity
-from pledger.web.views import build_charts, composition, equity_series, nice_ticks
+from pledger.web.views import (
+    build_charts,
+    build_credit_cards,
+    composition,
+    equity_series,
+    nice_ticks,
+)
 
 HTMX = {"HX-Request": "true"}
 
@@ -1508,3 +1514,105 @@ class TestDebtKinds:
         assert '<span class="bar-name">Services</span>' in we_owe and '<span class="bar-name">Gas</span>' in we_owe
         owed = r.text.split("Owed to us <span")[1].split("<h2>People")[0]
         assert '<span class="bar-name">Companies</span>' in owed and "People</span>" not in owed
+
+
+CREDIT_CARDS_YAML = """\
+Vi:
+  long_name: Visa (L)
+  description: Visa card
+  initial_amount: 100
+MM:
+  description: Mastercard
+  initial_amount: 0
+"""
+
+
+class TestCreditCards:
+    @pytest.fixture
+    def settings(self, settings, tmp_path):
+        path = tmp_path / "credit_cards.yaml"
+        path.write_text(CREDIT_CARDS_YAML, encoding="utf-8")
+        with settings.ledger_path.open("a", encoding="utf-8") as f:
+            f.write("2026-01-05;Food;Eq;30;Vi;\n2026-02-05;Move;Vi;50;Bk;\n2026-02-06;Food;Eq;20;MM;\n")
+        return replace(settings, credit_cards_path=path)
+
+    @pytest.fixture
+    def client(self, settings):
+        return TestClient(create_app(settings))
+
+    def test_are_liquid_liabilities(self, settings):
+        accounts = LedgerStore(settings).load().accounts
+        vi = accounts["Vi"]
+        assert isinstance(vi, CreditCardAccount) and vi.acc_type.value == "liability" and vi.is_liquid
+        assert vi.initial_amount == 100 and list(accounts)[-2:] == ["Vi", "MM"]
+        assert LedgerStore(settings).load().ledger().balances()["Vi"] == 80
+
+    @pytest.mark.parametrize(
+        ("old", "new", "message"),
+        [
+            ("  initial_amount: 0\n", "  initial_amount: 0\n  is_liquid: false\n", "always liquid"),
+            ("MM:\n", "Ca:\n", "Duplicated account name: 'Ca'"),
+            ("  initial_amount: 0\n", "", "'MM' must have an initial_amount"),
+        ],
+    )
+    def test_invalid(self, settings, old, new, message):
+        settings.credit_cards_path.write_text(CREDIT_CARDS_YAML.replace(old, new), encoding="utf-8")
+        with pytest.raises(LedgerDataError, match=message):
+            LedgerStore(settings).load()
+
+    def test_cannot_be_debt_accounts(self, settings, tmp_path):
+        creditors = tmp_path / "creditors.yaml"
+        creditors.write_text("Vi:\n  people:\n    Dad: 1\n", encoding="utf-8")
+        with pytest.raises(LedgerDataError, match="cannot be investment or debt accounts"):
+            LedgerStore(replace(settings, creditors_path=creditors)).load()
+
+    def test_credit_cards_tab(self, client):
+        r = client.get("/credit-cards", params={"month": ""})
+        assert r.status_code == 200
+        assert 'href="/credit-cards" aria-current="page"' in r.text
+        assert card_labels(r.text) == ["Owed", "Charged", "Paid", "Credit cards"]
+        cards = r.text.split('<div class="cards">')[1].split("</div>\n  </div>")[0]
+        # Owed 80 + 20; charged 30 + 20 and paid 50, without the initial 100
+        assert "$100.00" in cards and "$50.00" in cards
+        assert '<span class="bar-name">Vi</span>' in r.text
+        assert "<strong>Vi</strong></td>\n        <td class=\"muted\">Visa card</td>" in r.text
+        # The Accounts tab marks them
+        assert ">Credit card</td>" in client.get("/accounts").text
+
+    def test_month_filter(self, client):
+        r = client.get("/credit-cards", params={"month": "2026-01"})
+        assert '<option value="2026-01" selected>' in r.text and "as of end of 2026-01" in r.text
+        cards = r.text.split('<div class="cards">')[1].split("</div>\n  </div>")[0]
+        assert "$130.00" in cards and "$30.00" in cards and "$0.00" in cards
+        r = client.get("/credit-cards", params={"month": "2026-02"}, headers=HTMX)
+        assert "<html" not in r.text and 'data-sort="20.0">$20.00</td>' in r.text
+
+    def test_owed_over_equity_chart(self, settings, client):
+        series = build_credit_cards(LedgerStore(settings).load())["owed_series"]
+        # Vi starts at 100 on the first ledger date; equity counts every account
+        assert [(p["month"], p["amount"]) for p in series] == [("2025-12", 0.0), ("2026-01", 130.0), ("2026-02", 100.0)]
+        last = series[-1]
+        assert last["value"] == pytest.approx(100 / last["equity"])
+        r = client.get("/credit-cards", params={"month": "2026-01"})
+        assert "Owed over equity <small>up to 2026-01, at each month end</small>" in r.text
+        assert 'data-sortable="owed-ratio"' in r.text and "2026-02</td>" not in r.text.split("Owed over equity")[1]
+        # The Charts tab still has its own ratio panels
+        charts = client.get("/charts", params={"month": ""}).text
+        assert "Debt over equity <small>" in charts and "Net liquidity over equity <small>" in charts
+
+    def test_negative_balance_warning(self, settings, client):
+        assert 'class="msg warn alert"' not in client.get("/credit-cards", params={"month": ""}).text
+        with settings.ledger_path.open("a", encoding="utf-8") as f:
+            f.write("2026-02-07;Move;MM;25.5;Bk;\n")
+        r = client.get("/credit-cards", params={"month": ""})
+        alert = r.text.split('class="msg warn alert"')[1].split("</details>")[0]
+        assert "1 credit card has a negative" in alert
+        assert "<strong>MM</strong>" in alert and "-$5.50" in alert and "Vi" not in alert
+        assert "⚠ -$5.50</td>" in r.text
+        # Not before it went negative
+        assert 'class="msg warn alert"' not in client.get("/credit-cards", params={"month": "2026-01"}).text
+
+    def test_without_credit_cards(self, settings):
+        settings.ledger_path.write_text("".join(settings.ledger_path.read_text().splitlines(True)[:-3]))
+        r = TestClient(create_app(replace(settings, credit_cards_path=None))).get("/credit-cards")
+        assert "No credit card accounts yet" in r.text

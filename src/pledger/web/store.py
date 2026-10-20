@@ -59,6 +59,7 @@ class Settings:
     investments_path: Path | None = None  # None or missing: no investment accounts
     creditors_path: Path | None = None  # None or missing: no debt accounts
     work_path: Path | None = None  # missing: no work history yet (created when adding a month)
+    credit_cards_path: Path | None = None  # None or missing: no credit card accounts
     currency: str = "$"
 
     @classmethod
@@ -74,6 +75,7 @@ class Settings:
             investments_path=Path(os.environ.get("PLEDGER_INVESTMENTS", "info/investment.yaml")),
             creditors_path=Path(os.environ.get("PLEDGER_CREDITORS", "info/creditors.yaml")),
             work_path=Path(os.environ.get("PLEDGER_WORK", "info/work.csv")),
+            credit_cards_path=Path(os.environ.get("PLEDGER_CREDIT_CARDS", "info/credit_cards.yaml")),
             currency=os.environ.get("PLEDGER_CURRENCY", "$"),
         )
 
@@ -195,7 +197,7 @@ class LedgerStore:
             accounts = Account.load_yaml(
                 str(s.accounts_path), base_currency, other_currencies,
                 _existing(s.investments_path), _existing(s.creditors_path),
-                list(self.load_work().companies),
+                list(self.load_work().companies), _existing(s.credit_cards_path),
             )
             base_movements, result_types = MovementBase.load_yaml(
                 str(s.base_movements_path), accounts

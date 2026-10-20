@@ -1,5 +1,5 @@
 {% from "_bars.html" import bars with context %}
-{% from "_line.html" import line_chart, stacked_chart with context %}
+{% from "_line.html" import line_chart, stacked_chart, ratio_panel with context %}
 <div class="charts-grid">
   <section class="panel grouped-bars">
     <div class="panel-head">
@@ -104,45 +104,7 @@
     ("debt-ratio", "Debt over equity", "Liabilities", debt_ratio, debt_series),
     ("liquidity-ratio", "Net liquidity over equity", "Liquid assets minus liquid liabilities", liquidity_ratio, liquidity_series),
   ) %}
-  <section class="panel">
-    <h2>{{ title }} <small>{{ upto }}, at each month end</small></h2>
-    {% if chart %}
-    <p class="equity-headline">
-      <span class="num-lg">{{ "%.1f" | format(100 * chart.last.value) }}%</span>
-      <span class="muted">in {{ chart.last.month }}</span>
-    </p>
-    {% set ns = namespace(points=[]) %}
-    {% for p in chart.points %}
-      {% set ns.points = ns.points + [{
-        "x": p.x, "y": p.y, "label": p.month,
-        "value_text": "%.1f%%" | format(100 * p.value),
-        "change_text": (p.amount | money) ~ " / " ~ (p.equity | money),
-      }] %}
-    {% endfor %}
-    {{ line_chart(chart, ns.points, title ~ " from " ~ series[0].month ~ " to " ~ chart.last.month ~ ", ending at " ~ ("%.1f" | format(100 * chart.last.value)) ~ "%", money=False) }}
-    <p class="muted small">{{ what }} over equity (assets minus liabilities); months without positive equity are left out.</p>
-    <details class="chart-table">
-      <summary>Show table</summary>
-      <div class="table-wrap">
-        <table data-sortable="{{ key }}">
-          <thead><tr><th>Month</th><th class="num">{{ what }}</th><th class="num">Equity</th><th class="num">Ratio</th></tr></thead>
-          <tbody>
-          {% for p in series | reverse %}
-          <tr>
-            <td class="nowrap">{{ p.month }}</td>
-            <td class="num money" data-sort="{{ p.amount }}">{{ p.amount | money }}</td>
-            <td class="num money" data-sort="{{ p.equity }}">{{ p.equity | money }}</td>
-            <td class="num" data-sort="{{ p.value if p.value is not none else '' }}">{{ ("%.1f%%" | format(100 * p.value)) if p.value is not none else "-" }}</td>
-          </tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </details>
-    {% else %}
-    <p class="muted">No month with positive equity in this period.</p>
-    {% endif %}
-  </section>
+  {{ ratio_panel(key, title, what, chart, series, upto) }}
   {% endfor %}
 </div>
 
