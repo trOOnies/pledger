@@ -46,6 +46,10 @@ INITIAL_LOSS = "Initial (L)"
 # internal transfers with an INVESTMENT side, are added and deleted from the
 # Investments tab instead of the Ledger tab.
 INVEST = "Invest"
+# Investment base movements of the interest earned or paid on the money of a
+# regular account, with no investment involved.
+INTEREST_GAIN = "Interest on Money (G)"
+INTEREST_LOSS = "Interest on Money (L)"
 
 # Columns of the ledger CSV with the details of the movements of the investment
 # base movements: the investment (its name in the investment account) and its

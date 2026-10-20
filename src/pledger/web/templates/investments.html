@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_bars.html" import bars with context %}
-{% from "_line.html" import line_chart with context %}
+{% from "_line.html" import column_chart, line_chart with context %}
 {% block title %}Investments · pledger{% endblock %}
 {# The results of an investment: net capital gains, the other results by base movement and their total. #}
 {% macro signed(value) %}<td class="num money {{ 'gain' if value > 0 else 'loss' if value < 0 }}" data-sort="{{ value }}">{{ value | money }}</td>{% endmacro %}
@@ -48,15 +48,17 @@
   {% endif %}
   <div class="cards">
     <div class="card" title="Sum of the amounts of all investments"><span class="label">Invested</span><span class="num money {{ 'loss' if total < 0 }}">{{ total | money }}</span></div>
-    <div class="card" title="Number of investments held across all investment accounts"><span class="label">Current holdings</span><span class="num">{{ holdings | length }}</span></div>
+    {% if has_interest %}
+    <div class="card" title="Interest earned minus interest paid on the money of regular accounts, with no investment involved"><span class="label">Net interest on money</span><span class="num money {{ 'gain' if result_totals.interest > 0 else 'loss' if result_totals.interest < 0 }}">{{ result_totals.interest | money }}</span></div>
+    {% endif %}
     {% if has_capital %}
     <div class="card" title="Capital gains minus capital losses of the investments, held or not"><span class="label">Net capital gains</span><span class="num money {{ 'gain' if result_totals.capital > 0 else 'loss' if result_totals.capital < 0 }}">{{ result_totals.capital | money }}</span></div>
     {% endif %}
     {% for base, is_loss in result_bases.items() %}
     <div class="card" title="Total of the {{ base }} movements of the investments, held or not"><span class="label">{{ base }}</span><span class="num money {{ 'loss' if is_loss else 'gain' }}">{{ result_totals[base] | money }}</span></div>
     {% endfor %}
-    {% if has_results %}
-    <div class="card" title="Net capital gains, plus the gains and minus the losses above, of the investments, held or not"><span class="label">Total result</span><span class="num money {{ 'gain' if result_totals.total > 0 else 'loss' if result_totals.total < 0 }}">{{ result_totals.total | money }}</span></div>
+    {% if has_results or has_interest %}
+    <div class="card" title="Net capital gains, plus the gains and minus the losses above, of the investments, held or not, plus the net interest on money"><span class="label">Total result</span><span class="num money {{ 'gain' if result_totals.total > 0 else 'loss' if result_totals.total < 0 }}">{{ result_totals.total | money }}</span></div>
     {% endif %}
   </div>
 
@@ -64,7 +66,7 @@
   <div class="charts-grid">
     {% for key, title, what, chart, series, signed, show in (
       ("invested", "Total invested", "Invested", invested_chart, invested_series, False, True),
-      ("result", "Total result", "Total result", result_chart, result_series, True, has_results),
+      ("result", "Total result", "Total result", result_chart, result_series, True, has_results or has_interest),
     ) if show %}
     <section class="panel">
       <h2>{{ title }} <small>all time, at each month end</small></h2>
@@ -163,6 +165,65 @@
       </tbody>
     </table>
   </div>
+  {% endif %}
+
+  {% if has_interest %}
+  <section class="panel">
+    <h2>Interest on money <small>all time</small></h2>
+    {% if interest_accounts %}
+    <p class="equity-headline">
+      <span class="num-lg money {{ 'gain' if interest_totals.net > 0 else 'loss' if interest_totals.net < 0 }}">{{ interest_totals.net | money }}</span>
+      <span class="muted">net, in {{ interest_accounts | length }} account{{ "s" if interest_accounts | length > 1 }}</span>
+    </p>
+    {% if interest_chart %}
+    {% set ns = namespace(points=[]) %}
+    {% for c in interest_chart.columns %}
+      {% set ns.points = ns.points + [{
+        "x": c.x, "y": c.y, "label": c.month, "value_text": c.value | money,
+        "change_text": "net interest in the month", "change": c.value,
+      }] %}
+    {% endfor %}
+    {{ column_chart(interest_chart, ns.points, "Net interest on money per month from " ~ interest_series[0].month ~ " to " ~ interest_chart.last.month ~ ", " ~ (interest_chart.last.value | money) ~ " in the last one", series=3) }}
+    <details class="chart-table">
+      <summary>Show table</summary>
+      <div class="table-wrap">
+        <table data-sortable="interest-over-time">
+          <thead><tr><th>Month</th><th class="num">Net interest</th></tr></thead>
+          <tbody>
+          {% for p in interest_series | reverse %}
+          <tr>
+            <td class="nowrap">{{ p.month }}</td>
+            <td class="num money {{ 'gain' if p.value > 0 else 'loss' if p.value < 0 }}" data-sort="{{ p.value }}">{{ p.value | money }}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+    {% endif %}
+    <table data-sortable="interest-accounts">
+      <thead><tr><th>Account</th><th>Description</th><th>Currency</th><th class="num">Movements</th><th class="num">Earned</th><th class="num">Paid</th><th class="num">Net</th></tr></thead>
+      <tbody>
+      {% for a in interest_accounts %}
+      <tr>
+        <td class="nowrap"><strong>{{ a.name }}</strong></td>
+        <td class="muted">{{ a.description }}</td>
+        <td>{{ a.currency }}</td>
+        <td class="num">{{ a.count }}</td>
+        <td class="num money {{ 'gain' if a.gains else 'muted' }}" data-sort="{{ a.gains }}">{{ a.gains | money }}</td>
+        <td class="num money {{ 'loss' if a.losses else 'muted' }}" data-sort="{{ a.losses }}">{{ a.losses | money }}</td>
+        {{ signed(a.net) }}
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="muted">No interest on money yet.</p>
+    {% endif %}
+    <p class="muted small">The <code>Interest on Money (G)</code> and <code>(L)</code> movements naming no investment:
+      the interest earned and paid on the money of regular accounts, by their account that isn't equity. Their net
+      is part of the Total result.</p>
+  </section>
   {% endif %}
 
   <div class="panel">

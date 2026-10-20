@@ -351,6 +351,10 @@ section.panel > .msg, .panel > .msg.warn { margin-bottom: .75rem; }
 .line-chart.columns.hover .column:not(.active) { opacity: .55; }
 .line-chart.columns .crosshair, .line-chart.columns .hover-dot { display: none; }
 .line-chart.columns .x-axis span:first-child { transform: translateX(-50%); }
+.line-chart.waterfall .column { border-radius: 2px; min-height: 1px; }
+.line-chart.waterfall .column.gain { background: var(--gain); }
+.line-chart.waterfall .column.loss { background: var(--loss); }
+.line-chart.waterfall .column.total { background: var(--series-asset); }
 .tip-rows { font-size: .8rem; }
 .legend { display: flex; flex-wrap: wrap; gap: .25rem 1rem; list-style: none; margin: 0 0 .5rem; padding: 0; font-size: .85rem; }
 .legend li { display: flex; align-items: center; gap: .35rem; }

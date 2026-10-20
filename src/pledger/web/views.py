@@ -28,6 +28,8 @@ from pledger.models import (
 )
 from pledger.web.store import (
     INITIAL_GAIN,
+    INTEREST_GAIN,
+    INTEREST_LOSS,
     INVESTMENT_COLUMN,
     QUANTITY_COLUMN,
     QUANTITY_OPTIONAL,
@@ -243,6 +245,7 @@ def build_investments(snapshot: Snapshot) -> dict:
         for a in accounts
         if a.investments
     }
+    interest = build_interest(snapshot)
     return {
         "accounts": [
             {
@@ -259,12 +262,14 @@ def build_investments(snapshot: Snapshot) -> dict:
         "result_bases": result_bases,
         "has_capital": bool(capital),
         "has_results": bool(capital or result_bases),
-        # Of the held and closed investments
+        # Of the held and closed investments, and the interest on money
         "result_totals": {
             "capital": sum(i["capital"] for i in [*holdings, *closed]),
             **{n: sum(i["results"].get(n, 0.0) for i in [*holdings, *closed]) for n in result_bases},
-            "total": sum(i["total"] for i in [*holdings, *closed]),
+            "interest": interest["interest_totals"]["net"],
+            "total": sum(i["total"] for i in [*holdings, *closed]) + interest["interest_totals"]["net"],
         },
+        **interest,
         "unattributed": unattributed,
         "untyped": [h for h in holdings if h["type"] == NO_TYPE],
         "total": total,
@@ -273,6 +278,60 @@ def build_investments(snapshot: Snapshot) -> dict:
             "account": grouped_composition(by_account),
         },
         **investment_charts(snapshot),
+    }
+
+
+def interest_movements(snapshot: Snapshot) -> list:
+    """
+    The movements of interest on money: the interest earned or paid on the money of
+    a regular account, naming no investment (else it is a result of the investment).
+    """
+    rows = snapshot.rows
+    if not len(rows):
+        return []
+    rows = rows[rows.base_movement.isin({INTEREST_GAIN, INTEREST_LOSS})]
+    if INVESTMENT_COLUMN in rows.columns:
+        rows = rows[rows[INVESTMENT_COLUMN].str.strip() == ""]
+    return snapshot.ledger(rows).movements
+
+
+def build_interest(snapshot: Snapshot) -> dict:
+    """
+    The interest on money (see interest_movements) earned and paid in each account,
+    in their defined order, and its net in each month, from the first month of the
+    ledger to the last one. `has_interest` if its base movements are defined.
+    """
+    moves = interest_movements(snapshot)
+    by_account: dict[str, dict] = {}
+    for a in snapshot.accounts.values():
+        # Each movement counts for its account on the side that isn't equity.
+        mine = [m for m in moves if a in (m.acc_debit, m.acc_credit)]
+        if mine and a.acc_type != AccountType.EQUITY:
+            gains = sum(m.amount for m in mine if m.move_type == MovementType.GAIN)
+            losses = sum(m.amount for m in mine if m.move_type == MovementType.LOSS)
+            by_account[a.name] = {
+                "name": a.name, "description": a.description, "currency": a.currency.name,
+                "gains": gains, "losses": losses, "net": gains - losses, "count": len(mine),
+            }
+    totals: dict[str, float] = {}  # month to its net interest
+    for m in moves:
+        sign = 1 if m.move_type == MovementType.GAIN else -1
+        month = str(m.move_date)[:7]
+        totals[month] = totals.get(month, 0.0) + sign * m.amount
+    series = []
+    dates = snapshot.all_rows.move_date
+    if moves and len(dates):
+        cur, last = min(dates)[:7], max(dates)[:7]
+        while cur <= last:
+            series.append({"month": cur, "value": totals.get(cur, 0.0)})
+            cur = next_month(cur)
+    accounts = list(by_account.values())
+    return {
+        "has_interest": bool({INTEREST_GAIN, INTEREST_LOSS} & snapshot.base_movements.keys()),
+        "interest_accounts": accounts,
+        "interest_totals": {k: sum(a[k] for a in accounts) for k in ("gains", "losses", "net")},
+        "interest_chart": column_chart(series) if series else None,
+        "interest_series": series,
     }
 
 
@@ -287,19 +346,25 @@ def result_signs(snapshot: Snapshot) -> dict[str, int]:
 def investment_charts(snapshot: Snapshot) -> dict:
     """
     The total invested (the amounts of all investments) and the total result of
-    the investments, held or not, at the end of each month of the ledger.
+    the investments, held or not, and of the interest on money, at the end of each
+    month of the ledger.
     """
     dates = snapshot.all_rows.move_date
     if not len(dates):
         return {"invested_chart": None, "invested_series": [], "result_chart": None, "result_series": []}
     sign = result_signs(snapshot)
+    interest = [
+        (str(m.move_date)[:7], m.amount if m.move_type == MovementType.GAIN else -m.amount)
+        for m in interest_movements(snapshot)
+    ]
     invested, result = [], []
     month, last = min(dates)[:7], max(dates)[:7]
     while month <= last:
         accounts = snapshot.investment_accounts(month=month)
         for series, value in (
             (invested, sum(h["total_amount"] for a in accounts for h in a.investments.values())),
-            (result, sum(sign[n] * v for a in accounts for r in a.results.values() for n, v in r.items())),
+            (result, sum(sign[n] * v for a in accounts for r in a.results.values() for n, v in r.items())
+                + sum(v for m, v in interest if m <= month)),
         ):
             change = value - series[-1]["value"] if series else value
             series.append({"date": f"{month}-01", "month": month, "value": value, "change": change})
@@ -875,6 +940,53 @@ def column_chart(series: list[dict], tick_label=compact) -> dict | None:
     }
 
 
+def waterfall_chart(statement: list[dict], tick_label=compact) -> dict | None:
+    """
+    Floating columns to draw a result statement as a waterfall: the gains of each
+    result type up from the running total, then its losses down from there, in
+    statement order, and the profit from 0. Coordinates are percentages of the
+    plot area. None if every gain and loss is 0.
+    """
+    steps, running = [], 0.0
+    for r in statement:
+        for kind, value in (("gain", r["gains"]), ("loss", r["losses"])):
+            steps.append({
+                "name": r["name"], "short": r["short"], "kind": kind,
+                "value": value, "start": running, "end": running + value,
+            })
+            running += value
+    if not any(abs(s["value"]) > 1e-9 for s in steps):
+        return None
+    steps.append({"name": "Profit", "short": "Profit", "kind": "total", "value": running, "start": 0.0, "end": running})
+    ticks = nice_ticks(min(0.0, *(s["end"] for s in steps)), max(0.0, *(s["end"] for s in steps)))
+
+    def y(v: float) -> float:
+        return round(100 * (1 - (v - ticks[0]) / (ticks[-1] - ticks[0])), 2)
+
+    band = 100 / len(steps)
+    columns = [
+        {
+            **s,
+            "x": round(band * (i + 0.5), 2),
+            "y": y(s["end"]),
+            "top": y(max(s["start"], s["end"])),
+            "height": round(abs(y(s["start"]) - y(s["end"])), 2),
+        }
+        for i, s in enumerate(steps)
+    ]
+    return {
+        "columns": columns,
+        "width": round(band * 0.7, 2),  # the rest of the band is the gap between columns
+        "y_ticks": [{"y": y(t), "label": tick_label(t), "axis": abs(t) < 1e-9} for t in ticks],
+        # Each result type labelled under its pair of columns, and the profit under its own
+        "x_ticks": [
+            {"x": round((a["x"] + b["x"]) / 2, 2), "label": a["short"]}
+            for a, b in zip(columns[:-1:2], columns[1:-1:2])
+        ] + [{"x": columns[-1]["x"], "label": "Profit"}],
+        "last": columns[-1],
+    }
+
+
 def multi_line_chart(lines: list[dict], value_text=lambda v: f"{v:,.2f}") -> dict | None:
     """
     Paths and axes to draw several lines of {date, value} points (a None value
@@ -1111,7 +1223,7 @@ def build_charts(snapshot: Snapshot, month: str = "", initial: bool = False) -> 
         losses = sum(results[MovementType.LOSS].get(rt.long_name, {}).values())
         running += gains - losses
         statement.append({
-            "name": rt.long_name, "description": rt.description,
+            "name": rt.long_name, "short": rt.name, "description": rt.description,
             "gains": gains, "losses": -losses, "net": gains - losses, "cumulative": running,
         })
 
@@ -1128,6 +1240,7 @@ def build_charts(snapshot: Snapshot, month: str = "", initial: bool = False) -> 
         "gains": by_result_type(MovementType.GAIN),
         "losses": by_result_type(MovementType.LOSS),
         "statement": statement,
+        "waterfall": waterfall_chart(statement),
         "equity": equity,
         "equity_series": series,
         **over_time_charts(snapshot, month),

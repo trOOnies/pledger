@@ -65,12 +65,12 @@ A FastAPI + HTMX UI, one tab per area:
 | --- | --- |
 | 📋 **Ledger** | Lists, adds and deletes movements, with the gains, losses and profit of the period. |
 | 🏦 **Accounts** | Balances, total assets, liabilities and equity, and a form to add accounts. |
-| 📈 **Investments** | The investments of the investment accounts with their price (amount over quantity), their composition by type or by account, the results of each one, and charts of the total invested and the total result. The internal `Invest` movements are added and deleted here. |
+| 📈 **Investments** | The investments of the investment accounts with their price (amount over quantity), their composition by type or by account, the results of each one, the interest on money of regular accounts, and charts of the total invested and the total result. The internal `Invest` movements are added and deleted here. |
 | 🤝 **Debt** | Who we owe and who owes us in the debt accounts (people, services and companies), with alerts and the movements of the month. |
 | 💳 **Credit Cards** | What we owe on each card, what was charged and paid in the month, a chart of the monthly charges, the net owed over equity, and the movements of the month. |
 | 💼 **Work** | The company, job position, gross and net salary of each month, with a chart of both salaries (0 for the months without a job). |
 | 💱 **Currencies** | Balances per currency, the daily CPI of the base currency, its monthly inflation, the nominal and real value of each other currency, and the share of each currency in the assets at each month end. |
-| 📊 **Charts** | The composition of assets and liabilities, gains and losses by result type, a result statement, equity over time and, at each month end, debt over equity and net liquidity (liquid assets minus liquid liabilities) over equity. |
+| 📊 **Charts** | The composition of assets and liabilities, gains and losses by result type, a waterfall of the result by type (with its result statement as a table), equity over time and, at each month end, debt over equity and net liquidity (liquid assets minus liquid liabilities) over equity. |
 | ⚙️ **Setup** | Adds result types and base movements. |
 | ❓ **Help** | The concepts, explained for everyday users. |
 
@@ -230,7 +230,14 @@ For each investment, held or not, and overall, the Investments tab shows:
 - its **net capital gains**: the gains and losses with an `INVESTMENT` side, e.g.
   `Capital gains` minus `Capital losses`, which add up over time whatever is bought or sold;
 - the total of each other one (`Dividends & Interest`, `Broker fees`...);
-- the **total result**: all of them, losses subtracted.
+- the **total result**: all of them, losses subtracted, plus the net interest on money.
+
+**Interest on money.** The `Interest on Money (G)` and `Interest on Money (L)` movements that
+name no investment are the interest earned and paid on the money of a regular account (e.g.
+`MP`), with no investment involved. The Investments tab totals them in their own section, by
+the account that isn't equity and month by month, and adds their net (its *Net interest on
+money* card) to the total result. Naming an investment makes one a result of that investment
+instead.
 
 It also charts the total invested and the total result at each month end, and warns about
 the movements naming an investment of no investment account.

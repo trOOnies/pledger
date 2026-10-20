@@ -1,5 +1,5 @@
 {% from "_bars.html" import bars with context %}
-{% from "_line.html" import line_chart, ratio_panel with context %}
+{% from "_line.html" import line_chart, ratio_panel, waterfall_chart with context %}
 <div class="charts-grid">
   <section class="panel grouped-bars">
     <div class="panel-head">
@@ -29,6 +29,26 @@
 
 <section class="panel">
   <h2>Result by type <small>{{ ("in " ~ month) if month else "all time" }}, in result type order</small></h2>
+  {% if waterfall %}
+  <p class="equity-headline">
+    <span class="num-lg money {{ 'gain' if waterfall.last.value > 0 else 'loss' if waterfall.last.value < 0 }}">{{ waterfall.last.value | money }}</span>
+    <span class="muted">profit</span>
+  </p>
+  {% set ns = namespace(points=[]) %}
+  {% for c in waterfall.columns %}
+    {% set ns.points = ns.points + [{
+      "x": c.x, "y": c.y, "change": c.end,
+      "label": c.name if c.kind == "total" else c.name ~ " · " ~ ("Gains" if c.kind == "gain" else "Losses"),
+      "value_text": c.value | money,
+      "change_text": (c.end | money) ~ " cumulative",
+    }] %}
+  {% endfor %}
+  {{ waterfall_chart(waterfall, ns.points, "Gains and losses of each result type, in order, adding up to a profit of " ~ (waterfall.last.value | money)) }}
+  <p class="muted small">For each result type in order, its gains go up from the running total and its losses go
+    down from there; the last column is the profit.</p>
+  <details class="chart-table">
+    <summary>Show table</summary>
+  {% endif %}
   <div class="table-wrap">
     <table class="statement">
       <thead><tr><th>Result type</th><th class="num">Gains</th><th class="num">Losses</th><th class="num">Net</th><th class="num" title="Running total of the net results, from the first result type down">Cumulative</th></tr></thead>
@@ -57,6 +77,7 @@
       {% endif %}
     </table>
   </div>
+  {% if waterfall %}</details>{% endif %}
 </section>
 
 <section class="panel">

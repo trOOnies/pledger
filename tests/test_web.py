@@ -27,6 +27,7 @@ from pledger.web.views import (
     build_charts,
     build_credit_cards,
     build_currencies,
+    build_investments,
     column_chart,
     composition,
     equity_series,
@@ -695,6 +696,24 @@ class TestCharts:
         assert statement[0]["net"] == pytest.approx(950.25)
         assert statement[1]["cumulative"] == pytest.approx(960.25)
 
+    def test_result_by_type_waterfall(self, settings, client):
+        chart = build_charts(LedgerStore(settings).load())["waterfall"]
+        # Gains then losses of each result type, in id order, then the profit from 0
+        assert [(c["short"], c["kind"], c["start"], c["end"]) for c in chart["columns"]] == [
+            ("Op", "gain", 0, 1000.5), ("Op", "loss", 1000.5, 950.25),
+            ("Gifts", "gain", 950.25, 960.25), ("Gifts", "loss", 960.25, 960.25),
+            ("Profit", "total", 0, 960.25),
+        ]
+        assert [t["label"] for t in chart["x_ticks"]] == ["Op", "Gifts", "Profit"]
+        assert chart["x_ticks"][0]["x"] == pytest.approx(20)  # between its two columns
+        assert build_charts(LedgerStore(settings).load(), "2025-12")["waterfall"] is None
+        r = client.get("/charts")
+        section = r.text.split("<h2>Result by type")[1].split("</section>")[0]
+        assert 'class="line-chart columns waterfall"' in section
+        assert section.index("<summary>Show table</summary>") < section.index('<table class="statement">')
+        section = client.get("/charts", params={"month": "2025-12"}).text.split("<h2>Result by type")[1]
+        assert "waterfall" not in section.split("</section>")[0] and "<summary>" not in section.split("</section>")[0]
+
     def test_nice_ticks(self):
         assert nice_ticks(51.9e6, 75.8e6) == [50e6, 60e6, 70e6, 80e6]
         assert nice_ticks(0, 0.9) == [0, 0.25, 0.5, 0.75, 1.0]
@@ -1187,7 +1206,7 @@ class TestInvestmentsPage:
         r = client.get("/investments")
         assert r.status_code == 200
         assert 'href="/investments" aria-current="page"' in r.text
-        assert card_labels(r.text) == ["Invested", "Current holdings"]
+        assert card_labels(r.text) == ["Invested"]  # no interest on money defined
         assert '<span class="num money ">$500.00</span>' in r.text
         assert 'data-sortable="investments"' in r.text
         held, closed = r.text.split("<h2>No longer held <small>1</small></h2>")
@@ -1718,6 +1737,40 @@ class TestInvestMovements:
         index = client.get("/").text
         assert 'href="/investments" title="Added and deleted from the Investments tab"' in index
         assert index.count('aria-label="Delete movement"') == 4
+
+    def test_interest_on_money(self, settings, client):
+        assert card_labels(client.get("/investments").text) == ["Invested", "Net capital gains", "Total result"]
+        path = settings.base_movements_path
+        path.write_text(
+            path.read_text()
+            .replace("Dividends: d\n", "Dividends: d\n        Interest on Money (G): d\n", 1)
+            .replace("Broker fees: d\n", "Broker fees: d\n        Interest on Money (L): d\n", 1)
+        )
+        r = client.get("/investments")
+        assert card_labels(r.text) == ["Invested", "Net interest on money", "Net capital gains", "Total result"]
+        assert "No interest on money yet." in r.text
+        with settings.ledger_path.open("a") as f:
+            f.write(
+                "2026-01-10;Interest on Money (G);Ca;3;Eq;;;\n"
+                "2026-02-10;Interest on Money (L);Eq;1;Bk;;;\n"
+                "2026-02-11;Interest on Money (G);Ca;2;Eq;;;\n"
+                "2026-02-12;Interest on Money (G);Ca;7;Eq;;;T\n"  # a result of T instead
+            )
+        snapshot = LedgerStore(settings).load()
+        context = build_investments(snapshot)
+        assert [(a["name"], a["gains"], a["losses"], a["net"]) for a in context["interest_accounts"]] == [
+            ("Ca", 5, 0, 5), ("Bk", 0, 1, -1),
+        ]
+        assert [(p["month"], p["value"]) for p in context["interest_series"]] == [
+            ("2025-12", 0), ("2026-01", 3), ("2026-02", 1),
+        ]
+        # Capital gains of 5, the 7 of T and the net interest of 4
+        assert context["result_totals"]["interest"] == 4
+        assert context["result_totals"]["total"] == 16
+        assert [p["value"] for p in context["result_series"]] == [0, 8, 16]
+        r = client.get("/investments")
+        assert "<h2>Interest on money <small>all time</small></h2>" in r.text
+        assert 'data-sortable="interest-accounts"' in r.text and 'data-sortable="interest-over-time"' in r.text
 
     def test_invested_and_result_over_time(self, settings, client):
         snapshot = LedgerStore(settings).load()
