@@ -15,6 +15,11 @@
 <header class="help-hero">
   <h1>Pledger</h1>
   <p class="help-tagline">Your money, <strong>one movement at a time</strong>. Here is everything you need to know to use it.</p>
+  <ol class="help-steps">
+    <li><span aria-hidden="true">✍️</span> <strong>Record</strong> every time money moves</li>
+    <li><span aria-hidden="true">🧮</span> <strong>Pledger adds it up</strong> into balances, gains and losses</li>
+    <li><span aria-hidden="true">📈</span> <strong>Watch</strong> your wealth change over time</li>
+  </ol>
 </header>
 
 <div class="help">
@@ -113,7 +118,7 @@
         <dd>This page.</dd>
       </dl>
       <p class="note">🗓️ The <strong>Month filter is shared</strong>: pick a month on Ledger,
-        Accounts, Debt or Charts and the other tabs open on that same month. Pick
+        Accounts, Debt, Credit Cards or Charts and the other tabs open on that same month. Pick
         <em>All time</em> to clear it.</p>
     </section>
 
@@ -203,8 +208,19 @@
       </ul>
       <p>To rename, reorder or remove entries, the settings files have to be <strong>edited by hand</strong>.</p>
 
+      <h3>📈 Buy or sell an investment</h3>
+      <p>Go to <a href="/investments">Investments</a> and use its form, not the Ledger one. Name the
+        <strong>investment</strong> and, when buying, selling or splitting, its
+        <strong>quantity</strong>. The money comes from (or goes to) another account, such as
+        your bank account. Interest, dividends and broker fees are recorded there too.</p>
+
+      <h3>🤝 Keep track of who owes you</h3>
+      <p>Use a debt account for the movement and write the person's, service's or company's
+        <strong>name in the comment</strong>, such as "Lunch with Dad". The
+        <a href="/debt">Debt</a> tab adds it to them, and warns you about movements that name no one.</p>
+
       <h3>🔎 Look at a single month or account</h3>
-      <p>Use the <strong>Month</strong> filter on Ledger, Accounts, Debt or Charts (it is remembered
+      <p>Use the <strong>Month</strong> filter on Ledger, Accounts, Debt, Credit Cards or Charts (it is remembered
         across tabs), and the <strong>Account</strong> filter on Ledger. Pick <em>All time</em> to
         go back.</p>
     </section>
@@ -220,6 +236,8 @@
             <tr><td>🍝 You pay for dinner with a credit card</td><td><span class="badge loss">L</span> Loss</td><td>Equity</td><td>Credit card</td></tr>
             <tr><td>🏧 You withdraw cash from the bank</td><td><span class="badge transfer">T</span> Transfer</td><td>Cash</td><td>Bank account</td></tr>
             <tr><td>💳 You pay the credit card bill</td><td><span class="badge transfer">T</span> Transfer</td><td>Credit card</td><td>Bank account</td></tr>
+            <tr><td>🤝 You lend money to a friend (named in the comment)</td><td><span class="badge transfer">T</span> Transfer</td><td>Debt account</td><td>Bank account</td></tr>
+            <tr><td>📈 You buy shares of a fund</td><td><span class="badge transfer">T</span> Transfer</td><td>Investment account</td><td>Bank account</td></tr>
           </tbody>
         </table>
       </div>
@@ -233,6 +251,9 @@
           on it (liabilities) at a point in time, after adding up all its movements.</dd>
         <dt>Base currency</dt>
         <dd>The currency <strong>every amount</strong> in Pledger is written in.</dd>
+        <dt>CPI (price index)</dt>
+        <dd>A number that follows <strong>how prices rise</strong> in your base currency, built day
+          by day from the monthly inflation. It starts at 100.</dd>
         <dt>Cumulative</dt>
         <dd>In the Charts result table, the net results <strong>added up</strong> from the first
           result type down to that row. The last row <strong>equals your profit</strong>.</dd>
@@ -243,10 +264,21 @@
         <dt>Gains, losses and profit</dt>
         <dd>The total of your gain movements, the total of your loss movements, and the
           <strong>difference</strong> between them, for the chosen period.</dd>
+        <dt>Initial movement</dt>
+        <dd>The movement that sets an account's <strong>starting amount</strong>. Pledger creates
+          it on its own, so you never add it.</dd>
+        <dt>Liquid</dt>
+        <dd>Money you can <strong>use right away</strong>, such as cash or a checking account,
+          unlike a fixed-term deposit.</dd>
         <dt>Movement</dt>
         <dd>One entry in the ledger: money moving <strong>from one account to another</strong> on a date.</dd>
         <dt>Net</dt>
         <dd>Gains minus losses, here for a <strong>single result type</strong>.</dd>
+        <dt>Price</dt>
+        <dd>What one unit of an investment <strong>cost on average</strong>: its amount divided by its quantity.</dd>
+        <dt>Real value</dt>
+        <dd>A value with <strong>inflation taken out</strong>, in today's prices, so you can compare
+          amounts from different times fairly.</dd>
       </dl>
     </section>
 
