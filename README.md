@@ -81,7 +81,8 @@ Credit card accounts are the top-level keys of `credit_cards.yaml`, set like the
 `initial_date`), but not listed there: they are always liquid liabilities, and can't be
 investment or debt accounts. The Credit Cards tab warns about the cards with a negative
 balance (more paid than charged): rare, so it may be an error. It also charts the net
-owed on them over equity at each month end.
+owed on them over equity at each month end, and lists the movements of the cards in the
+month picked, the initial ones included.
 
 ```yaml
 Vi:
@@ -117,7 +118,9 @@ the earliest name there, and the longest one if several start there): a credit i
 that we owe them, a debit less. Like Accounts, the Debt tab shows everyone as of the end of
 the month picked. It lists people, services and companies apart,
 and the movements naming no one as unassigned. It alerts when there is unassigned debt
-(listing it by comment) and when anyone is in the opposite role to the expected one.
+(listing it by comment) and when anyone is in the opposite role to the expected one. It
+also lists the movements of the debt accounts in the month picked, the initial ones
+included, with whoever each one names.
 
 A base movement is a dict (`description` and optional fixed `debit`/`credit` accounts) or
 just its description. A side set to `INVESTMENT` or `DEBT` (reserved names) takes any

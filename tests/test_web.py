@@ -1170,6 +1170,20 @@ class TestDebtPage:
         r = client.get("/debt", params={"month": "2026-02"}, headers=HTMX)
         assert "<html" not in r.text and '<div class="view">' in r.text and "$200.50" in r.text
 
+    def test_movements(self, settings, client):
+        with settings.ledger_path.open("a", encoding="utf-8") as f:
+            f.write("2026-01-05;Card fee;Eq;20;Cc;dad\n2026-02-05;Card fee;Eq;30;Cc;no one\n")
+        r = client.get("/debt", params={"month": ""})
+        movements = r.text.split('data-sortable="debt-movements"')[1].split("</table>")[0]
+        # The initial movement too, with the initial amounts of everyone
+        assert "<h2>Movements <small>3, all time</small></h2>" in r.text
+        assert movements.index("2026-02-05") < movements.index("2026-01-05") < movements.index("Initial (L)")
+        assert "<strong>Dad</strong>" in movements and 'title="The comment names no one: unassigned debt">-' in movements
+        assert ">Initial amounts</td>" in movements and 'data-sort="120.5"' in movements
+        assert "Salary" not in movements  # not of a debt account
+        r = client.get("/debt", params={"month": "2026-02"})
+        assert "<h2>Movements <small>1, in 2026-02</small></h2>" in r.text
+
     def test_initial_amounts_count_from_the_initial_date(self, settings):
         text = settings.accounts_path.read_text(encoding="utf-8")
         settings.accounts_path.write_text(
@@ -1820,6 +1834,15 @@ class TestCreditCards:
         assert "$130.00" in cards and "$30.00" in cards and "$0.00" in cards
         r = client.get("/credit-cards", params={"month": "2026-02"}, headers=HTMX)
         assert "<html" not in r.text and 'data-sort="20.0">$20.00</td>' in r.text
+
+    def test_movements(self, client):
+        r = client.get("/credit-cards", params={"month": ""})
+        movements = r.text.split('data-sortable="credit-card-movements"')[1].split("</table>")[0]
+        # With the initial ones, but not the ones of other accounts
+        assert "<h2>Movements <small>4, all time</small></h2>" in r.text
+        assert movements.count("<tr>") == 5 and "Initial (L)" in movements and "Salary" not in movements
+        r = client.get("/credit-cards", params={"month": "2026-01"}, headers=HTMX)
+        assert "<h2>Movements <small>2, in 2026-01</small></h2>" in r.text  # with the initial one
 
     def test_owed_over_equity_chart(self, settings, client):
         series = build_credit_cards(LedgerStore(settings).load())["owed_series"]

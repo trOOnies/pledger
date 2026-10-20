@@ -1,0 +1,32 @@
+{# The movements of some accounts (views.account_movements), read only: they are added and
+   deleted from the Ledger tab. With `who`, the movements say who their comment names, and
+   with `account`, which of the accounts they are of. #}
+{% macro account_movements(movements, key, period, who=False, account=False) %}
+<div class="panel">
+  <h2>Movements <small>{{ movements | length }}, {{ period }}</small></h2>
+  <div class="table-wrap">
+    <table class="movements" data-sortable="{{ key }}">
+      <thead>
+        <tr><th>Date</th><th>Base movement</th>{% if who %}<th title="Who the comment names">Who</th>{% endif %}{% if account %}<th>Account</th>{% endif %}<th>Debit</th><th class="num">Amount</th><th>Credit</th><th>Comment</th></tr>
+      </thead>
+      <tbody>
+        {% for m in movements %}
+        <tr>
+          <td class="nowrap">{{ m.date }}</td>
+          <td><span class="badge {{ m.type }}">{{ m.type[0] | upper }}</span> {{ m.base }}</td>
+          {% if who %}{% if m.initial %}<td class="muted" title="The initial amounts of everyone in the account">Initial amounts</td>{% elif m.who %}<td class="nowrap"><strong>{{ m.who }}</strong></td>{% else %}<td class="muted" title="The comment names no one: unassigned debt">-</td>{% endif %}{% endif %}
+          {% if account %}<td>{{ m.account }}</td>{% endif %}
+          <td>{{ m.debit }}</td>
+          <td class="num money" data-sort="{{ m.amount }}">{{ m.amount | money }}</td>
+          <td>{{ m.credit }}</td>
+          <td class="muted">{{ m.comment }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="{{ 6 + (1 if who else 0) + (1 if account else 0) }}" class="muted">No movements.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="muted small">The initial movements set the initial amounts; add and delete the others from the <a href="/">Ledger</a> tab.</p>
+</div>
+{% endmacro %}

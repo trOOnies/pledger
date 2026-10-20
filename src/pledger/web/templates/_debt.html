@@ -1,4 +1,5 @@
 {% from "_bars.html" import bars with context %}
+{% from "_account_movements.html" import account_movements with context %}
 <div class="view">
   {% if unassigned_accounts %}
   <details class="msg warn alert" role="alert">
@@ -90,4 +91,6 @@
       </tbody>
     </table>
   </div>
+
+  {{ account_movements(movements, "debt-movements", ("in " ~ month) if month else "all time", who=True, account=multiple_accounts) }}
 </div>

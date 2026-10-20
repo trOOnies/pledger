@@ -347,8 +347,25 @@ def build_credit_cards(snapshot: Snapshot, month: str = "") -> dict:
         "paid": sum(a["paid"] for a in accounts),
         "composition": composition({a["name"]: a["balance"] for a in accounts}, ordered=True),
         "negative": [a for a in accounts if a["balance"] < 0 and not rounds_to_zero(a["balance"])],
+        "movements": account_movements(snapshot, [a.name for a in cards], month),
         **owed_ratio_chart(snapshot, [a.name for a in cards], month),
     }
+
+
+def account_movements(snapshot: Snapshot, names: list[str], month: str = "") -> list[dict]:
+    """
+    The movements with any of these accounts on a side, newest first, in `month`
+    (all the ledger by default), the initial movements included.
+    """
+    rows = snapshot.all_rows
+    mask = rows.acc_debit.isin(names) | rows.acc_credit.isin(names)
+    if month:
+        mask &= rows.move_date.str.startswith(month)
+    filtered = rows[mask]
+    movements = movement_rows(snapshot, filtered, snapshot.ledger(filtered))
+    for m in movements:
+        m["initial"] = m["base"] in snapshot.initial_base_names
+    return movements
 
 
 def owed_ratio_chart(snapshot: Snapshot, cards: list[str], month: str = "") -> dict:
@@ -446,6 +463,13 @@ def build_debts(snapshot: Snapshot, month: str = "") -> dict:
         ]
         kinds.append({"kind": kind.value, "title": title, "rows": rows, "net": sum(r["amount"] for r in rows)})
 
+    # Each movement is about whoever its comment names, in its debt account.
+    movements = account_movements(snapshot, [a.name for a in accounts], month)
+    for m in movements:
+        debt = next(a for a in accounts if a.name in (m["debit"], m["credit"]))
+        m["account"] = debt.name
+        m["who"] = debt.creditor_in(m["comment"])
+
     we_owe = sum(c.amount for a in accounts for c in a.get_creditors().values())
     owed_to_us = -sum(c.amount for a in accounts for c in a.get_debtors().values())
     unassigned = sum(a.unassigned for a in accounts)
@@ -481,6 +505,7 @@ def build_debts(snapshot: Snapshot, month: str = "") -> dict:
             if not rounds_to_zero(a.unassigned)
         ],
         "multiple_accounts": len(accounts) > 1,
+        "movements": movements,
         "we_owe": we_owe,
         "owed_to_us": owed_to_us,
         "unassigned": unassigned,
