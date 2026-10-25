@@ -18,7 +18,9 @@ from pledger.web.store import (
     LedgerDataError,
     LedgerStore,
     Settings,
+    StaleRowError,
     _insert_yaml_entry,
+    conversion_fingerprint,
     row_fingerprint,
     work_fingerprint,
 )
@@ -44,6 +46,13 @@ INITIAL_YAML = (
     "    base_movements:\n      gain:\n        Initial (G): Initial balance\n"
     "      loss:\n        Initial (L): Initial balance\n"
 )
+# The internal base movements of the results of the accounts in other currencies,
+# required once one is revalued; appended to the `internal` section of INITIAL_YAML
+RESULT_YAML = (
+    "  Expo:\n    id: 4\n    long_name: Exposition\n    description: d\n"
+    "    base_movements:\n      gain:\n        USD - Result (G): USD gains\n"
+    "      loss:\n        USD - Result (L): USD losses\n"
+)
 
 
 @pytest.fixture
@@ -54,6 +63,14 @@ def settings(accounts_yaml, base_movements_yaml, ledger_csv, currencies_yaml) ->
     return Settings(
         Path(accounts_yaml), Path(base_movements_yaml), Path(ledger_csv), Path(currencies_yaml)
     )
+
+
+@pytest.fixture
+def revalued(settings) -> Settings:
+    """The settings, with the base movements to revalue the accounts in other currencies."""
+    path = settings.base_movements_path
+    path.write_text(path.read_text().replace(INITIAL_YAML, INITIAL_YAML + RESULT_YAML, 1))
+    return settings
 
 
 @pytest.fixture
@@ -843,7 +860,8 @@ class TestCurrencies:
     TODAY = dt.date(2026, 3, 10)  # March hasn't ended: projected
 
     @pytest.fixture
-    def values(self, settings):
+    def values(self, revalued):
+        settings = revalued
         folder = settings.currencies_path.parent
         (folder / "base_currency.csv").write_text("month;monthly_inflation\n2026-01;10%\n2026-02;10%\n2026-03;5%\n")
         (folder / "currencies.csv").write_text(
@@ -855,7 +873,7 @@ class TestCurrencies:
         currencies = build_currencies(LedgerStore(values).load(), self.TODAY)
         assert currencies["base"] == {
             "name": "ARS", "description": "Pesos", "accounts": 2,
-            "assets": pytest.approx(159.75), "liabilities": pytest.approx(0),
+            "assets": pytest.approx(159.75), "liabilities": pytest.approx(0), "own": [],
         }
         # Each month's inflation, the CPI at its end; March is projected
         assert [(m["month"], m["value"], m["cpi"], m["projected"]) for m in currencies["inflation_months"]] == [
@@ -873,7 +891,12 @@ class TestCurrencies:
         assert (projected["series"][0]["date"], projected["series"][-1]["date"]) == ("2026-02-28", "2026-03-31")
         assert cpi["series"][-1]["value"] == pytest.approx(121) and len(cpi["series"]) == 60  # every day
         (usd,) = currencies["others"]
-        assert (usd["name"], usd["slot"], usd["accounts"], usd["assets"]) == ("USD", 2, 1, pytest.approx(901))
+        # Bk holds 0.901 USD: revalued to 1,090.21 on 2026-02-28 and 1,802 on 2027-01-01
+        assert (usd["name"], usd["slot"], usd["accounts"], usd["assets"]) == ("USD", 2, 1, pytest.approx(1802))
+        assert usd["own"] == [{
+            "name": "Bk", "description": "Bank account", "type": "asset",
+            "balance": pytest.approx(0.901), "base_balance": pytest.approx(1802), "result": pytest.approx(901),
+        }]
         assert [p["value"] for p in usd["series"]] == [1000, 1210, 2000]  # without the empty cell
         # Deflated by the daily CPI, in ARS of its last date with a CPI: 1000 at 110 is 1100 at 121
         assert usd["real_date"] == "2026-02-28"
@@ -937,6 +960,165 @@ class TestCurrencies:
         assert r.status_code == 200
         assert "No months in <code>base_currency.csv</code> yet." in r.text
         assert "No values of USD in <code>currencies.csv</code> yet." in r.text
+
+
+class TestConversions:
+    HEADER = "move_date;base_movement;acc_debit;amount_base_currency;acc_credit;comment;amount_other_currency\n"
+
+    @pytest.fixture
+    def conv(self, revalued, tmp_path) -> Settings:
+        """With a conversion: 1 USD bought for 1,100 ARS on 2026-01-05, and a USD value after it."""
+        path = tmp_path / "movements" / "conversion.csv"
+        path.parent.mkdir()
+        path.write_text(self.HEADER + "2026-01-05;Move;Bk;1,100.00;Ca;Bought;1.0000\n", encoding="utf-8")
+        (tmp_path / "currencies.csv").write_text("date;USD\n2026-01-01;1000\n2026-01-10;1200\n")
+        return replace(revalued, conversions_path=path)
+
+    @pytest.fixture
+    def conv_client(self, conv) -> TestClient:
+        return TestClient(create_app(conv))
+
+    @staticmethod
+    def rows(df) -> list[tuple]:
+        return list(df[["move_date", "base_movement", "acc_debit", "amount", "acc_credit", "comment"]].itertuples())
+
+    def test_are_in_the_ledger_in_the_base_currency(self, conv):
+        snapshot = LedgerStore(conv).load()
+        assert len(snapshot.rows) == 4  # the ledger CSV alone
+        assert self.rows(snapshot.conversion_rows) == [(-2, "2026-01-05", "Move", "Bk", "1,100.00", "Ca", "Bought")]
+        dates = list(snapshot.all_rows.move_date)
+        assert dates == sorted(dates)  # in date order
+        balances = snapshot.ledger().balances()
+        assert balances["Ca"] == pytest.approx(159.75 - 1100)
+
+    def test_accounts_in_other_currencies_are_revalued(self, conv):
+        # Bk: 0.1005 USD initially (at the first value), 1.0005 of salary, 0.2 withdrawn and 1 bought:
+        # 1.901 USD, 2,001 ARS in the ledger, worth 2,281.20 at 1,200
+        snapshot = LedgerStore(conv).load()
+        assert self.rows(snapshot.result_rows) == [
+            (-3, "2026-01-10", "USD - Result (G)", "Bk", "280.20", "Eq", "1.9010 USD at 1,200.0000"),
+        ]
+        assert snapshot.ledger().balances()["Bk"] == pytest.approx(2281.2)
+        assert snapshot.other_balances == {"Bk": pytest.approx(1.901)}
+
+    def test_a_lower_value_is_a_loss(self, conv, tmp_path):
+        (tmp_path / "currencies.csv").write_text("date;USD\n2026-01-01;1000\n2026-01-10;900\n2026-01-20;900\n")
+        snapshot = LedgerStore(conv).load()
+        assert self.rows(snapshot.result_rows) == [  # nothing more on 2026-01-20
+            (-3, "2026-01-10", "USD - Result (L)", "Eq", "290.10", "Bk", "1.9010 USD at 900.0000"),
+        ]
+        assert snapshot.ledger().balances()["Bk"] == pytest.approx(1710.9)
+
+    def test_the_result_base_movements_are_required_to_revalue(self, conv):
+        conv.base_movements_path.write_text(conv.base_movements_path.read_text().replace(RESULT_YAML, ""))
+        with pytest.raises(LedgerDataError, match=re.escape("'USD - Result (G)' is required to revalue")):
+            LedgerStore(conv).load()
+
+    def test_results_cannot_be_in_the_ledger_csv(self, conv):
+        with conv.ledger_path.open("a") as f:
+            f.write("2026-01-05;USD - Result (G);Bk;5;Eq;\n")
+        with pytest.raises(LedgerDataError, match=re.escape("cannot have movements of ['USD - Result (G)']")):
+            LedgerStore(conv).load()
+
+    @pytest.mark.parametrize(
+        ("row", "error"),
+        [
+            ("2026-01-05;Move;Cc;100;Ca;;1", "between an account in ARS and one in another currency, not Cc and Ca"),
+            ("2026-01-05;Gift;Bk;100;Eq;;1", "must be of a non-internal transfer, not 'Gift'"),
+            ("2026-01-05;Nope;Bk;100;Ca;;1", "Unknown base movement of a conversion: 'Nope'"),
+            ("2026-13-05;Move;Bk;100;Ca;;1", "Invalid date of a conversion"),
+            ("2026-01-05;Move;Bk;100;Ca;;x", "Invalid amount in USD of a conversion"),
+            ("2026-01-05;Move;Bk;100;Ca;;0", "must both be zero or both positive"),
+        ],
+    )
+    def test_invalid_rows(self, conv, row, error):
+        conv.conversions_path.write_text(self.HEADER + row + "\n")
+        with pytest.raises(LedgerDataError, match=re.escape(error)):
+            LedgerStore(conv).load()
+
+    def test_missing_columns(self, conv):
+        conv.conversions_path.write_text("move_date;base_movement;acc_debit;acc_credit;amount_base_currency\n")
+        with pytest.raises(LedgerDataError, match=re.escape("missing the columns ['amount_other_currency']")):
+            LedgerStore(conv).load()
+
+    def test_add_and_delete(self, conv):
+        store = LedgerStore(conv)
+        store.add_conversion("2026-01-06", "Move", "Ca", "Bk", "1234.5", "1.2", "Sold; half")
+        assert conv.conversions_path.read_text().splitlines()[-1] == (
+            "2026-01-06;Move;Ca;1,234.50;Bk;Sold, half;1.2000"
+        )
+        conversions = store.load().conversions
+        assert len(conversions) == 2
+        with pytest.raises(StaleRowError):
+            store.delete_conversion(1, "2026-01-06|Move|1,234.50|9.0000")
+        store.delete_conversion(1, conversion_fingerprint(conversions.iloc[1]))
+        assert conv.conversions_path.read_text() == self.HEADER + "2026-01-05;Move;Bk;1,100.00;Ca;Bought;1.0000\n"
+
+    def test_adding_creates_the_csv(self, revalued, tmp_path):
+        path = tmp_path / "movements" / "conversion.csv"
+        store = LedgerStore(replace(revalued, conversions_path=path))
+        store.add_conversion("2026-01-06", "Move", "Bk", "Ca", "100", "0.1")
+        assert path.read_text() == self.HEADER + "2026-01-06;Move;Bk;100.00;Ca;;0.1000\n"
+
+    @pytest.mark.parametrize(
+        ("args", "error"),
+        [
+            (("2026-01-06", "Move", "Ca", "Cc", "100", "1"), "between an account in ARS and one in another currency"),
+            (("2026-01-06", "Move", "Bk", "Bk", "100", "1"), "must be different"),
+            (("2026-01-06", "Move", "Bk", "Ca", "0", "0"), "must be positive"),
+            (("2026-01-06", "Move", "Bk", "Ca", "-1", "1"), "cannot be negative"),
+        ],
+    )
+    def test_add_rejects_invalid_ones(self, conv, args, error):
+        before = conv.conversions_path.read_text()
+        with pytest.raises(ValueError, match=re.escape(error)):
+            LedgerStore(conv).add_conversion(*args)
+        assert conv.conversions_path.read_text() == before
+
+    def test_without_a_conversions_csv(self, revalued):
+        assert len(LedgerStore(revalued).load().conversion_rows) == 0
+        with pytest.raises(ValueError, match="No conversions CSV is set"):
+            LedgerStore(revalued).add_conversion("2026-01-06", "Move", "Bk", "Ca", "100", "0.1")
+
+    def test_ledger_tab_links_them_to_the_currencies_tab(self, conv_client):
+        r = conv_client.get("/")
+        assert '<a class="muted" href="/currencies" title="Added and deleted from the Currencies tab">' in r.text
+        assert r.text.count('hx-post="/movements/') == 4  # only the CSV rows
+        assert "USD - Result (G)" in r.text  # internal: not deletable either
+        (moved,) = [m for m in conv_client.get("/api/movements").json() if m["conversion"]]
+        assert (moved["date"], moved["amount"]) == ("2026-01-05", 1100.0)
+
+    def test_currencies_tab_lists_adds_and_deletes_them(self, conv, conv_client):
+        r = conv_client.get("/currencies")
+        assert "<h2>Accounts in other currencies <small>" in r.text and "1.9010" in r.text
+        assert 'hx-post="/conversions"' in r.text and 'hx-post="/conversions/0/delete"' in r.text
+        r = conv_client.post("/conversions", data={
+            "move_date": "2026-01-06", "base_movement": "Move", "acc_debit": "Bk", "acc_credit": "Ca",
+            "amount_base": "1,000", "amount_other": "1",
+        })
+        assert "Added Move: $1,000.00" in r.text and r.headers["HX-Trigger"] == "conversions-changed"
+        assert "2026-01-06;Move;Bk;1,000.00;Ca;;1.0000" in conv.conversions_path.read_text()
+        r = conv_client.post("/conversions", data={
+            "move_date": "2026-01-06", "base_movement": "Move", "acc_debit": "Ca", "acc_credit": "Cc",
+            "amount_base": "1", "amount_other": "1",
+        })
+        assert 'class="msg error"' in r.text and "another currency" in r.text
+        listed = conv_client.get("/conversions").text
+        assert listed.count('hx-post="/conversions/') == 2
+        first, _ = conv_client.get("/api/conversions").json()  # newest first
+        assert (first["date"], first["rate"], first["bought"]) == ("2026-01-06", 1000.0, True)
+        r = conv_client.post(f"/conversions/{first['index']}/delete", data={"fingerprint": first["fingerprint"]})
+        assert r.status_code == 200
+        assert conv_client.post("/conversions/0/delete", data={"fingerprint": "x"}).status_code == 409
+        assert len(conv_client.get("/api/conversions").json()) == 1
+
+    def test_api(self, conv_client):
+        body = {"move_date": "2026-01-06", "base_movement": "Move", "acc_debit": "Ca", "acc_credit": "Bk",
+                "amount_base": 500, "amount_other": 0.5}
+        assert conv_client.post("/api/conversions", json=body).status_code == 201
+        assert conv_client.post("/api/conversions", json={**body, "acc_credit": "Cc"}).status_code == 422
+        (first, _) = conv_client.get("/api/conversions").json()
+        assert conv_client.delete(f"/api/conversions/{first['index']}", params={"fingerprint": first["fingerprint"]}).status_code == 200
 
 
 class TestApi:

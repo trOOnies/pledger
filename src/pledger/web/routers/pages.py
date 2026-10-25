@@ -10,6 +10,7 @@ from pledger.web.templating import (
     is_partial,
     remember_month,
     remembered_month,
+    render_conversion_form,
     render_form,
     render_invest_form,
     templates,
@@ -17,6 +18,7 @@ from pledger.web.templating import (
 from pledger.web.views import (
     build_accounts,
     build_charts,
+    build_conversions,
     build_credit_cards,
     build_currencies,
     build_debts,
@@ -99,10 +101,16 @@ def work(request: Request, store: StoreDep):
 
 @router.get("/currencies")
 def currencies(request: Request, store: StoreDep):
-    context = build_currencies(store.load())
-    return templates.TemplateResponse(
-        request, "currencies.html", {**context, "settings": store.settings}
-    )
+    snapshot = store.load()
+    context = {
+        **build_currencies(snapshot),
+        "settings": store.settings,
+        "conversions": build_conversions(snapshot),
+        "conversion_form": (
+            render_conversion_form(request, snapshot, {}).body.decode() if len(snapshot.currencies) > 1 else None
+        ),
+    }
+    return templates.TemplateResponse(request, "currencies.html", context)
 
 
 @router.get("/charts")

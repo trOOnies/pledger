@@ -69,7 +69,7 @@ A FastAPI + HTMX UI, one tab per area:
 | 🤝 **Debt** | Who we owe and who owes us in the debt accounts (people, services and companies), with alerts and the movements of the month. |
 | 💳 **Credit Cards** | What we owe on each card, what was charged and paid in the month, a chart of the monthly charges, the net owed over equity, and the movements of the month. |
 | 💼 **Work** | The company, job position, gross and net salary of each month, with a chart of both salaries (0 for the months without a job). |
-| 💱 **Currencies** | Balances per currency, the daily CPI of the base currency, its monthly inflation, the nominal and real value of each other currency, and the share of each currency in the assets at each month end. |
+| 💱 **Currencies** | Balances per currency, the balance of each account in other currencies in its own currency, the daily CPI of the base currency, its monthly inflation, the nominal and real value of each other currency, and the share of each currency in the assets at each month end. The conversions are added and deleted here. |
 | 📊 **Charts** | The composition of assets and liabilities, gains and losses by result type, a waterfall of the result by type (with its result statement as a table), equity over time and, at each month end, debt over equity and net liquidity (liquid assets minus liquid liabilities) over equity. |
 | ⚙️ **Setup** | Adds result types and base movements. |
 | ❓ **Help** | The concepts, explained for everyday users. |
@@ -96,7 +96,8 @@ with an environment variable:
 | --- | :---: | --- | --- |
 | `accounts.yaml` | ✅ | `PLEDGER_ACCOUNTS` | The accounts |
 | `result_types.yaml` | ✅ | `PLEDGER_BASE_MOVEMENTS` | Result types and base movements |
-| `ledger.csv` | ✅ | `PLEDGER_LEDGER` | The movements |
+| `movements/ledger.csv` | ✅ | `PLEDGER_LEDGER` | The movements |
+| `movements/conversion.csv` | | `PLEDGER_CONVERSIONS` | The conversions between the base currency and the other ones |
 | `currencies.yaml` | ✅ | `PLEDGER_CURRENCIES` | Base and other currencies (with `base_currency.csv` and `currencies.csv` next to it) |
 | `investment.yaml` | | `PLEDGER_INVESTMENTS` | The investments of each investment account |
 | `creditors.yaml` | | `PLEDGER_CREDITORS` | Who each debt account is owed by or owes to |
@@ -171,6 +172,11 @@ and its result types can't get new base movements.
 > side (buying and selling investments...) can't be added or deleted from the Ledger tab or
 > `/api/movements`, but they can from the Investments tab and `/api/investments/movements`.
 
+The internal gain `USD - Result (G)` and loss `USD - Result (L)` are required in the same way
+once an account in another currency has to be revalued (see
+[Currencies and inflation](#currencies-and-inflation)). Their movements are generated, and
+can't be in `ledger.csv`, just like the initial ones below, but they aren't hidden.
+
 The internal gain `Initial (G)` and loss `Initial (L)` are required (with no fixed debit or
 credit account, respectively). Every account with a non-zero initial amount gets one such
 movement against equity, on its initial date. These movements:
@@ -212,6 +218,33 @@ date;USD;USC
 
 The Currencies tab charts each other currency's **nominal** value in the base one next to its
 **real** value: deflated by the daily CPI, in the base currency of its last date with a CPI.
+
+#### Conversions
+
+Buying or selling another currency is a **conversion**, kept in `movements/conversion.csv`
+instead of `ledger.csv`, with the amount in each currency:
+
+```csv
+move_date;base_movement;acc_debit;amount_base_currency;acc_credit;comment;amount_other_currency
+2026-01-12;USD - Bought;BMD;17,293.72;Fi;;11.7400
+2026-01-12;USD - Sold;Fi;7,645.18;BMD;;5.1900
+```
+
+Each one is a transfer, of a non-internal base movement, between an account in the base
+currency and one in another currency (`comment` is optional, and other columns are kept). The
+ledger gets it as a movement of `amount_base_currency`. They are added and deleted from the
+Currencies tab and `/api/conversions`, and the file is created with the first one.
+
+#### Results of the other currencies
+
+The accounts in other currencies hold their balance in the base currency in the ledger, but
+pledger also follows it **in their currency**: the conversions with their
+`amount_other_currency`, and every other movement (the initial amount too) at the value of the
+currency on its date, the last one up to then (or its first one, if none). At the end of each
+date of `currencies.csv`, from its first movement on, each one is **revalued**: a
+`USD - Result (G)` or `USD - Result (L)` movement against equity, to the cent, brings its
+balance in the base currency to its balance in its currency at that value. Investment accounts
+are left out: their capital gains and losses already do that.
 
 ### Investments
 

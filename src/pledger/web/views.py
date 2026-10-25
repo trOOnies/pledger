@@ -28,15 +28,18 @@ from pledger.models import (
     special_of,
 )
 from pledger.web.store import (
+    BASE_AMOUNT,
     INITIAL_GAIN,
     INTEREST_GAIN,
     INTEREST_LOSS,
     INVESTMENT_COLUMN,
+    OTHER_AMOUNT,
     QUANTITY_COLUMN,
     QUANTITY_OPTIONAL,
     QUANTITY_REQUIRED,
     Snapshot,
     Work,
+    conversion_fingerprint,
     is_capital,
     row_fingerprint,
     work_fingerprint,
@@ -53,6 +56,7 @@ def months_of(snapshot: Snapshot) -> list[str]:
 def movement_rows(snapshot: Snapshot, rows: DataFrame, ledger: Ledger) -> list[dict]:
     """The movements of a ledger built from these rows, newest first."""
     invest = snapshot.invest_base_movements()
+    conversions = set(snapshot.conversion_rows.index)
     movements = [
         {
             "index": int(ix),
@@ -66,6 +70,7 @@ def movement_rows(snapshot: Snapshot, rows: DataFrame, ledger: Ledger) -> list[d
             "comment": row.get("comment", ""),
             "internal": move.move_base.internal,
             "invest": move.move_base.name in invest,  # added and deleted from the Investments tab
+            "conversion": ix in conversions,  # added and deleted from the Currencies tab
         }
         for (ix, row), move in zip(rows.iterrows(), ledger.movements)
     ]
@@ -483,6 +488,55 @@ def build_invest_movements(snapshot: Snapshot) -> list[dict]:
         m["investment"] = row.get(INVESTMENT_COLUMN, "")
         m["quantity"] = row.get(QUANTITY_COLUMN, "")
     return movements
+
+
+def build_conversions(snapshot: Snapshot) -> list[dict]:
+    """
+    The rows of the conversions CSV, newest first, with the amount in each currency
+    and the value of the other currency in the base one they imply.
+    """
+    conversions = []
+    for i, (ix, row) in enumerate(snapshot.conversions.iterrows()):
+        base_amount = float(row[BASE_AMOUNT].replace(",", "") or 0)
+        other_amount = float(row[OTHER_AMOUNT].replace(",", "") or 0)
+        debit, credit = snapshot.accounts[row["acc_debit"]], snapshot.accounts[row["acc_credit"]]
+        other = debit if not debit.currency.is_base_currency else credit
+        conversions.append({
+            "index": i,
+            "fingerprint": conversion_fingerprint(row),
+            "date": row["move_date"],
+            "base": row["base_movement"],
+            "debit": debit.name,
+            "credit": credit.name,
+            "amount": base_amount,
+            "other_amount": other_amount,
+            "currency": other.currency.name,
+            "bought": other is debit,  # the other currency comes in, else goes out
+            "rate": base_amount / other_amount if other_amount else None,
+            "comment": row.get("comment", ""),
+        })
+    conversions.sort(key=lambda c: c["date"])  # stable: in their order on each date
+    conversions.reverse()
+    return conversions
+
+
+def conversion_fields(snapshot: Snapshot, base_movement: str = "") -> dict:
+    """
+    The transfers to pick from for a conversion, and the account fields of the
+    selected one: by default, that of the last conversion, else the first one.
+    """
+    bases = sorted(
+        n for n, b in snapshot.manual_base_movements().items() if b.move_type == MovementType.TRANSFER
+    )
+    if base_movement not in bases:
+        last = snapshot.conversions["base_movement"].iloc[-1] if len(snapshot.conversions) else ""
+        base_movement = last if last in bases else next(iter(bases), "")
+    return {
+        "bases": bases,
+        "base_movement": base_movement,
+        "fields": account_fields(snapshot, base_movement),
+        "other_currencies": [c.name for c in snapshot.currencies.values() if not c.is_base_currency],
+    }
 
 
 def invest_fields(snapshot: Snapshot, base_movement: str = "") -> dict:
@@ -1379,14 +1433,31 @@ def build_currencies(snapshot: Snapshot, today: dt.date | None = None) -> dict:
     base = snapshot.base_currency
     cpi = base.customer_price_index
     balances = snapshot.ledger().balances()
+    # The results of revaluing each account in another currency, all time.
+    results: dict[str, float] = {}
+    for move in snapshot.ledger(snapshot.result_rows).movements:
+        gain = move.move_type == MovementType.GAIN
+        name = move.acc_debit.name if gain else move.acc_credit.name
+        results[name] = results.get(name, 0.0) + (move.amount if gain else -move.amount)
 
     def totals(name: str) -> dict:
         accs = [
             a for a in snapshot.accounts.values()
             if a.currency.name == name and a.acc_type != AccountType.EQUITY
         ]
+        own = [a for a in accs if a.name in snapshot.other_balances]
         return {
             "accounts": len(accs),
+            # The accounts revalued in this currency (see store._result_rows), with
+            # their balance in it and in the base currency.
+            "own": [
+                {
+                    "name": a.name, "description": a.description, "type": a.acc_type.value,
+                    "balance": snapshot.other_balances[a.name], "base_balance": balances.get(a.name, 0.0),
+                    "result": results.get(a.name, 0.0),
+                }
+                for a in own
+            ],
             "assets": sum(balances.get(a.name, 0.0) for a in accs if a.acc_type == AccountType.ASSET),
             "liabilities": sum(
                 balances.get(a.name, 0.0) for a in accs if a.acc_type == AccountType.LIABILITY

@@ -13,6 +13,7 @@ from pledger.web.store import LedgerStore, StaleRowError
 from pledger.web.templating import (
     money,
     remembered_month,
+    render_conversion_form,
     render_form,
     render_invest_form,
     templates,
@@ -22,8 +23,10 @@ from pledger.web.views import (
     base_fields,
     base_sides,
     build_accounts,
+    build_conversions,
     build_invest_movements,
     build_work,
+    conversion_fields,
     invest_fields,
     months_of,
     setup_context,
@@ -168,6 +171,66 @@ def delete_investment_movement(store: StoreDep, index: int, fingerprint: Annotat
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from None
     return Response(status_code=200, headers={"HX-Trigger": "investments-changed"})
+
+
+@router.get("/form/conversion-accounts")
+def form_conversion_accounts(request: Request, store: StoreDep, base_movement: str = ""):
+    return templates.TemplateResponse(
+        request,
+        "_account_fields.html",
+        {"fields": conversion_fields(store.load(), base_movement)["fields"], "values": {}},
+    )
+
+
+@router.get("/conversions")
+def conversions(request: Request, store: StoreDep):
+    return templates.TemplateResponse(
+        request, "_conversions.html", {"conversions": build_conversions(store.load())}
+    )
+
+
+@router.post("/conversions")
+def create_conversion(
+    request: Request,
+    store: StoreDep,
+    move_date: Annotated[str, Form()],
+    base_movement: Annotated[str, Form()],
+    amount_base: Annotated[str, Form()],
+    amount_other: Annotated[str, Form()],
+    acc_debit: Annotated[str, Form()] = "",
+    acc_credit: Annotated[str, Form()] = "",
+    comment: Annotated[str, Form()] = "",
+):
+    values = {
+        "move_date": move_date, "base_movement": base_movement,
+        "acc_debit": acc_debit, "acc_credit": acc_credit,
+        "amount_base": amount_base, "amount_other": amount_other, "comment": comment,
+    }
+    try:
+        store.add_conversion(move_date, base_movement, acc_debit, acc_credit, amount_base, amount_other, comment)
+    except ValueError as e:
+        return render_conversion_form(request, store.load(), values, error=str(e))
+    # Keep date and base movement to speed up entering similar conversions.
+    keep = {"move_date": move_date, "base_movement": base_movement}
+    value = float(amount_base.replace(",", ""))
+    response = render_conversion_form(
+        request, store.load(), keep,
+        success=f"Added {base_movement}: {money(value, store.settings.currency)}"
+        + (" (dated in the future)" if move_date > dt.date.today().isoformat() else ""),
+    )
+    response.headers["HX-Trigger"] = "conversions-changed"
+    return response
+
+
+@router.post("/conversions/{index}/delete", response_class=Response)
+def delete_conversion(store: StoreDep, index: int, fingerprint: Annotated[str, Form()]):
+    try:
+        store.delete_conversion(index, fingerprint)
+    except StaleRowError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from None
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
+    return Response(status_code=200, headers={"HX-Trigger": "conversions-changed"})
 
 
 def render_setup(request: Request, store: LedgerStore, values: dict, **extra):

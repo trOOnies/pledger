@@ -22,6 +22,16 @@ class InvestMovementIn(MovementIn):
     investment_type: InvestmentType | None = None  # for an investment new to its account
 
 
+class ConversionIn(BaseModel):
+    move_date: str
+    base_movement: str  # a transfer
+    acc_debit: str
+    acc_credit: str
+    amount_base: float  # in the base currency
+    amount_other: float  # in the currency of the account not in the base one
+    comment: str = ""
+
+
 class AccountIn(BaseModel):
     name: str
     type: AccountType

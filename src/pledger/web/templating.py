@@ -12,7 +12,7 @@ from jinja2 import pass_context
 
 from pledger.enums import MovementType
 from pledger.web.store import Snapshot
-from pledger.web.views import base_fields, invest_fields
+from pledger.web.views import base_fields, conversion_fields, invest_fields
 
 HERE = Path(__file__).parent
 
@@ -122,6 +122,24 @@ def render_invest_form(request: Request, snapshot: Snapshot, values: dict, **ext
             "currency": request.app.state.store.settings.currency,
             "values": values,
             **invest,
+            **extra,
+        },
+    )
+
+
+def render_conversion_form(request: Request, snapshot: Snapshot, values: dict, **extra):
+    """The new conversion form of the Currencies tab, for the conversions CSV."""
+    values.setdefault("move_date", dt.date.today().isoformat())
+    fields = conversion_fields(snapshot, values.get("base_movement", ""))
+    values["base_movement"] = fields["base_movement"]
+    return templates.TemplateResponse(
+        request,
+        "_conversion_form.html",
+        {
+            "currency": request.app.state.store.settings.currency,
+            "base_currency": snapshot.base_currency.name,
+            "values": values,
+            **fields,
             **extra,
         },
     )

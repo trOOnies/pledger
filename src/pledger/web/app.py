@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from pledger.web.routers import (
     accounts,
     base_movements,
+    conversions,
     forms,
     investments,
     movements,
@@ -45,6 +46,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(base_movements.router)
     app.include_router(movements.router)
     app.include_router(investments.router)
+    app.include_router(conversions.router)
     app.include_router(summary.router)
     app.include_router(work.router)
     return app

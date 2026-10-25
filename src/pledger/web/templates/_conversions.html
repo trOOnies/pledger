@@ -1,0 +1,37 @@
+<div class="panel">
+  <h2>Conversions <small>{{ conversions | length }}</small></h2>
+  <div class="table-wrap">
+    <table class="movements" data-sortable="conversions">
+      <thead>
+        <tr><th>Date</th><th>Base movement</th><th>Debit</th><th class="num">Amount</th><th>Credit</th>
+          <th class="num" title="In the currency of the account not in the base one">Other amount</th>
+          <th class="num" title="The value of the other currency in the base one: the amount over the other amount">Rate</th>
+          <th>Comment</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for c in conversions %}
+        <tr>
+          <td class="nowrap">{{ c.date }}</td>
+          <td><span class="badge transfer" title="{{ c.currency }} {{ 'bought' if c.bought else 'sold' }}">T</span> {{ c.base }}</td>
+          <td>{{ c.debit }}</td>
+          <td class="num money" data-sort="{{ c.amount }}">{{ c.amount | money }}</td>
+          <td>{{ c.credit }}</td>
+          <td class="num money" data-sort="{{ c.other_amount }}">{{ c.currency }} {{ "{:,.4f}".format(c.other_amount) }}</td>
+          <td class="num {{ 'muted' if c.rate is none }}" data-sort="{{ c.rate if c.rate is not none else '' }}">{{ (c.rate | number) if c.rate is not none else "-" }}</td>
+          <td class="muted">{{ c.comment }}</td>
+          <td>
+            <button class="icon" title="Delete" aria-label="Delete conversion"
+              hx-post="/conversions/{{ c.index }}/delete"
+              hx-vals='{{ {"fingerprint": c.fingerprint} | tojson }}'
+              hx-confirm="Delete {{ c.date }} {{ c.base }} ({{ c.amount | money }})?"
+              data-confirm-money="{{ c.amount | money }}"
+              hx-swap="none">&times;</button>
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="9" class="muted">No conversions.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>

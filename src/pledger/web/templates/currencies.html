@@ -68,6 +68,38 @@
       <code>{{ settings.currencies_path.name }}</code>, each with its column in <code>currencies.csv</code>.</p>{% endif %}
   </section>
 
+  {% set own_accounts = others | selectattr("own") | list %}
+  {% if own_accounts %}
+  <section class="panel">
+    <h2>Accounts in other currencies <small>their balance in their currency, all time</small></h2>
+    <div class="table-wrap">
+      <table data-sortable="currencies-accounts">
+        <thead><tr>
+          <th>Account</th><th>Description</th><th>Currency</th>
+          <th class="num" title="In its currency: its conversions, with their amount in it, and its other movements at the value of the currency on their date">Balance</th>
+          <th class="num" title="In {{ base.name }}, revalued at each date of the currencies CSV">Balance in {{ base.name }}</th>
+          <th class="num" title="Of the USD - Result movements: the change of its value in {{ base.name }}">Result</th>
+        </tr></thead>
+        <tbody>
+        {% for c in own_accounts %}{% for a in c.own %}
+        <tr>
+          <td>{{ a.name }}</td>
+          <td>{{ a.description }}</td>
+          <td><span class="swatch" style="background: var(--series-{{ c.slot }})"></span> {{ c.name }}</td>
+          <td class="num money" data-sort="{{ a.balance }}">{{ "{:,.4f}".format(a.balance) }}</td>
+          <td class="num money" data-sort="{{ a.base_balance }}">{{ a.base_balance | money }}</td>
+          <td class="num money {{ 'gain' if a.result > 0 else 'loss' if a.result < 0 }}" data-sort="{{ a.result }}">{{ a.result | money }}</td>
+        </tr>
+        {% endfor %}{% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="muted small">At the end of each date of <code>currencies.csv</code>, each account is revalued: a
+      <strong>USD - Result</strong> gain or loss brings its balance in {{ base.name }} to its balance in its currency at
+      that value. Investment accounts are left out, as their capital gains and losses already do that.</p>
+  </section>
+  {% endif %}
+
   <div class="charts-grid">
     <section class="panel">
       <h2>Customer price index <small>at the end of each day, from the monthly inflation</small></h2>
@@ -191,5 +223,19 @@
     <p class="muted">No assets yet.</p>
     {% endif %}
   </section>
+
+  {% if conversion_form %}
+  <div class="layout">
+    <aside class="panel">
+      <h2>New conversion</h2>
+      {{ conversion_form | safe }}
+      <p class="muted small">Saved in <code>{{ settings.conversions_path.name if settings.conversions_path else "conversion.csv" }}</code>,
+        with the amount in each currency. The ledger gets it in {{ base.name }}.</p>
+    </aside>
+    <section id="conversions" hx-get="/conversions" hx-trigger="conversions-changed from:body">
+      {% include "_conversions.html" %}
+    </section>
+  </div>
+  {% endif %}
 </div>
 {% endblock %}
