@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Results · pledger{% endblock %}
+{% block content %}
+<form id="filters" class="filters" hx-get="/results" hx-target="#results-view" hx-push-url="true" hx-trigger="change">
+  <label>Month
+    <select name="month">
+      <option value="">All time</option>
+      {% for m in months %}<option value="{{ m }}" {% if m == month %}selected{% endif %}>{{ m }}</option>{% endfor %}
+    </select>
+  </label>
+  <label class="check" title="Movements that set the initial amounts of the accounts; they are left out of results by default">
+    <input type="checkbox" name="initial" value="true" {% if initial %}checked{% endif %}> Initial movements
+  </label>
+</form>
+
+<div id="results-view">{% include "_results.html" %}</div>
+
+<p class="muted">New result types and base movements are added to
+  <code>{{ settings.base_movements_path }}</code>. Edit that file to change or remove them.</p>
+<div id="setup">{% include "_setup.html" %}</div>
+{% endblock %}

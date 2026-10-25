@@ -1,4 +1,4 @@
-{# Horizontal bar compositions, shared by the Charts and Accounts pages. #}
+{# Horizontal bar compositions, shared by several pages. #}
 {% macro bar_row(item, kind, tag="div") %}
 <{{ tag }} class="bar-row" title="{{ item.name }} ({{ '%.1f' | format(item.share) }}%)">
   <span class="bar-name">{{ item.name }}</span>

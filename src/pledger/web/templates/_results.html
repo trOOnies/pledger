@@ -1,31 +1,13 @@
 {% from "_bars.html" import bars with context %}
-{% from "_line.html" import line_chart, ratio_panel, waterfall_chart with context %}
-<div class="charts-grid">
-  <section class="panel grouped-bars">
-    <div class="panel-head">
-      <h2>Assets &amp; liabilities{% if month %} <small>as of end of {{ month }}</small>{% endif %}</h2>
-      <div class="segmented" role="radiogroup" aria-label="Group accounts by">
-        <label><input type="radio" name="accounts-group" value="currency" checked> By currency</label>
-        <label><input type="radio" name="accounts-group" value="liquidity"> By liquidity</label>
-      </div>
-    </div>
-    {% for group, comp in groupings.items() %}
-    <div class="composition-pair" data-group="{{ group }}">
-      {{ bars("Assets", comp.assets, "asset", "No asset accounts.", open=True) }}
-      {{ bars("Liabilities", comp.liabilities, "liability", "No liability accounts.", open=True) }}
-    </div>
-    {% endfor %}
-  </section>
-
-  <section class="panel">
-    <h2>Gains &amp; losses by result type <small>{{ ("in " ~ month) if month else "all time" }}</small></h2>
-    <div class="composition-pair">
-      {{ bars("Gains", gains, "gain", "No result types yet.") }}
-      {{ bars("Losses", losses, "loss", "No result types yet.") }}
-    </div>
-    <p class="muted small">Click a result type to see its base movements.</p>
-  </section>
-</div>
+{% from "_line.html" import line_chart, waterfall_chart with context %}
+<section class="panel">
+  <h2>Gains &amp; losses by result type <small>{{ ("in " ~ month) if month else "all time" }}</small></h2>
+  <div class="composition-pair">
+    {{ bars("Gains", gains, "gain", "No result types yet.") }}
+    {{ bars("Losses", losses, "loss", "No result types yet.") }}
+  </div>
+  <p class="muted small">Click a result type to see its base movements.</p>
+</section>
 
 <section class="panel">
   <h2>Result by type <small>{{ ("in " ~ month) if month else "all time" }}, in result type order</small></h2>
@@ -118,13 +100,3 @@
   <p class="muted">No gains or losses in this period.</p>
   {% endif %}
 </section>
-
-{% set upto = ("up to " ~ month) if month else "all time" %}
-<div class="charts-grid">
-  {% for key, title, what, chart, series in (
-    ("debt-ratio", "Debt over equity", "Liabilities", debt_ratio, debt_series),
-    ("liquidity-ratio", "Net liquidity over equity", "Liquid assets minus liquid liabilities", liquidity_ratio, liquidity_series),
-  ) %}
-  {{ ratio_panel(key, title, what, chart, series, upto) }}
-  {% endfor %}
-</div>

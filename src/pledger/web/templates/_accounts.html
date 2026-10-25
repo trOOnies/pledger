@@ -1,4 +1,32 @@
+{% from "_bars.html" import bars with context %}
+{% from "_line.html" import ratio_panel with context %}
 {% set as_of = ("as of end of " ~ month) if month else "today" %}
+<section class="panel grouped-bars">
+  <div class="panel-head">
+    <h2>Assets &amp; liabilities <small>{{ as_of }}</small></h2>
+    <div class="segmented" role="radiogroup" aria-label="Group accounts by">
+      <label><input type="radio" name="accounts-group" value="currency" checked> By currency</label>
+      <label><input type="radio" name="accounts-group" value="liquidity"> By liquidity</label>
+    </div>
+  </div>
+  {% for group, comp in groupings.items() %}
+  <div class="composition-pair" data-group="{{ group }}">
+    {{ bars("Assets", comp.assets, "asset", "No asset accounts.", open=True) }}
+    {{ bars("Liabilities", comp.liabilities, "liability", "No liability accounts.", open=True) }}
+  </div>
+  {% endfor %}
+</section>
+
+{% set upto = ("up to " ~ month) if month else "all time" %}
+<div class="charts-grid">
+  {% for key, title, what, chart, series in (
+    ("debt-ratio", "Debt over equity", "Liabilities", debt_ratio, debt_series),
+    ("liquidity-ratio", "Net liquidity over equity", "Liquid assets minus liquid liabilities", liquidity_ratio, liquidity_series),
+  ) %}
+  {{ ratio_panel(key, title, what, chart, series, upto) }}
+  {% endfor %}
+</div>
+
 <div class="layout">
   <aside class="panel">
     <h2>New account</h2>

@@ -26,10 +26,11 @@ from pledger.web.store import (
 )
 from pledger.web.templating import money, quantity
 from pledger.web.views import (
-    build_charts,
+    build_accounts,
     build_credit_cards,
     build_currencies,
     build_investments,
+    build_results,
     column_chart,
     composition,
     equity_series,
@@ -457,9 +458,9 @@ class TestPages:
         })
         assert r.status_code == 422
 
-    def test_charts_balances_grouped_by_currency_or_liquidity(self, client):
-        assert 'name="accounts-group"' not in client.get("/accounts").text  # only in Charts
-        r = client.get("/charts")
+    def test_balances_grouped_by_currency_or_liquidity(self, client):
+        assert 'name="accounts-group"' not in client.get("/results").text  # only in Accounts
+        r = client.get("/accounts")
         assert 'name="accounts-group" value="currency" checked' in r.text
         assert 'name="accounts-group" value="liquidity"' in r.text
         by_currency = r.text.split('data-group="currency"')[1].split('data-group="liquidity"')[0]
@@ -476,8 +477,8 @@ class TestPages:
     def test_month_is_shared_between_tabs(self, client, settings):
         with settings.ledger_path.open("a") as f:
             f.write("2026-02-01;Food;Eq;100;Ca;\n")
-        client.get("/charts", params={"month": "2026-02"})
-        for path in ["/", "/accounts", "/charts"]:
+        client.get("/results", params={"month": "2026-02"})
+        for path in ["/", "/accounts", "/results"]:
             assert '<option value="2026-02" selected>' in client.get(path).text, path
         # An explicit "All time" is remembered too
         client.get("/accounts", params={"month": ""})
@@ -488,13 +489,13 @@ class TestPages:
         assert client.get("/", params={"month": "<x>"}).status_code == 200
 
     def test_visibility_toggle_marks_the_amounts(self, client):
-        for path in ["/", "/accounts", "/charts", "/investments", "/debt"]:
+        for path in ["/", "/accounts", "/results", "/investments", "/debt"]:
             r = client.get(path)
             assert 'id="visibility"' in r.text and 'class="eye-closed"' in r.text, path
         r = client.get("/")
         assert '<span class="num money gain">$1,010.50</span>' in r.text  # gains card
         assert 'data-confirm-money="$10.00"' in r.text  # masked in the delete question too
-        assert 'class="total money"' in client.get("/charts").text
+        assert 'class="total money"' in client.get("/results").text
 
     def test_currency_setting(self, settings):
         client = TestClient(create_app(replace(settings, currency="ARS")))
@@ -585,8 +586,8 @@ class TestPages:
         r = client.post("/movements/0/delete", data={"fingerprint": fp})
         assert r.status_code == 409
 
-    def test_setup(self, client):
-        r = client.get("/setup")
+    def test_result_types_and_base_movements(self, client):
+        r = client.get("/results")
         assert r.status_code == 200
         assert "Withdraw" in r.text
         assert "New account" not in r.text and "New base movement" in r.text
@@ -599,11 +600,11 @@ class TestPages:
         assert '<option value="" title="Any account">-</option>' in r.text
         assert '<span class="muted" title="Any account">-</span>' in r.text
 
-    def test_setup_create_result_type(self, client, settings):
+    def test_create_result_type(self, client, settings):
         data = {"name": "Tax", "long_name": "Taxes", "description": "Taxes paid"}
-        r = client.post("/setup/result-types", data=data, headers=HTMX)
+        r = client.post("/results/result-types", data=data, headers=HTMX)
         assert "Added result type Tax" in r.text and ">Taxes</td>" in r.text
-        r = client.post("/setup/result-types", data=data, headers=HTMX)
+        r = client.post("/results/result-types", data=data, headers=HTMX)
         assert 'class="msg error"' in r.text and "already exists" in r.text
 
     def test_help(self, client):
@@ -620,7 +621,7 @@ class TestPages:
             assert f"</span> {title}</h2>" in r.text
 
     @pytest.mark.parametrize(
-        "path", ["/", "/accounts", "/investments", "/debt", "/charts", "/setup", "/help"]
+        "path", ["/", "/accounts", "/investments", "/debt", "/results", "/help"]
     )
     def test_footer(self, client, path):
         text = client.get(path).text
@@ -628,7 +629,7 @@ class TestPages:
         assert "Made with Claude Code" in text
 
     def test_tables_are_sortable(self, client):
-        index, setup = client.get("/").text, client.get("/setup").text
+        index, setup = client.get("/").text, client.get("/results").text
         accounts = client.get("/accounts").text
         assert 'data-sortable="movements"' in index
         assert 'data-sortable="balances-asset"' in accounts
@@ -676,12 +677,12 @@ class TestPages:
         assert 'value="-5"' in r.text and 'value="2026-01-02"' in r.text
         assert 'name="is_liquid" value="true" checked' in r.text
 
-    def test_setup_create_base_movement(self, client, settings):
+    def test_create_base_movement(self, client, settings):
         data = {
             "name": "Rent", "move_type": "loss", "description": "Rent", "credit": "Bk",
             "result_type": "Gifts",
         }
-        r = client.post("/setup/base-movements", data=data, headers=HTMX)
+        r = client.post("/results/base-movements", data=data, headers=HTMX)
         assert "Added base movement Rent" in r.text
         assert LedgerStore(settings).load().base_movements["Rent"].result_type.name == "Gifts"
         r = client.get("/form/bases", params={"move_type": "loss"})
@@ -703,23 +704,27 @@ class TestPages:
         assert r.status_code == 500
         assert "Could not load the ledger" in r.text
 
-    def test_charts(self, client):
-        r = client.get("/charts")
+    def test_results(self, client):
+        r = client.get("/results")
         assert r.status_code == 200
-        assert 'href="/charts" aria-current="page"' in r.text
-        assert "Assets &amp; liabilities" in r.text and "Equity over time" in r.text
-        assert "$901.00" in r.text and "$159.75" in r.text  # Bk and Ca balances
+        assert 'href="/results" aria-current="page"' in r.text
+        assert "Equity over time" in r.text and "Assets &amp; liabilities" not in r.text
         assert "Salary" in r.text and "Food" in r.text
         assert "by result type" in r.text and "Result by type" in r.text
         assert "$1,060.75" in r.text  # final equity
         assert 'data-sortable="equity"' in r.text
 
-    def test_charts_partial_for_month(self, client, settings):
+    def test_account_charts(self, client):
+        r = client.get("/accounts")
+        assert "Assets &amp; liabilities <small>today</small>" in r.text
+        assert "$901.00" in r.text and "$159.75" in r.text  # Bk and Ca balances
+
+    def test_results_partial_for_month(self, client, settings):
         with settings.ledger_path.open("a") as f:
             f.write("2026-02-01;Food;Eq;100;Ca;\n")
-        r = client.get("/charts", params={"month": "2026-02"}, headers=HTMX)
-        assert "<html" not in r.text
-        assert "as of end of 2026-02" in r.text
+        r = client.get("/results", params={"month": "2026-02"}, headers=HTMX)
+        assert "<html" not in r.text and "New result type" not in r.text
+        assert "in 2026-02" in r.text
         assert "Salary" in r.text  # no gains in February, but still listed at zero
         assert "-$100.00" in r.text and "$960.75" in r.text
 
@@ -742,24 +747,27 @@ class TestCharts:
     def test_charts_keep_defined_order(self, settings):
         with settings.ledger_path.open("a") as f:
             f.write("2026-01-05;Card fee;Eq;500;Cc;\n")  # makes Cc a liability, Card fee the top loss
-        charts = build_charts(LedgerStore(settings).load())
-        assets = charts["groupings"]["liquidity"]["assets"][0]["children"]
+        snapshot = LedgerStore(settings).load()
+        groupings = build_accounts(snapshot)["groupings"]
+        assets = groupings["liquidity"]["assets"][0]["children"]
         assert [r["name"] for r in assets] == ["Ca", "Bk"]  # accounts.yaml order
-        assert [r["name"] for r in charts["groupings"]["currency"]["assets"]] == ["ARS", "USD"]
-        assert [r["name"] for r in charts["groupings"]["liquidity"]["liabilities"]] == ["Illiquid"]
+        assert [r["name"] for r in groupings["currency"]["assets"]] == ["ARS", "USD"]
+        assert [r["name"] for r in groupings["liquidity"]["liabilities"]] == ["Illiquid"]
+        charts = build_results(snapshot)
         losses = charts["losses"][0]["children"]
         assert [r["name"] for r in losses] == ["Food", "Card fee"]  # definition order, not size
         gains = charts["gains"]
         assert [r["name"] for r in gains] == ["Operative", "Gifts"]  # result type id order, no Initial
-        gains = build_charts(LedgerStore(settings).load(), initial=True)["gains"]
+        gains = build_results(LedgerStore(settings).load(), initial=True)["gains"]
         assert [r["name"] for r in gains] == ["Operative", "Gifts", "Initial"]
 
     def test_charts_list_everything_even_at_zero(self, settings):
         with settings.ledger_path.open("a") as f:
             f.write("2026-02-01;Food;Eq;100;Ca;\n")
-        charts = build_charts(LedgerStore(settings).load(), "2026-02")
+        snapshot = LedgerStore(settings).load()
+        charts = build_results(snapshot, "2026-02")
         # Only Food moved in February; every other bar is still there, at zero
-        by_currency = charts["groupings"]["currency"]
+        by_currency = build_accounts(snapshot, "2026-02")["groupings"]["currency"]
         assert [c["name"] for r in by_currency["assets"] for c in r["children"]] == ["Ca", "Bk"]
         assert [c["name"] for r in by_currency["liabilities"] for c in r["children"]] == ["Cc"]
         gains = charts["gains"]
@@ -772,7 +780,7 @@ class TestCharts:
         assert losses[1]["children"] == []  # Gifts has no loss base movements
 
     def test_gains_and_losses_by_result_type(self, settings):
-        charts = build_charts(LedgerStore(settings).load())
+        charts = build_results(LedgerStore(settings).load())
         gains = {r["name"]: r for r in charts["gains"]}
         assert set(gains) == {"Operative", "Gifts"}
         assert gains["Operative"]["value"] == pytest.approx(1000.5)
@@ -791,7 +799,7 @@ class TestCharts:
         assert statement[1]["cumulative"] == pytest.approx(960.25)
 
     def test_result_by_type_waterfall(self, settings, client):
-        chart = build_charts(LedgerStore(settings).load())["waterfall"]
+        chart = build_results(LedgerStore(settings).load())["waterfall"]
         # Gains then losses of each result type, in id order, then the profit from 0
         assert [(c["short"], c["kind"], c["start"], c["end"]) for c in chart["columns"]] == [
             ("Op", "gain", 0, 1000.5), ("Op", "loss", 1000.5, 950.25),
@@ -800,12 +808,12 @@ class TestCharts:
         ]
         assert [t["label"] for t in chart["x_ticks"]] == ["Op", "Gifts", "Profit"]
         assert chart["x_ticks"][0]["x"] == pytest.approx(20)  # between its two columns
-        assert build_charts(LedgerStore(settings).load(), "2025-12")["waterfall"] is None
-        r = client.get("/charts")
+        assert build_results(LedgerStore(settings).load(), "2025-12")["waterfall"] is None
+        r = client.get("/results")
         section = r.text.split("<h2>Result by type")[1].split("</section>")[0]
         assert 'class="line-chart columns waterfall"' in section
         assert section.index("<summary>Show table</summary>") < section.index('<table class="statement">')
-        section = client.get("/charts", params={"month": "2025-12"}).text.split("<h2>Result by type")[1]
+        section = client.get("/results", params={"month": "2025-12"}).text.split("<h2>Result by type")[1]
         assert "waterfall" not in section.split("</section>")[0] and "<summary>" not in section.split("</section>")[0]
 
     def test_nice_ticks(self):
@@ -821,17 +829,17 @@ class TestCharts:
             ("2026-01-04", 1060.75, 10),
         ]
         assert next(p["date"] for p in equity_series(snapshot, initial=True)) == "2025-12-31"
-        chart = build_charts(snapshot)["equity"]
+        chart = build_results(snapshot)["equity"]
         assert chart["points"][0]["x"] == 0 and chart["points"][-1]["x"] == 100
         assert chart["change"] == pytest.approx(960.25)  # the profit
-        assert build_charts(snapshot, "2025-12")["equity"] is None
-        assert build_charts(snapshot, "2025-12", initial=True)["equity"]["change"] == pytest.approx(100.5)
+        assert build_results(snapshot, "2025-12")["equity"] is None
+        assert build_results(snapshot, "2025-12", initial=True)["equity"]["change"] == pytest.approx(100.5)
 
     def test_month_end_charts(self, settings):
         with settings.ledger_path.open("a") as f:
             f.write("2026-03-01;Card fee;Eq;60.75;Cc;\n")  # no movements in February
         snapshot = LedgerStore(settings).load()
-        charts = build_charts(snapshot)
+        charts = build_accounts(snapshot)
         # Liabilities over equity: none until Cc's fee
         assert [(p["month"], p["value"]) for p in charts["debt_series"]] == [
             ("2025-12", 0), ("2026-01", 0), ("2026-02", 0), ("2026-03", pytest.approx(60.75 / 1000)),
@@ -840,16 +848,16 @@ class TestCharts:
         assert charts["liquidity_series"][-1]["value"] == pytest.approx(1060.75 / 1000)
         assert charts["debt_ratio"]["y_ticks"][-1]["label"] == "8%"
         # Up to the month picked
-        assert [p["month"] for p in build_charts(snapshot, "2026-01")["debt_series"]] == ["2025-12", "2026-01"]
+        assert [p["month"] for p in build_accounts(snapshot, "2026-01")["debt_series"]] == ["2025-12", "2026-01"]
 
     def test_ratios_without_positive_equity(self, settings):
         LedgerStore(settings).add("2026-02-01", "Card fee", "Eq", "Cc", "2000")
-        charts = build_charts(LedgerStore(settings).load())
+        charts = build_accounts(LedgerStore(settings).load())
         assert charts["debt_series"][-1]["value"] is None
         assert "M" in charts["debt_ratio"]["path"] and charts["debt_ratio"]["last"]["month"] == "2026-01"
 
     def test_month_end_charts_render(self, client):
-        r = client.get("/charts")
+        r = client.get("/accounts")
         for title in ("Debt over equity", "Net liquidity over equity"):
             assert f"<h2>{title} <small>all time, " in r.text
         # The currency shares are in the Currencies tab
@@ -1264,7 +1272,7 @@ class TestInternalResultTypes:
         assert all(m["base"] != "Initial (G)" for m in client.get("/api/movements").json())
         r = client.get("/")
         assert "Initial (G)" not in r.text and 'name="initial" value="true" >' in r.text
-        assert "Initial (G)" not in client.get("/charts").text
+        assert "Initial (G)" not in client.get("/results", headers=HTMX).text  # the charts
 
     def test_can_be_shown_but_not_deleted(self, client):
         movements = client.get("/api/movements", params={"initial": True}).json()
@@ -1273,7 +1281,7 @@ class TestInternalResultTypes:
         assert 'name="initial" value="true" checked>' in r.text
         assert r.text.count('hx-post="/movements/') == 4  # only the CSV rows
         assert "$1,060.75" in r.text  # the profit, with Bk's initial 100.50
-        assert ">Initial<" in client.get("/charts", params={"initial": True}).text
+        assert ">Initial<" in client.get("/results", params={"initial": True}).text
 
     def test_cannot_be_added_by_hand(self, settings):
         with pytest.raises(ValueError, match=re.escape("'Initial (G)' is internal")):
@@ -1358,7 +1366,7 @@ class TestInvestmentSides:
         assert (bases["Swap"]["debit"], bases["Swap"]["credit"]) == ("INVESTMENT", "INVESTMENT")
         r = client.get("/form/base-sides", params={"move_type": "transfer"})
         assert '<option value="INVESTMENT" >Any investment account</option>' in r.text
-        assert 'title="Any investment account">Investment<' in client.get("/setup").text
+        assert 'title="Any investment account">Investment<' in client.get("/results").text
 
     @pytest.mark.parametrize("name", [INVESTMENT, DEBT])
     def test_is_not_an_account_name(self, settings, name):
@@ -1403,7 +1411,7 @@ class TestDebtSides:
         assert (bases["Repay"]["debit"], bases["Repay"]["credit"]) == ("DEBT", None)
         r = client.get("/form/base-sides", params={"move_type": "transfer"})
         assert '<option value="DEBT" >Any debt account</option>' in r.text
-        assert 'title="Any debt account">Debt<' in client.get("/setup").text
+        assert 'title="Any debt account">Debt<' in client.get("/results").text
 
     def test_accounts_special_column(self, settings, tmp_path):
         text = settings.accounts_path.read_text(encoding="utf-8")
@@ -1540,7 +1548,7 @@ class TestDebtPage:
         assert "$170.50" in cards  # Dad 120 and Bank 50.50
         # The month is shared with the other tabs
         assert '<option value="2026-01" selected>' in client.get("/accounts").text
-        client.get("/charts", params={"month": "2025-12"})
+        client.get("/results", params={"month": "2025-12"})
         assert '<option value="2025-12" selected>' in client.get("/debt").text
         r = client.get("/debt", params={"month": "2026-02"}, headers=HTMX)
         assert "<html" not in r.text and '<div class="view">' in r.text and "$200.50" in r.text
@@ -2276,8 +2284,8 @@ class TestCreditCards:
         r = client.get("/credit-cards", params={"month": "2026-01"})
         assert "Owed over equity <small>up to 2026-01, at each month end</small>" in r.text
         assert 'data-sortable="owed-ratio"' in r.text and "2026-02</td>" not in r.text.split("Owed over equity")[1]
-        # The Charts tab still has its own ratio panels
-        charts = client.get("/charts", params={"month": ""}).text
+        # The Accounts tab still has its own ratio panels
+        charts = client.get("/accounts", params={"month": ""}).text
         assert "Debt over equity <small>" in charts and "Net liquidity over equity <small>" in charts
 
     def test_negative_balance_warning(self, settings, client):

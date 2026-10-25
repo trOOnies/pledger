@@ -76,9 +76,9 @@ MONTH_COOKIE = "pledger_month"
 
 def remembered_month(request: Request, month: str | None, months: list[str]) -> str:
     """
-    The month filter shared by the Ledger, Accounts and Charts pages: the one in
-    the URL if given (empty for all time), else the last one picked, if it still
-    has movements.
+    The month filter shared by the Ledger, Accounts, Results, Debt and Credit Cards
+    pages: the one in the URL if given (empty for all time), else the last one
+    picked, if it still has movements.
     """
     if month is None:
         month = request.cookies.get(MONTH_COOKIE, "")

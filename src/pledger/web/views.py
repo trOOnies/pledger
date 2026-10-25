@@ -117,7 +117,10 @@ def grouped_composition(totals: dict[str, dict[str, float]]) -> list[dict]:
 
 
 def build_accounts(snapshot: Snapshot, month: str = "", values: dict | None = None) -> dict:
-    """Balances per account and per type, plus the state of the new account form."""
+    """
+    Balances per account and per type, their composition and the month-end ratios
+    over equity, plus the state of the new account form.
+    """
     rows = snapshot.all_rows
     # Balances are cumulative: as of the end of the selected month.
     upto = rows[rows.move_date.str[:7] <= month] if month else rows
@@ -152,6 +155,8 @@ def build_accounts(snapshot: Snapshot, month: str = "", values: dict | None = No
         "liabilities": totals[AccountType.LIABILITY.value],
         "equity": totals[AccountType.EQUITY.value],
         "accounts_by_type": accounts_by_type,
+        "groupings": balance_groupings(snapshot, balances),
+        **over_time_charts(snapshot, month),
         # New equity accounts are not supported for now.
         "account_types": [t.value for t in ACCOUNT_TYPE_ORDER if t != AccountType.EQUITY],
         "currencies": list(snapshot.currencies.values()),
@@ -1214,24 +1219,12 @@ def stacked_chart(monthly: list[tuple[str, dict[str, float]]], groups: dict[str,
     }
 
 
-def build_charts(snapshot: Snapshot, month: str = "", initial: bool = False) -> dict:
+def balance_groupings(snapshot: Snapshot, balances: dict[str, float]) -> dict:
     """
-    Composition of balances, grouped by currency and by liquidity, and of results,
-    and equity over time. Results leave out the initial movements by default.
+    Composition of the balances of assets and liabilities, grouped by currency (base
+    first) or by liquidity, listing every group that has accounts. Accounts keep the
+    order they are defined in.
     """
-    rows = snapshot.all_rows
-    months = months_of(snapshot)
-    # Balances as of the end of the month; gains and losses within it.
-    upto = rows[rows.move_date.str[:7] <= month] if month else rows
-    balances = snapshot.ledger(upto).balances()
-    in_period = rows.move_date.str.startswith(month) if month else rows.move_date.notna()
-    if not initial:
-        in_period &= ~rows.base_movement.isin(snapshot.initial_base_names)
-    period = snapshot.ledger(rows[in_period])
-
-    # Accounts, result types and base movements keep the order they are defined in.
-    # Assets and liabilities are grouped by currency (base first) or by liquidity,
-    # listing every group that has accounts.
     def grouped(acc_type: AccountType, key, groups: list) -> list[dict]:
         accs = [a for a in snapshot.accounts.values() if a.acc_type == acc_type]
         return grouped_composition({
@@ -1242,7 +1235,7 @@ def build_charts(snapshot: Snapshot, month: str = "", initial: bool = False) -> 
 
     by_currency = [(c, c) for c in snapshot.currencies]
     by_liquidity = list(LIQUIDITY_GROUPS.items())
-    groupings = {
+    return {
         "currency": {
             "assets": grouped(AccountType.ASSET, lambda a: a.currency.name, by_currency),
             "liabilities": grouped(AccountType.LIABILITY, lambda a: a.currency.name, by_currency),
@@ -1252,6 +1245,20 @@ def build_charts(snapshot: Snapshot, month: str = "", initial: bool = False) -> 
             "liabilities": grouped(AccountType.LIABILITY, lambda a: a.is_liquid, by_liquidity),
         },
     }
+
+
+def build_results(snapshot: Snapshot, month: str = "", initial: bool = False) -> dict:
+    """
+    Composition of results, the result statement and equity over time. Results leave
+    out the initial movements by default. Result types and base movements keep the
+    order they are defined in.
+    """
+    rows = snapshot.all_rows
+    # Gains and losses within the month.
+    in_period = rows.move_date.str.startswith(month) if month else rows.move_date.notna()
+    if not initial:
+        in_period &= ~rows.base_movement.isin(snapshot.initial_base_names)
+    period = snapshot.ledger(rows[in_period])
 
     # Gains and losses per result type, then per base movement within each.
     period_totals: dict[str, float] = {}
@@ -1296,17 +1303,15 @@ def build_charts(snapshot: Snapshot, month: str = "", initial: bool = False) -> 
         equity["change"] = sum(p["change"] for p in series)
         equity["since"] = "in the month" if month else f"since {series[0]['date']}"
     return {
-        "months": months,
+        "months": months_of(snapshot),
         "month": month,
         "initial": initial,
-        "groupings": groupings,
         "gains": by_result_type(MovementType.GAIN),
         "losses": by_result_type(MovementType.LOSS),
         "statement": statement,
         "waterfall": waterfall_chart(statement),
         "equity": equity,
         "equity_series": series,
-        **over_time_charts(snapshot, month),
     }
 
 

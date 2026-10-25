@@ -61,7 +61,36 @@
         <dd>Every account with its <strong>description and balance</strong>, your total
           <strong>assets, liabilities and equity</strong>, and the form to <strong>add a new
           account</strong>. With a month picked, balances show where each account stood
-          <strong>at the end of that month</strong>.</dd>
+          <strong>at the end of that month</strong>. It also shows what your assets and liabilities
+          are made of, <strong>by currency or by liquidity</strong>, and, at each month end, your
+          <strong>debt over equity</strong> and your <strong>net liquidity</strong> (liquid assets
+          minus liquid liabilities) <strong>over equity</strong>.</dd>
+        <dt>💱 Currencies</dt>
+        <dd>Your <strong>currencies</strong>: the <strong>inflation month by month</strong> of the
+          base currency and the price index built from it, day by day (the months that haven't
+          ended yet are projected), and, for each other currency, what it is
+          <strong>worth in the base one</strong> over time next to its <strong>real value</strong>
+          (that value with inflation taken out, in today's prices: if it goes down, the
+          currency grew less than prices). It also shows the balances of the accounts in each currency, what the
+          accounts in other currencies hold <strong>in their own currency</strong>, and how your
+          assets are split <strong>by currency</strong> at each month end. Buying or selling another currency is a
+          <strong>conversion</strong>: add it here, with the amount in each currency. Every time the
+          currency's value changes, its accounts get a <strong>USD - Result</strong> gain or loss, so their
+          balance always matches what they hold at that value.</dd>
+        <dt>📊 Results</dt>
+        <dd>Your gains and losses <strong>grouped by result type</strong> (click a result type to
+          see what is inside it), a <strong>waterfall</strong> of the gains and then the losses of
+          each result type adding up to your profit (with its table one click away), and a line
+          showing your <strong>equity over time</strong>. Hover over the line to see each day.
+          Initial movements are left out of the results here too, unless you tick <em>Initial
+          movements</em>. Below them are your <strong>result types</strong> and <strong>base
+          movements</strong>; you can add new ones here.</dd>
+        <dt>💼 Work</dt>
+        <dd>Your <strong>work history, month by month</strong>: the company and job position,
+          the <strong>gross and net salary</strong>, and the date you <strong>received the
+          payment</strong>. Months without a job are kept too, so no month is ever missing. Add
+          the next month with the form, or click ✎ on a month to <strong>edit it</strong>. Two
+          charts show your <strong>gross and net salary</strong> over time.</dd>
         <dt>📈 Investments</dt>
         <dd>What you hold in your <strong>investment accounts</strong>: each investment with its
           type, quantity, amount and <strong>price</strong> (amount over quantity), and what your
@@ -91,42 +120,11 @@
           <strong>charged each month</strong> (your purchases, not your payments), and another one
           shows what you owe on them <strong>as a share of your equity</strong>, month by month,
           and their <strong>movements</strong> are listed below.</dd>
-        <dt>💼 Work</dt>
-        <dd>Your <strong>work history, month by month</strong>: the company and job position,
-          the <strong>gross and net salary</strong>, and the date you <strong>received the
-          payment</strong>. Months without a job are kept too, so no month is ever missing. Add
-          the next month with the form, or click ✎ on a month to <strong>edit it</strong>. Two
-          charts show your <strong>gross and net salary</strong> over time.</dd>
-        <dt>💱 Currencies</dt>
-        <dd>Your <strong>currencies</strong>: the <strong>inflation month by month</strong> of the
-          base currency and the price index built from it, day by day (the months that haven't
-          ended yet are projected), and, for each other currency, what it is
-          <strong>worth in the base one</strong> over time next to its <strong>real value</strong>
-          (that value with inflation taken out, in today's prices: if it goes down, the
-          currency grew less than prices). It also shows the balances of the accounts in each currency, what the
-          accounts in other currencies hold <strong>in their own currency</strong>, and how your
-          assets are split <strong>by currency</strong> at each month end. Buying or selling another currency is a
-          <strong>conversion</strong>: add it here, with the amount in each currency. Every time the
-          currency's value changes, its accounts get a <strong>USD - Result</strong> gain or loss, so their
-          balance always matches what they hold at that value.</dd>
-        <dt>📊 Charts</dt>
-        <dd>What your assets and liabilities are made of, <strong>by currency or by
-          liquidity</strong>, your gains and losses <strong>grouped by
-          result type</strong> (click a result type to see what is inside it), a
-          <strong>waterfall</strong> of the gains and then the losses of each result type adding up to
-          your profit (with its table one click away), and a line showing your <strong>equity over time</strong>. Hover over the
-          line to see each day. At each month end, it also charts your <strong>debt over
-          equity</strong> and your <strong>net liquidity</strong> (liquid assets minus liquid
-          liabilities) <strong>over equity</strong>. Initial movements are left out of the results
-          here too, unless you tick <em>Initial movements</em>.</dd>
-        <dt>⚙️ Setup</dt>
-        <dd>Your <strong>result types</strong> and <strong>base movements</strong>. You can add new
-          ones here.</dd>
         <dt>❓ Help</dt>
         <dd>This page.</dd>
       </dl>
       <p class="note">🗓️ The <strong>Month filter is shared</strong>: pick a month on Ledger,
-        Accounts, Debt, Credit Cards or Charts and the other tabs open on that same month. Pick
+        Accounts, Results, Debt or Credit Cards and the other tabs open on that same month. Pick
         <em>All time</em> to clear it.</p>
     </section>
 
@@ -175,7 +173,7 @@
       <p>Result types group gains and losses into <strong>larger families</strong>, such as
         <em>Operative</em> (everyday income and spending), <em>Investments</em> or <em>Taxes</em>.
         Every gain and loss base movement belongs to <strong>exactly one</strong> result type;
-        transfers have none. Result types are <strong>numbered</strong>, and the Charts tab lists
+        transfers have none. Result types are <strong>numbered</strong>, and the Results tab lists
         them in that order, with a <strong>running total</strong> that shows how each family adds to
         or takes from your profit.</p>
     </section>
@@ -208,7 +206,7 @@
         <strong>Checks</strong> column of the balances shows the accounts that have one.</p>
 
       <h3>➕ Add a result type or base movement</h3>
-      <p>Go to <a href="/setup">Setup</a>, open <strong>New result type</strong> or
+      <p>Go to <a href="/results">Results</a>, open <strong>New result type</strong> or
         <strong>New base movement</strong>, fill in the form and press the button. Every entry needs
         a short <strong>name</strong> and a <strong>description</strong>.</p>
       <ul>
@@ -232,7 +230,7 @@
         <a href="/debt">Debt</a> tab adds it to them, and warns you about movements that name no one.</p>
 
       <h3>🔎 Look at a single month or account</h3>
-      <p>Use the <strong>Month</strong> filter on Ledger, Accounts, Debt, Credit Cards or Charts (it is remembered
+      <p>Use the <strong>Month</strong> filter on Ledger, Accounts, Results, Debt or Credit Cards (it is remembered
         across tabs), and the <strong>Account</strong> filter on Ledger. Pick <em>All time</em> to
         go back.</p>
     </section>
@@ -267,7 +265,7 @@
         <dd>A number that follows <strong>how prices rise</strong> in your base currency, built day
           by day from the monthly inflation. It starts at 100.</dd>
         <dt>Cumulative</dt>
-        <dd>In the Charts result table, the net results <strong>added up</strong> from the first
+        <dd>In the result table of the Results tab, the net results <strong>added up</strong> from the first
           result type down to that row. The last row <strong>equals your profit</strong>.</dd>
         <dt>Equity</dt>
         <dd>Your <strong>net worth</strong>: assets minus liabilities. Gains raise it and losses lower it.</dd>

@@ -64,19 +64,18 @@ A FastAPI + HTMX UI, one tab per area:
 | Tab | What it shows |
 | --- | --- |
 | 📋 **Ledger** | Lists, adds and deletes movements, with the gains, losses and profit of the period. |
-| 🏦 **Accounts** | Balances, total assets, liabilities and equity, and a form to add accounts. |
+| 🏦 **Accounts** | Balances, total assets, liabilities and equity, a form to add accounts, the composition of assets and liabilities (by currency or by liquidity) and, at each month end, debt over equity and net liquidity (liquid assets minus liquid liabilities) over equity. |
+| 💱 **Currencies** | Balances per currency, the balance of each account in other currencies in its own currency, the daily CPI of the base currency, its monthly inflation, the nominal and real value of each other currency, and the share of each currency in the assets at each month end. The conversions are added and deleted here. |
+| 📊 **Results** | Gains and losses by result type, a waterfall of the result by type (with its result statement as a table) and equity over time. Result types and base movements are listed and added here. |
+| 💼 **Work** | The company, job position, gross and net salary of each month, with a chart of both salaries (0 for the months without a job). |
 | 📈 **Investments** | The investments of the investment accounts with their price (amount over quantity), their composition by type or by account, the results of each one, the interest on money of regular accounts, and charts of the total invested and the total result. The internal `Invest` movements are added and deleted here. |
 | 🤝 **Debt** | Who we owe and who owes us in the debt accounts (people, services and companies), with alerts and the movements of the month. |
 | 💳 **Credit Cards** | What we owe on each card, what was charged and paid in the month, a chart of the monthly charges, the net owed over equity, and the movements of the month. |
-| 💼 **Work** | The company, job position, gross and net salary of each month, with a chart of both salaries (0 for the months without a job). |
-| 💱 **Currencies** | Balances per currency, the balance of each account in other currencies in its own currency, the daily CPI of the base currency, its monthly inflation, the nominal and real value of each other currency, and the share of each currency in the assets at each month end. The conversions are added and deleted here. |
-| 📊 **Charts** | The composition of assets and liabilities, gains and losses by result type, a waterfall of the result by type (with its result statement as a table), equity over time and, at each month end, debt over equity and net liquidity (liquid assets minus liquid liabilities) over equity. |
-| ⚙️ **Setup** | Adds result types and base movements. |
 | ❓ **Help** | The concepts, explained for everyday users. |
 
 A few things are shared across tabs:
 
-- 🗓️ The **month filter** is shared by Ledger, Accounts, Debt, Credit Cards and Charts, and
+- 🗓️ The **month filter** is shared by Ledger, Accounts, Results, Debt and Credit Cards, and
   remembered in a cookie.
 - 🔮 In the Currencies tab, the months that haven't ended yet are **projected**: dashed in the
   CPI chart and faded in the inflation one.
@@ -152,7 +151,7 @@ asset:
     - net_zero
 ```
 
-The Charts tab groups their balances by currency or by liquidity.
+The Accounts tab groups their balances by currency or by liquidity.
 
 ### Base movements and internal movements
 

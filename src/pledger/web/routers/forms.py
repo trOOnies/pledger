@@ -339,7 +339,7 @@ def delete_work_month(
     return render_work(request, store)
 
 
-@router.post("/setup/result-types")
+@router.post("/results/result-types")
 def create_result_type(
     request: Request,
     store: StoreDep,
@@ -357,7 +357,7 @@ def create_result_type(
     )
 
 
-@router.post("/setup/base-movements")
+@router.post("/results/base-movements")
 def create_base_movement(
     request: Request,
     store: StoreDep,

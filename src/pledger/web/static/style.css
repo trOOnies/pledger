@@ -266,14 +266,15 @@ section.panel > .msg, .panel > .msg.warn { margin-bottom: .75rem; }
 }
 
 .htmx-request #view, #view.htmx-request,
-.htmx-request #charts, #charts.htmx-request,
+.htmx-request #results-view, #results-view.htmx-request,
 .htmx-request #accounts-view, #accounts-view.htmx-request,
 .htmx-request #debt-view, #debt-view.htmx-request,
 .htmx-request #credit-cards-view, #credit-cards-view.htmx-request,
 .htmx-request #work, #work.htmx-request { opacity: .6; transition: opacity .2s; }
 
 /* Charts */
-#charts { display: grid; gap: 1rem; }
+#accounts-view, #results-view { display: grid; gap: 1rem; }
+#results-view { margin-bottom: 1rem; }
 .charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); gap: 1rem; }
 .composition-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 0 1.5rem; }
 .composition h3 { display: flex; justify-content: space-between; margin-top: 0; }

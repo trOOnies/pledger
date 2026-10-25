@@ -6,7 +6,7 @@
     {% if result_type_success %}<p class="msg success">{{ result_type_success }}</p>{% endif %}
     <details class="add" {% if result_type_error %}open{% endif %}>
       <summary>New result type</summary>
-      <form class="stack" hx-post="/setup/result-types" hx-target="#setup">
+      <form class="stack" hx-post="/results/result-types" hx-target="#setup">
         {% if result_type_error %}<p class="msg error">{{ result_type_error }}</p>{% endif %}
         <div class="pair">
           <label>Name
@@ -46,7 +46,7 @@
     {% if base_success %}<p class="msg success">{{ base_success }}</p>{% endif %}
     <details class="add" {% if base_error %}open{% endif %}>
       <summary>New base movement</summary>
-      <form class="stack" hx-post="/setup/base-movements" hx-target="#setup">
+      <form class="stack" hx-post="/results/base-movements" hx-target="#setup">
         {% if base_error %}<p class="msg error">{{ base_error }}</p>{% endif %}
         <div class="pair">
           <label>Name

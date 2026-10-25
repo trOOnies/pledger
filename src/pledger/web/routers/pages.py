@@ -17,13 +17,13 @@ from pledger.web.templating import (
 )
 from pledger.web.views import (
     build_accounts,
-    build_charts,
     build_conversions,
     build_credit_cards,
     build_currencies,
     build_debts,
     build_invest_movements,
     build_investments,
+    build_results,
     build_view,
     build_work,
     months_of,
@@ -113,23 +113,17 @@ def currencies(request: Request, store: StoreDep):
     return templates.TemplateResponse(request, "currencies.html", context)
 
 
-@router.get("/charts")
-def charts(request: Request, store: StoreDep, month: str | None = None, initial: bool = False):
+@router.get("/results")
+def results(request: Request, store: StoreDep, month: str | None = None, initial: bool = False):
     snapshot = store.load()
     month = remembered_month(request, month, months_of(snapshot))
-    context = build_charts(snapshot, month, initial)
-    template = "_charts.html" if is_partial(request) else "charts.html"
-    return remember_month(templates.TemplateResponse(request, template, context), month)
+    context = build_results(snapshot, month, initial)
+    if is_partial(request):
+        return remember_month(templates.TemplateResponse(request, "_results.html", context), month)
+    context = {**context, **setup_context(snapshot), "settings": store.settings}
+    return remember_month(templates.TemplateResponse(request, "results.html", context), month)
 
 
 @router.get("/help")
 def help_page(request: Request, store: StoreDep):
     return templates.TemplateResponse(request, "help.html", {"settings": store.settings})
-
-
-@router.get("/setup")
-def setup(request: Request, store: StoreDep):
-    context = setup_context(store.load())
-    return templates.TemplateResponse(
-        request, "setup.html", {**context, "settings": store.settings}
-    )

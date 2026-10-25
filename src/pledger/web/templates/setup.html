@@ -1,8 +1,0 @@
-{% extends "base.html" %}
-{% block title %}Setup · pledger{% endblock %}
-{% block content %}
-<p class="muted">New result types and base movements are added to
-  <code>{{ settings.base_movements_path }}</code>, and new accounts to <code>{{ settings.accounts_path }}</code>.
-  Edit those files to change or remove entries. Ledger: <code>{{ settings.ledger_path }}</code>.</p>
-<div id="setup">{% include "_setup.html" %}</div>
-{% endblock %}
