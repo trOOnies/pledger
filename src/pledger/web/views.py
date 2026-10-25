@@ -30,8 +30,7 @@ from pledger.models import (
 from pledger.web.store import (
     BASE_AMOUNT,
     INITIAL_GAIN,
-    INTEREST_GAIN,
-    INTEREST_LOSS,
+    INTEREST,
     INVESTMENT_COLUMN,
     OTHER_AMOUNT,
     QUANTITY_COLUMN,
@@ -40,6 +39,7 @@ from pledger.web.store import (
     Snapshot,
     Work,
     conversion_fingerprint,
+    interest_fingerprint,
     is_capital,
     row_fingerprint,
     work_fingerprint,
@@ -57,6 +57,7 @@ def movement_rows(snapshot: Snapshot, rows: DataFrame, ledger: Ledger) -> list[d
     """The movements of a ledger built from these rows, newest first."""
     invest = snapshot.invest_base_movements()
     conversions = set(snapshot.conversion_rows.index)
+    salaries = set(snapshot.salary_rows.index)
     movements = [
         {
             "index": int(ix),
@@ -71,6 +72,7 @@ def movement_rows(snapshot: Snapshot, rows: DataFrame, ledger: Ledger) -> list[d
             "internal": move.move_base.internal,
             "invest": move.move_base.name in invest,  # added and deleted from the Investments tab
             "conversion": ix in conversions,  # added and deleted from the Currencies tab
+            "salary": ix in salaries,  # generated from the Work tab
         }
         for (ix, row), move in zip(rows.iterrows(), ledger.movements)
     ]
@@ -302,16 +304,10 @@ def build_investments(snapshot: Snapshot) -> dict:
 
 def interest_movements(snapshot: Snapshot) -> list:
     """
-    The movements of interest on money: the interest earned or paid on the money of
-    a regular account, naming no investment (else it is a result of the investment).
+    The movements of interest on money, of the interest CSV: the interest earned or
+    paid on the money of a regular account.
     """
-    rows = snapshot.rows
-    if not len(rows):
-        return []
-    rows = rows[rows.base_movement.isin({INTEREST_GAIN, INTEREST_LOSS})]
-    if INVESTMENT_COLUMN in rows.columns:
-        rows = rows[rows[INVESTMENT_COLUMN].str.strip() == ""]
-    return snapshot.ledger(rows).movements
+    return snapshot.ledger(snapshot.interest_rows).movements
 
 
 def build_interest(snapshot: Snapshot) -> dict:
@@ -346,7 +342,7 @@ def build_interest(snapshot: Snapshot) -> dict:
             cur = next_month(cur)
     accounts = list(by_account.values())
     return {
-        "has_interest": bool({INTEREST_GAIN, INTEREST_LOSS} & snapshot.base_movements.keys()),
+        "has_interest": bool(INTEREST & snapshot.base_movements.keys()),
         "interest_accounts": accounts,
         "interest_totals": {k: sum(a[k] for a in accounts) for k in ("gains", "losses", "net")},
         "interest_chart": column_chart(series) if series else None,
@@ -485,13 +481,25 @@ def owed_ratio_chart(snapshot: Snapshot, cards: list[str], month: str = "") -> d
 
 
 def build_invest_movements(snapshot: Snapshot) -> list[dict]:
-    """The movements of the investment base movements, newest first, with their investment and quantity."""
-    rows = snapshot.rows[snapshot.rows.base_movement.isin(snapshot.invest_base_movements())]
-    movements = movement_rows(snapshot, rows, snapshot.ledger(rows))
-    for m in movements:
-        row = rows.loc[m["index"]]
-        m["investment"] = row.get(INVESTMENT_COLUMN, "")
-        m["quantity"] = row.get(QUANTITY_COLUMN, "")
+    """
+    The movements of the investment base movements, newest first: those of the
+    investments CSV, with their investment and quantity, and those of the interest
+    CSV. Their `index` is their row in the CSV of their `source`.
+    """
+    movements = []
+    for source, rows, generated, fingerprint in (
+        ("investments", snapshot.investments, snapshot.investment_rows, row_fingerprint),
+        ("interest", snapshot.interest, snapshot.interest_rows, interest_fingerprint),
+    ):
+        # movement_rows lists them newest first: back to the order of the CSV
+        moves = movement_rows(snapshot, generated, snapshot.ledger(generated))[::-1]
+        for i, (m, (_, row)) in enumerate(zip(moves, rows.iterrows())):
+            movements.append({
+                **m, "index": i, "fingerprint": fingerprint(row), "source": source,
+                "investment": row.get(INVESTMENT_COLUMN, ""), "quantity": row.get(QUANTITY_COLUMN, ""),
+            })
+    movements.sort(key=lambda m: m["date"])  # stable: in their order on each date
+    movements.reverse()
     return movements
 
 
@@ -566,7 +574,7 @@ def invest_fields(snapshot: Snapshot, base_movement: str = "") -> dict:
         "bases_by_type": by_type,
         "base_movement": base_movement,
         "fields": account_fields(snapshot, base_movement),
-        "investment": "required" if side else "optional",
+        "investment": None if base_movement in INTEREST else "required" if side else "optional",
         "quantity": (
             "required" if base_movement in QUANTITY_REQUIRED
             else "optional" if base_movement in QUANTITY_OPTIONAL

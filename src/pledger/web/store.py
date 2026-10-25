@@ -42,6 +42,7 @@ from pledger.models import (
     next_month,
     parse_month,
 )
+from pledger.weeks import prorate_by_week
 
 BOM = "﻿"
 
@@ -54,7 +55,10 @@ INITIAL_LOSS = "Initial (L)"
 # when loading (see _result_rows), never stored in the CSV.
 RESULT_GAIN = "USD - Result (G)"
 RESULT_LOSS = "USD - Result (L)"
-GENERATED = [INITIAL_GAIN, INITIAL_LOSS, RESULT_GAIN, RESULT_LOSS]
+# Base movement of the salary of the work history. Its movements are generated each
+# week from the gross salary of its month (see _salary_rows), never stored in the CSV.
+SALARY = "Work - Salary Main"
+GENERATED = [INITIAL_GAIN, INITIAL_LOSS, RESULT_GAIN, RESULT_LOSS, SALARY]
 
 # Columns of the conversions CSV, of the movements between an account in the base
 # currency and one in another currency: the amount in each currency. Its movements
@@ -70,12 +74,20 @@ INVEST = "Invest"
 # regular account, with no investment involved.
 INTEREST_GAIN = "Interest on Money (G)"
 INTEREST_LOSS = "Interest on Money (L)"
+INTEREST = {INTEREST_GAIN, INTEREST_LOSS}
 
-# Columns of the ledger CSV with the details of the movements of the investment
-# base movements: the investment (its name in the investment account) and its
-# quantity, written as "Q = 1,234.50".
-INVESTMENT_COLUMN, QUANTITY_COLUMN = "additional_2", "additional"
-QUANTITY_PREFIX = "Q = "
+# Columns of the investments CSV, of the movements of the investment base movements
+# but the interest on money: those of the ledger CSV, plus the investment (its name
+# in the investment account) and its quantity, like 1,234.50.
+INVESTMENT_COLUMN, QUANTITY_COLUMN = "investment", "quantity"
+INVESTMENT_COLUMNS = [
+    "move_date", "base_movement", "acc_debit", "amount", "acc_credit", QUANTITY_COLUMN, INVESTMENT_COLUMN, "comment",
+]
+# Columns of the interest CSV, of the interest on money of a regular account: earned
+# (an INTEREST_GAIN movement debiting it) if its amount is positive, else paid (an
+# INTEREST_LOSS one crediting it).
+INTEREST_ACCOUNT = "acc_debit"
+INTEREST_COLUMNS = ["move_date", INTEREST_ACCOUNT, "amount", "comment"]
 # Investment base movements that change the quantity of the investment: it is
 # required to buy, sell and split, and optional for capital repayments.
 QUANTITY_REQUIRED = {"Investment - Bought", "Investment - Sold", "Stock split (More)", "Stock split (Less)"}
@@ -103,6 +115,8 @@ class Settings:
     work_path: Path | None = None  # missing: no work history yet (created when adding a month)
     credit_cards_path: Path | None = None  # None or missing: no credit card accounts
     conversions_path: Path | None = None  # missing: no conversions yet (created when adding one)
+    investment_movements_path: Path | None = None  # missing: none yet (created when adding one)
+    interest_path: Path | None = None  # missing: no interest on money yet (created when adding some)
     currency: str = "$"
 
     @classmethod
@@ -120,6 +134,10 @@ class Settings:
             work_path=Path(os.environ.get("PLEDGER_WORK", "info/work.csv")),
             credit_cards_path=Path(os.environ.get("PLEDGER_CREDIT_CARDS", "info/credit_cards.yaml")),
             conversions_path=Path(os.environ.get("PLEDGER_CONVERSIONS", "info/movements/conversion.csv")),
+            investment_movements_path=Path(
+                os.environ.get("PLEDGER_INVESTMENT_MOVEMENTS", "info/movements/investment.csv")
+            ),
+            interest_path=Path(os.environ.get("PLEDGER_INTEREST", "info/movements/interest.csv")),
             currency=os.environ.get("PLEDGER_CURRENCY", "$"),
         )
 
@@ -131,37 +149,70 @@ class Snapshot:
     accounts: dict[str, Account]
     base_movements: dict[str, MovementBase]
     result_types: dict[int, ResultType]
-    rows: DataFrame  # raw CSV rows, all columns as strings
+    rows: DataFrame  # raw ledger CSV rows, all columns as strings
     currencies: dict[str, Currency]  # the base currency first
     conversions: DataFrame  # raw conversions CSV rows, all columns as strings
-    # Generated movements, like CSV rows, indexed -1, -2, ...: the initial ones, those
-    # of the conversions and the results of the accounts in other currencies.
+    investments: DataFrame  # raw investments CSV rows, all columns as strings
+    interest: DataFrame  # raw interest CSV rows, all columns as strings
+    work: Work
+    # The first date of the ledger: of the movements of the CSVs, else the first initial
+    # date of the accounts, else today.
+    start_date: str = field(init=False)
+    # Generated movements, like ledger CSV rows, indexed -1, -2, ...: the initial ones,
+    # those of the investments, interest and conversions CSVs, the salaries and the
+    # results of the accounts in other currencies.
     initial_rows: DataFrame = field(init=False)
+    investment_rows: DataFrame = field(init=False)
+    interest_rows: DataFrame = field(init=False)
     conversion_rows: DataFrame = field(init=False)
+    salary_rows: DataFrame = field(init=False)
     result_rows: DataFrame = field(init=False)
     # The balance of each account in another currency in that currency (see _result_rows)
     other_balances: dict[str, float] = field(init=False)
 
     def __post_init__(self):
-        dates = [*self.rows["move_date"], *self.conversions["move_date"]]
-        self.initial_rows = _initial_rows(self.accounts, self.base_movements, self.rows.columns, dates)
-        self.conversion_rows = _conversion_rows(self, start=-len(self.initial_rows) - 1)
-        self.result_rows, self.other_balances = _result_rows(
-            self, start=-len(self.initial_rows) - len(self.conversion_rows) - 1
-        )
+        dates = [
+            *self.rows["move_date"], *self.investments["move_date"],
+            *self.interest["move_date"], *self.conversions["move_date"],
+        ]
+        initial_dates = [a.initial_date.isoformat() for a in self.accounts.values() if a.initial_date]
+        self.start_date = min(dates) if dates else min(initial_dates, default=dt.date.today().isoformat())
+        self.initial_rows = _initial_rows(self.accounts, self.base_movements, self.rows.columns, self.start_date)
+        start = -len(self.initial_rows) - 1
+        for name, generate in (
+            ("investment_rows", _investment_rows),
+            ("interest_rows", _interest_rows),
+            ("conversion_rows", _conversion_rows),
+            ("salary_rows", _salary_rows),
+        ):
+            setattr(self, name, generate(self, start))
+            start -= len(getattr(self, name))
+        self.result_rows, self.other_balances = _result_rows(self, start)
 
     @property
     def base_currency(self) -> Currency:
         return next(iter(self.currencies.values()))
 
+    @property
+    def booked_rows(self) -> DataFrame:
+        """
+        The movements of the CSVs and the salaries: all but the initial ones and the
+        results of the accounts in other currencies.
+        """
+        return _concat(
+            [self.rows, self.investment_rows, self.interest_rows, self.conversion_rows, self.salary_rows],
+            self.rows.columns,
+        )
+
     @cached_property
     def all_rows(self) -> DataFrame:
         """
-        The initial movements of the accounts, the CSV rows, the conversions and the
-        results of the accounts in other currencies, in date order (each date in that order).
+        The initial movements of the accounts, the CSV rows, the investments, the
+        interest on money, the conversions, the salaries and the results of the accounts
+        in other currencies, in date order (each date in that order).
         """
         return _concat(
-            [self.initial_rows, self.rows, self.conversion_rows, self.result_rows], self.rows.columns
+            [self.initial_rows, self.booked_rows, self.result_rows], self.rows.columns
         ).sort_values("move_date", kind="stable")
 
     def ledger(self, rows: DataFrame | None = None) -> Ledger:
@@ -200,7 +251,7 @@ class Snapshot:
     def debt_accounts(self, month: str = "") -> list[DebtAccount]:
         """
         Copies of the debt accounts as of the end of `month` (all the ledger by default):
-        their initial amounts, once they start, plus the CSV movements up to then.
+        their initial amounts, once they start, plus the booked movements up to then.
         """
         debts = {}
         for a in self.accounts.values():
@@ -208,7 +259,7 @@ class Snapshot:
                 started = not month or a.initial_date is None or a.initial_date.isoformat()[:7] <= month
                 creditors = {n: replace(c, amount=c.amount if started else 0.0) for n, c in a.creditors.items()}
                 debts[a.name] = replace(a, creditors=creditors)
-        rows = _concat([self.rows, self.conversion_rows], self.rows.columns)
+        rows = self.booked_rows
         rows = rows[rows.move_date.str[:7] <= month] if month else rows
         _apply_debts({**self.accounts, **debts}, rows)
         return list(debts.values())
@@ -218,8 +269,8 @@ class Snapshot:
     ) -> list[InvestmentAccount]:
         """
         Copies of the investment accounts as of the end of `month` (all the ledger by
-        default), with the CSV movements of the investment base movements up to then
-        applied to their investments (see _apply_investments). Their initial amounts
+        default), with the movements of the investments CSV up to then applied to their
+        investments (see _apply_investments). Their initial amounts
         and quantities count once they start. The results that can't be attributed
         to an investment are added to `unattributed`.
         """
@@ -238,20 +289,23 @@ class Snapshot:
             for a in self.accounts.values()
             if isinstance(a, InvestmentAccount)
         }
-        rows = self.rows[self.rows.move_date.str[:7] <= month] if month else self.rows
+        rows = self.investments
+        rows = rows[rows.move_date.str[:7] <= month] if month else rows
         found = _apply_investments(self, {**self.accounts, **accounts}, rows)
         if unattributed is not None:
             unattributed.extend(found)
         return list(accounts.values())
 
     def manual_base_movements(self) -> dict[str, MovementBase]:
-        """Base movements that can be picked for a new movement (not internal ones)."""
-        return {n: b for n, b in self.base_movements.items() if not b.internal}
+        """Base movements that can be picked for a new movement (not internal or generated ones)."""
+        return {n: b for n, b in self.base_movements.items() if not b.internal and n not in GENERATED}
 
     def invest_base_movements(self) -> dict[str, MovementBase]:
         """
         The internal base movements handled in the Investments tab: those of the
-        INVEST result type and the transfers with an INVESTMENT side.
+        INVEST result type and the transfers with an INVESTMENT side. The movements of
+        the INTEREST ones are in the interest CSV, and those of the others in the
+        investments CSV.
         """
         return {
             n: b for n, b in self.base_movements.items()
@@ -299,6 +353,11 @@ def conversion_fingerprint(row) -> str:
     return f"{row['move_date']}|{row['base_movement']}|{row[BASE_AMOUNT]}|{row[OTHER_AMOUNT]}"
 
 
+def interest_fingerprint(row) -> str:
+    """Identifies an interest CSV row's content, like row_fingerprint."""
+    return f"{row['move_date']}|{row[INTEREST_ACCOUNT]}|{row['amount']}"
+
+
 class LedgerStore:
     """Reads and writes the ledger files. The files are the source of truth."""
 
@@ -310,10 +369,11 @@ class LedgerStore:
         try:
             base_currency, other_currencies = Currency.load_yaml(str(s.currencies_path))
             currencies = {base_currency.name: base_currency, **other_currencies}
+            work = self.load_work()
             accounts = Account.load_yaml(
                 str(s.accounts_path), base_currency, other_currencies,
                 _existing(s.investments_path), _existing(s.creditors_path),
-                list(self.load_work().companies), _existing(s.credit_cards_path),
+                list(work.companies), _existing(s.credit_cards_path),
             )
             base_movements, result_types = MovementBase.load_yaml(
                 str(s.base_movements_path), accounts
@@ -326,12 +386,21 @@ class LedgerStore:
             stored = [n for n in GENERATED if n in set(rows["base_movement"])]
             if stored:
                 raise ValueError(
-                    f"The ledger CSV cannot have movements of {stored}: they are generated "
-                    "from the initial amounts of the accounts and the values of the currencies"
+                    f"The ledger CSV cannot have movements of {stored}: they are generated from the "
+                    "initial amounts of the accounts, the values of the currencies and the work history"
                 )
             snapshot = Snapshot(
-                accounts, base_movements, result_types, rows, currencies, self.load_conversions()
+                accounts, base_movements, result_types, rows, currencies, self.load_conversions(),
+                _load_movements(s.investment_movements_path, INVESTMENT_COLUMNS, "investments"),
+                _load_movements(s.interest_path, INTEREST_COLUMNS, "interest"),
+                work,
             )
+            misplaced = sorted(set(rows["base_movement"]) & set(snapshot.invest_base_movements()))
+            if misplaced:
+                raise ValueError(
+                    f"The ledger CSV cannot have movements of {misplaced}: they go in the investments "
+                    "CSV, or in the interest CSV for the interest on money"
+                )
             snapshot.ledger().check_accounts()  # validate the whole ledger up front
             snapshot.investment_accounts()
         except (OSError, KeyError, ValueError, AssertionError) as e:
@@ -352,11 +421,13 @@ class LedgerStore:
         investment_type: str = "",
     ) -> None:
         """
-        Validate a new movement and append it to the CSV. With `invest` (from the
+        Validate a new movement and append it to its CSV. With `invest` (from the
         Investments tab), it must be of an investment base movement (see
-        Snapshot.invest_base_movements), with its investment and quantity (see
-        _investment_details) and, for an investment new to its account, its type,
-        which is added to the investments YAML; without it, of a non-internal one.
+        Snapshot.invest_base_movements): the interest on money goes to the interest CSV,
+        and the others to the investments CSV, with their investment and quantity (see
+        _investment_details) and, for an investment new to its account, its type, which
+        is added to the investments YAML. Without it, it must be of a non-internal base
+        movement whose movements aren't generated, and goes to the ledger CSV.
         """
         snapshot = self.load()
         try:
@@ -366,8 +437,9 @@ class LedgerStore:
         if base_movement not in snapshot.base_movements:
             raise ValueError(f"Unknown base movement: {base_movement!r}")
         _check_invest(snapshot, base_movement, invest, "added")
-        if not invest and (str(investment).strip() or str(quantity).strip() or investment_type):
-            raise ValueError("Only movements of the Investments tab have an investment and a quantity")
+        has_details = str(investment).strip() or str(quantity).strip() or investment_type
+        if has_details and (not invest or base_movement in INTEREST):
+            raise ValueError("Only movements of the investments have an investment and a quantity")
         for name in (acc_debit, acc_credit):
             if name not in snapshot.accounts:
                 raise ValueError(f"Unknown account: {name!r}")
@@ -378,67 +450,79 @@ class LedgerStore:
         if acc_debit == acc_credit:
             raise ValueError("Debit and credit accounts must be different")
 
+        base = snapshot.base_movements[base_movement]
         try:
             Movement(
                 move_date=move_date,
-                move_base=snapshot.base_movements[base_movement],
+                move_base=base,
                 input_acc_debit=snapshot.accounts[acc_debit],
                 input_acc_credit=snapshot.accounts[acc_credit],
                 amount=value,
             )
         except AssertionError as e:
             raise ValueError(str(e)) from None
-
-        new_row = {col: "" for col in snapshot.rows.columns}
-        new_row.update(
-            move_date=move_date,
-            base_movement=base_movement,
-            acc_debit=acc_debit,
-            acc_credit=acc_credit,
-            amount=f"{value:,.2f}",
-        )
-        if "comment" in new_row:
-            new_row["comment"] = comment.replace(";", ",").strip()
-        new_type = None
         if invest:
-            _check_free_sides(
-                snapshot.base_movements[base_movement], snapshot.accounts[acc_debit], snapshot.accounts[acc_credit]
-            )
-            name, units = _investment_details(snapshot.base_movements[base_movement], investment, quantity)
-            details = {INVESTMENT_COLUMN: name, QUANTITY_COLUMN: _quantity_text(units) if units else ""}
-            for col, text in details.items():
-                if text and col not in new_row:
-                    raise ValueError(f"The ledger CSV has no {col!r} column for the investment details")
-                if col in new_row:
-                    new_row[col] = text
-            new_type = self._new_investment_type(snapshot, acc_debit, acc_credit, name, investment_type)
-        rows = concat([snapshot.rows, DataFrame([new_row])], ignore_index=True)
-        replace(snapshot, rows=rows).ledger().check_accounts()
+            _check_free_sides(base, snapshot.accounts[acc_debit], snapshot.accounts[acc_credit])
 
+        comment = comment.replace(";", ",").strip()
+        new_row = {
+            "move_date": move_date,
+            "base_movement": base_movement,
+            "acc_debit": acc_debit,
+            "acc_credit": acc_credit,
+            "amount": f"{value:,.2f}",
+            "comment": comment,
+        }
+        if not invest:
+            path, field, what = self.settings.ledger_path, "rows", "ledger"
+        elif base_movement in INTEREST:
+            path, field, what = self.settings.interest_path, "interest", "interest"
+            gain = base.move_type == MovementType.GAIN
+            new_row = {
+                "move_date": move_date,
+                INTEREST_ACCOUNT: acc_debit if gain else acc_credit,
+                "amount": f"{'' if gain else '-'}{value:,.2f}",
+                "comment": comment,
+            }
+        else:
+            path, field, what = self.settings.investment_movements_path, "investments", "investments"
+            name, units = _investment_details(base, investment, quantity)
+            new_row |= {INVESTMENT_COLUMN: name, QUANTITY_COLUMN: _quantity_text(units) if units else ""}
+        if path is None:
+            raise ValueError(f"No {what} CSV is set")
+        frame = getattr(snapshot, field)
+        new_row = _fit_row(new_row, frame.columns, what)
+        changed = replace(snapshot, **{field: concat([frame, DataFrame([new_row])], ignore_index=True)})
+        changed.ledger().check_accounts()
+        changed.investment_accounts()  # e.g. not selling more than is held
+        new_type = (
+            self._new_investment_type(snapshot, acc_debit, acc_credit, new_row[INVESTMENT_COLUMN], investment_type)
+            if field == "investments" else None
+        )
+
+        csv_file = self._read_file(len(frame), path, header=list(frame.columns))
         buf = io.StringIO()
         csv.writer(buf, delimiter=";", lineterminator="").writerow(new_row.values())
-        csv_file = self._read_file(len(snapshot.rows), self.settings.ledger_path)
         csv_file.lines.append(buf.getvalue())
-        if not invest:
+        if new_type is None:
             self._write_file(csv_file)
             return
 
-        # Investment movements also change the investments: roll back if they can't
-        # (e.g. selling more than is held).
-        paths = [self.settings.ledger_path]
-        if new_type is not None:
-            paths.append(self.settings.investments_path)
-        before = {path: path.read_bytes().decode("utf-8") for path in paths}
-        if new_type is not None:
-            acc_name, name, inv_type = new_type
-            yaml_text = _insert_yaml_entry(before[paths[1]], (acc_name,), name, inv_type.value)
-            _atomic_write(paths[1], yaml_text)
+        # A new investment type also changes the investments YAML: roll back if the
+        # files no longer load.
+        yaml_path = self.settings.investments_path
+        before = {p: p.read_bytes().decode("utf-8") if p.exists() else None for p in (path, yaml_path)}
+        acc_name, name, inv_type = new_type
+        _atomic_write(yaml_path, _insert_yaml_entry(before[yaml_path], (acc_name,), name, inv_type.value))
         self._write_file(csv_file)
         try:
             self.load()
         except LedgerDataError as e:
-            for path, text in before.items():
-                _atomic_write(path, text)
+            for p, text in before.items():
+                if text is None:
+                    p.unlink()
+                else:
+                    _atomic_write(p, text)
             raise ValueError(f"Could not add the movement: {e}") from None
 
     @staticmethod
@@ -742,36 +826,51 @@ class LedgerStore:
         del csv_file.lines[csv_file.row_lines[index]]
         self._write_file(csv_file)
 
-    def delete(self, index: int, fingerprint: str | None = None, invest: bool = False) -> None:
+    def delete(self, index: int, fingerprint: str | None = None) -> None:
         """
-        Delete a row by position, optionally checking it is the expected one.
-        With `invest` (from the Investments tab), it must be a movement of an
-        investment base movement; without it, of a non-internal one.
+        Delete a row of the ledger CSV by position, optionally checking it is the
+        expected one. Never of an internal base movement.
+        """
+        self._delete_row("rows", index, fingerprint)
+
+    def delete_investment(self, index: int, fingerprint: str | None = None) -> None:
+        """Delete a row of the investments CSV by position, like delete."""
+        self._delete_row("investments", index, fingerprint)
+
+    def delete_interest(self, index: int, fingerprint: str | None = None) -> None:
+        """Delete a row of the interest CSV by position, like delete."""
+        self._delete_row("interest", index, fingerprint)
+
+    def _delete_row(self, field: str, index: int, fingerprint: str | None) -> None:
+        """
+        Delete a row by position from the CSV of a Snapshot `field` ("rows",
+        "investments" or "interest"), optionally checking it is the expected one.
         """
         snapshot = self.load()
-        rows = snapshot.rows
+        rows = getattr(snapshot, field)
+        what, path, fingerprint_of = {
+            "rows": ("ledger", self.settings.ledger_path, row_fingerprint),
+            "investments": ("investments", self.settings.investment_movements_path, row_fingerprint),
+            "interest": ("interest on money", self.settings.interest_path, interest_fingerprint),
+        }[field]
         if not 0 <= index < len(rows):
-            raise StaleRowError(f"Row {index} does not exist")
-        if fingerprint is not None and row_fingerprint(rows.iloc[index]) != fingerprint:
+            raise StaleRowError(f"Row {index} of the {what} does not exist")
+        if fingerprint is not None and fingerprint_of(rows.iloc[index]) != fingerprint:
             raise StaleRowError(
-                "The ledger changed since this page was loaded; reload and try again"
+                f"The {what} changed since this page was loaded; reload and try again"
             )
-        _check_invest(snapshot, rows.iloc[index]["base_movement"], invest, "deleted")
-        replace(snapshot, rows=rows.drop(index=rows.index[index])).ledger().check_accounts()
-        csv_file = self._read_file(len(rows), self.settings.ledger_path)
+        if field == "rows":
+            _check_invest(snapshot, rows.iloc[index]["base_movement"], False, "deleted")
+        changed = replace(snapshot, **{field: rows.drop(index=rows.index[index])})
+        changed.ledger().check_accounts()
+        changed.investment_accounts()  # e.g. not deleting a purchase of something sold later
+        csv_file = self._read_file(len(rows), path)
         del csv_file.lines[csv_file.row_lines[index]]
         self._write_file(csv_file)
 
     def load_conversions(self) -> DataFrame:
         """The conversions CSV rows, all columns as strings; none if it is missing."""
-        path = self.settings.conversions_path
-        if not _existing(path) or not path.read_bytes().strip():
-            return DataFrame(columns=CONVERSION_COLUMNS, dtype=str)
-        rows = read_csv(path, sep=";", dtype=str, keep_default_na=False, encoding="utf-8-sig")
-        missing = [c for c in CONVERSION_COLUMNS if c != "comment" and c not in rows.columns]
-        if missing:
-            raise ValueError(f"The conversions CSV is missing the columns {missing}")
-        return rows
+        return _load_movements(self.settings.conversions_path, CONVERSION_COLUMNS, "conversions")
 
     def add_conversion(
         self,
@@ -837,12 +936,15 @@ class LedgerStore:
         del csv_file.lines[csv_file.row_lines[index]]
         self._write_file(csv_file)
 
-    def _read_file(self, n_rows: int, path: Path) -> _CsvFile:
+    def _read_file(self, n_rows: int, path: Path, header: list[str] | None = None) -> _CsvFile:
         """
         Split a CSV into raw lines, so edits touch only the affected line and
-        every other byte (quoting, BOM, line endings) is kept as is.
+        every other byte (quoting, BOM, line endings) is kept as is. With a `header`,
+        a missing or empty CSV is a new one with it.
         """
-        raw = path.read_bytes().decode("utf-8")
+        raw = path.read_bytes().decode("utf-8") if path.exists() else ""
+        if header is not None and not raw.strip():
+            raw = ";".join(header) + "\n"
         bom = raw.startswith(BOM)
         text = raw.removeprefix(BOM)
         newline = "\r\n" if "\r\n" in text else "\n"
@@ -887,7 +989,8 @@ def _work_month(row) -> WorkMonth:
 def _check_invest(snapshot: Snapshot, base_name: str, invest: bool, action: str) -> None:
     """
     Movements of the investment base movements are only added and deleted from the
-    Investments tab (`invest`), and those of other internal ones never by hand.
+    Investments tab (`invest`), those of other internal ones never by hand, and the
+    GENERATED ones are never stored.
     """
     is_invest = base_name in snapshot.invest_base_movements()
     if invest and not is_invest:
@@ -896,37 +999,65 @@ def _check_invest(snapshot: Snapshot, base_name: str, invest: bool, action: str)
         raise ValueError(f"Movements of the base movement {base_name!r} are {action} from the Investments tab")
     if snapshot.base_movements[base_name].internal and not is_invest:
         raise ValueError(f"Base movement {base_name!r} is internal and its movements cannot be {action} by hand")
+    if base_name in GENERATED:
+        raise ValueError(f"The movements of the base movement {base_name!r} are generated by pledger")
+
+
+def _required_base(
+    base_movements: dict[str, MovementBase], name: str, gain: bool, purpose: str = ""
+) -> MovementBase:
+    """
+    A base movement pledger generates or handles movements of (for a `purpose`, if
+    given): an internal gain with a free debit side, or an internal loss with a free
+    credit side, against the equity account.
+    """
+    move_type, side = (MovementType.GAIN, LedgerSide.DEBIT) if gain else (MovementType.LOSS, LedgerSide.CREDIT)
+    base = base_movements.get(name)
+    if base is None or not base.internal or base.move_type != move_type or base.side(side) is not None:
+        raise ValueError(
+            f"The base movement {name!r} is required{' ' + purpose if purpose else ''}: "
+            f"an internal {move_type.value} with no fixed {side.value} account"
+        )
+    return base
 
 
 def _check_initial_base_movements(base_movements: dict[str, MovementBase]) -> None:
+    """INITIAL_GAIN and INITIAL_LOSS record the initial amount of the accounts (see _required_base)."""
+    _required_base(base_movements, INITIAL_GAIN, gain=True)
+    _required_base(base_movements, INITIAL_LOSS, gain=False)
+
+
+def _load_movements(path: Path | None, columns: list[str], what: str) -> DataFrame:
     """
-    INITIAL_GAIN and INITIAL_LOSS must be an internal gain and loss, with a free
-    asset or liability side, to record the initial amount of the accounts.
+    The rows of a CSV of movements, all columns as strings, which must have these
+    columns but the comment; none if it is missing.
     """
-    for name, move_type, side in (
-        (INITIAL_GAIN, MovementType.GAIN, LedgerSide.DEBIT),
-        (INITIAL_LOSS, MovementType.LOSS, LedgerSide.CREDIT),
-    ):
-        base = base_movements.get(name)
-        if base is None or not base.internal or base.move_type != move_type or base.side(side) is not None:
-            raise ValueError(
-                f"The base movement {name!r} is required: an internal {move_type.value} "
-                f"with no fixed {side.value} account"
-            )
+    if not _existing(path) or not path.read_bytes().strip():
+        return DataFrame(columns=columns, dtype=str)
+    rows = read_csv(path, sep=";", dtype=str, keep_default_na=False, encoding="utf-8-sig")
+    missing = [c for c in columns if c != "comment" and c not in rows.columns]
+    if missing:
+        raise ValueError(f"The {what} CSV is missing the columns {missing}")
+    return rows
+
+
+def _fit_row(row: dict, columns, what: str) -> dict:
+    """A new row of a CSV with these columns, the missing ones empty. Its values must have a column."""
+    lost = [col for col, value in row.items() if value and col not in columns]
+    if lost:
+        raise ValueError(f"The {what} CSV has no {lost[0]!r} column")
+    return {col: row.get(col, "") for col in columns}
 
 
 def _initial_rows(
-    accounts: dict[str, Account], base_movements: dict[str, MovementBase], columns, dates: list[str]
+    accounts: dict[str, Account], base_movements: dict[str, MovementBase], columns, first_date: str
 ) -> DataFrame:
     """
     The movement recording the initial amount of each account, in definition order,
-    as CSV rows with these columns: on its initial date, or the first of the `dates`
-    of the ledger and conversions CSVs (the first initial date if there are none, else
-    today). Increases are INITIAL_GAIN and decreases INITIAL_LOSS movements against
+    as CSV rows with these columns: on its initial date, else the first date of the
+    ledger. Increases are INITIAL_GAIN and decreases INITIAL_LOSS movements against
     the equity account.
     """
-    initial_dates = [a.initial_date.isoformat() for a in accounts.values() if a.initial_date]
-    first_date = min(dates) if dates else min(initial_dates, default=dt.date.today().isoformat())
     new_rows = []
     for acc in accounts.values():
         amount = acc.initial_amount
@@ -963,6 +1094,90 @@ def _concat(frames: list[DataFrame], columns) -> DataFrame:
     """The rows of these frames, with these columns: concat fails on empty ones."""
     frames = [f for f in frames if len(f)]
     return concat(frames) if frames else DataFrame(columns=columns, dtype=str)
+
+
+def _investment_rows(snapshot: Snapshot, start: int) -> DataFrame:
+    """
+    The movements of the investments CSV, as CSV rows indexed from `start` down: of
+    the investment base movements but the INTEREST ones. Their investments and
+    quantities are checked against the investment accounts by _apply_investments.
+    """
+    bases = snapshot.invest_base_movements()
+    new_rows = []
+    for _, row in snapshot.investments.iterrows():
+        if row["base_movement"] not in bases or row["base_movement"] in INTEREST:
+            raise ValueError(
+                "The investments CSV can only have movements of the investment base movements but the "
+                f"interest on money, not of {row['base_movement']!r} ({row['move_date']})"
+            )
+        new_rows.append({col: row[col] for col in snapshot.rows.columns if col in row.index})
+    return _generated_rows(new_rows, snapshot.rows.columns, start)
+
+
+def _interest_rows(snapshot: Snapshot, start: int) -> DataFrame:
+    """
+    The movements of the interest CSV, as CSV rows indexed from `start` down: an
+    INTEREST_GAIN debiting its account if the amount is positive, else an
+    INTEREST_LOSS crediting it, against the equity account. Never of an investment
+    account: the results of an investment are in the investments CSV.
+    """
+    new_rows = []
+    for _, row in snapshot.interest.iterrows():
+        date, name, text = row["move_date"], row[INTEREST_ACCOUNT], row["amount"].strip()
+        account = snapshot.accounts.get(name)
+        if account is None:
+            raise ValueError(f"Unknown account of the interest on money: {name!r} ({date})")
+        if isinstance(account, InvestmentAccount):
+            raise ValueError(f"The interest on money cannot be of an investment account: {name} ({date})")  # noqa: TRY004 (a bad data value)
+        gain = not text.startswith("-")
+        base = _required_base(
+            snapshot.base_movements, INTEREST_GAIN if gain else INTEREST_LOSS, gain, "for the interest on money"
+        )
+        amount = _parse_amount(text.removeprefix("-"), f"amount of the interest on money ({date})")
+        new_rows.append({
+            "move_date": date,
+            "base_movement": base.name,
+            "acc_debit": name if gain else base.acc_debit.name,
+            "acc_credit": base.acc_credit.name if gain else name,
+            "amount": f"{amount:,.2f}",
+            **({"comment": row.get("comment", "")} if "comment" in snapshot.rows.columns else {}),
+        })
+    return _generated_rows(new_rows, snapshot.rows.columns, start)
+
+
+def _salary_rows(snapshot: Snapshot, start: int) -> DataFrame:
+    """
+    The salaries of the work history, as CSV rows indexed from `start` down: the gross
+    salary of each month split equally between its weeks (see weeks.Week), as a SALARY
+    movement on the Monday of each one, from the first date of the ledger on. Their
+    comment names the company first, so that a debt account on their debit side owes
+    them to it (see DebtAccount.creditor_in).
+    """
+    new_rows = []
+    for month in snapshot.work.months:
+        if month.is_gap:
+            continue
+        weeks = prorate_by_week(month.month, month.gross)
+        for i, (week, amount) in enumerate(weeks, 1):
+            if week.start.isoformat() < snapshot.start_date or amount == 0:
+                continue
+            new_rows.append({
+                "move_date": week.start.isoformat(),
+                "base_movement": SALARY,
+                "amount": f"{amount:,.2f}",
+                **({"comment": f"{month.company} ({month.position}): week {i}/{len(weeks)} of {month.month}"}
+                   if "comment" in snapshot.rows.columns else {}),
+            })
+    if new_rows:
+        base = snapshot.base_movements.get(SALARY)
+        if base is None or base.move_type != MovementType.GAIN or base.acc_debit is None:
+            raise ValueError(
+                f"The base movement {SALARY!r} is required for the salaries of the work history: "
+                "a gain with a fixed debit account"
+            )
+        for row in new_rows:
+            row |= {"acc_debit": base.acc_debit.name, "acc_credit": base.acc_credit.name}
+    return _generated_rows(new_rows, snapshot.rows.columns, start)
 
 
 def _conversion_rows(snapshot: Snapshot, start: int) -> DataFrame:
@@ -1043,7 +1258,10 @@ def _result_rows(snapshot: Snapshot, start: int) -> tuple[DataFrame, dict[str, f
                 sign = sign if accounts[name].acc_type == AccountType.ASSET else -sign
                 moves[name].append((date, sign * amount, None if other is None else sign * other))
 
-    rows = _concat([snapshot.initial_rows, snapshot.rows], snapshot.rows.columns)
+    rows = _concat(
+        [snapshot.initial_rows, snapshot.rows, snapshot.investment_rows, snapshot.interest_rows, snapshot.salary_rows],
+        snapshot.rows.columns,
+    )
     for date, debit, credit, amount in zip(rows["move_date"], rows["acc_debit"], rows["acc_credit"], rows["amount"]):
         add(date, debit, credit, float(amount.replace(",", "").replace(" ", "") or 0), None)
     for _, row in snapshot.conversions.iterrows():
@@ -1068,7 +1286,11 @@ def _result_rows(snapshot: Snapshot, start: int) -> tuple[DataFrame, dict[str, f
             result = round(other * value - book, 2)
             if abs(result) < 0.005:
                 continue
-            base = _result_base(snapshot, (result > 0) == (acc.acc_type == AccountType.ASSET))
+            gain = (result > 0) == (acc.acc_type == AccountType.ASSET)
+            base = _required_base(
+                snapshot.base_movements, RESULT_GAIN if gain else RESULT_LOSS, gain,
+                "to revalue the accounts in other currencies",
+            )
             sides = (name, base.acc_credit.name) if base.name == RESULT_GAIN else (base.acc_debit.name, name)
             new_rows.append({
                 "move_date": day, "base_movement": base.name, "acc_debit": sides[0], "acc_credit": sides[1],
@@ -1093,24 +1315,6 @@ def _in_currency(move: tuple[str, float, float | None], values) -> float:
     return amount / (up_to.iloc[-1] if len(up_to) else values.iloc[0])
 
 
-def _result_base(snapshot: Snapshot, gain: bool) -> MovementBase:
-    """
-    RESULT_GAIN or RESULT_LOSS, which must be an internal gain and loss with a free
-    asset or liability side, when an account in another currency gets a result.
-    """
-    name, move_type, side = (
-        (RESULT_GAIN, MovementType.GAIN, LedgerSide.DEBIT) if gain
-        else (RESULT_LOSS, MovementType.LOSS, LedgerSide.CREDIT)
-    )
-    base = snapshot.base_movements.get(name)
-    if base is None or not base.internal or base.move_type != move_type or base.side(side) is not None:
-        raise ValueError(
-            f"The base movement {name!r} is required to revalue the accounts in other currencies: "
-            f"an internal {move_type.value} with no fixed {side.value} account"
-        )
-    return base
-
-
 def _apply_debts(accounts: dict[str, Account], rows: DataFrame) -> None:
     """
     Add the CSV movements of the debt accounts to whoever is named in their comments:
@@ -1129,16 +1333,15 @@ def _apply_debts(accounts: dict[str, Account], rows: DataFrame) -> None:
 def _investment_details(base: MovementBase, investment: str, quantity: str | float) -> tuple[str, float | None]:
     """
     The investment and quantity of a movement of an investment base movement. The
-    investment is required with an INVESTMENT side; the quantity (positive, with
-    or without the QUANTITY_PREFIX) for QUANTITY_REQUIRED, and only allowed for
-    them and QUANTITY_OPTIONAL.
+    investment is required with an INVESTMENT side; the quantity (positive) for
+    QUANTITY_REQUIRED, and only allowed for them and QUANTITY_OPTIONAL.
     """
     name = str(investment).strip()
     if any(c in name for c in ";\r\n"):
         raise ValueError("The investment cannot contain ';' or line breaks")
     if INVESTMENT in {base.debit_special, base.credit_special} and not name:
         raise ValueError(f"Movements of {base.name!r} must name their investment")
-    text = str(quantity).strip().removeprefix(QUANTITY_PREFIX.strip()).strip()
+    text = str(quantity).strip()
     if not text:
         if base.name in QUANTITY_REQUIRED:
             raise ValueError(f"Movements of {base.name!r} must have a quantity")
@@ -1174,15 +1377,14 @@ def is_capital(base: MovementBase) -> bool:
 
 
 def _quantity_text(value: float) -> str:
-    """A quantity as written in the QUANTITY_COLUMN, e.g. Q = 1,234.50 or Q = 4.6209."""
+    """A quantity as written in the QUANTITY_COLUMN, e.g. 1,234.50 or 4.6209."""
     whole, _, decimals = f"{value:,.6f}".rstrip("0").partition(".")
-    return f"{QUANTITY_PREFIX}{whole}.{decimals.ljust(2, '0')}"
+    return f"{whole}.{decimals.ljust(2, '0')}"
 
 
 def _apply_investments(snapshot: Snapshot, accounts: dict[str, Account], rows: DataFrame) -> list[dict]:
     """
-    Add the CSV movements of the investment base movements to the investment they
-    name, in the investment account on either side: the amount and quantity to a
+    Add the movements of the investments CSV to the investment they name, in the investment account on either side: the amount and quantity to a
     debit, taken out of a credit. Investments not in the investments YAML are added
     with no type.
 
@@ -1239,12 +1441,13 @@ def _existing(path: Path | None) -> str | None:
 
 
 def _atomic_write(path: Path, text: str) -> None:
-    """Atomically replace a file, keeping its permissions."""
+    """Atomically replace a file, keeping its permissions, or create it (and its folder)."""
+    path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
             f.write(text)
-        os.chmod(tmp, path.stat().st_mode & 0o777)
+        os.chmod(tmp, path.stat().st_mode & 0o777 if path.exists() else 0o644)
         os.replace(tmp, path)
     except BaseException:
         Path(tmp).unlink(missing_ok=True)

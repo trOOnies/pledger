@@ -26,6 +26,8 @@
             <a class="muted" href="/investments" title="Added and deleted from the Investments tab">🔒</a>
             {% elif m.conversion %}
             <a class="muted" href="/currencies" title="Added and deleted from the Currencies tab">🔒</a>
+            {% elif m.salary %}
+            <a class="muted" href="/work" title="Generated each week from the gross salary of the Work tab">🔒</a>
             {% elif m.internal %}
             <span class="muted" title="Added by pledger itself; it cannot be deleted by hand">🔒</span>
             {% else %}

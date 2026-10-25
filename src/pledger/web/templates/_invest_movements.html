@@ -11,14 +11,14 @@
           <td class="nowrap">{{ m.date }}</td>
           <td><span class="badge {{ m.type }}">{{ m.type[0] | upper }}</span> {{ m.base }}</td>
           <td class="{{ 'muted' if not m.investment }}">{{ m.investment or "-" }}</td>
-          <td class="num {{ 'muted' if not m.quantity }}">{{ (m.quantity | replace("Q = ", "")) or "-" }}</td>
+          <td class="num {{ 'muted' if not m.quantity }}">{{ m.quantity or "-" }}</td>
           <td>{{ m.debit }}</td>
           <td class="num money" data-sort="{{ m.amount }}">{{ m.amount | money }}</td>
           <td>{{ m.credit }}</td>
           <td class="muted">{{ m.comment }}</td>
           <td>
             <button class="icon" title="Delete" aria-label="Delete movement"
-              hx-post="/investments/movements/{{ m.index }}/delete"
+              hx-post="/investments/{{ 'interest' if m.source == 'interest' else 'movements' }}/{{ m.index }}/delete"
               hx-vals='{{ {"fingerprint": m.fingerprint} | tojson }}'
               hx-confirm="Delete {{ m.date }} {{ m.base }} ({{ m.amount | money }})?"
               data-confirm-money="{{ m.amount | money }}"

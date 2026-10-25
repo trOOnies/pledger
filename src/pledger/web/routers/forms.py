@@ -165,7 +165,18 @@ def create_investment_movement(
 @router.post("/investments/movements/{index}/delete", response_class=Response)
 def delete_investment_movement(store: StoreDep, index: int, fingerprint: Annotated[str, Form()]):
     try:
-        store.delete(index, fingerprint, invest=True)
+        store.delete_investment(index, fingerprint)
+    except StaleRowError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from None
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
+    return Response(status_code=200, headers={"HX-Trigger": "investments-changed"})
+
+
+@router.post("/investments/interest/{index}/delete", response_class=Response)
+def delete_interest_movement(store: StoreDep, index: int, fingerprint: Annotated[str, Form()]):
+    try:
+        store.delete_interest(index, fingerprint)
     except StaleRowError as e:
         raise HTTPException(status_code=409, detail=str(e)) from None
     except ValueError as e:

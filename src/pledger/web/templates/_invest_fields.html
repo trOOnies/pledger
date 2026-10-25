@@ -1,10 +1,12 @@
 {# The fields that depend on the investment base movement picked: see views.invest_fields. #}
 {% include "_account_fields.html" %}
+{% if investment %}
 <label><span>Investment{% if investment == "optional" %} <em class="optional">(optional)</em>{% endif %}</span>
   <input name="investment" value="{{ values.investment }}" list="investment-names" autocomplete="off"
     {% if investment == "required" %}required{% endif %}>
   <datalist id="investment-names">{% for n in investment_names %}<option value="{{ n }}">{% endfor %}</datalist>
 </label>
+{% endif %}
 {% if quantity %}
 <label><span>Quantity{% if quantity == "optional" %} <em class="optional">(optional)</em>{% endif %}</span>
   <input name="quantity" inputmode="decimal" value="{{ values.quantity }}" placeholder="0" autocomplete="off"

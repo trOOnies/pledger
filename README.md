@@ -97,6 +97,8 @@ with an environment variable:
 | `result_types.yaml` | ✅ | `PLEDGER_BASE_MOVEMENTS` | Result types and base movements |
 | `movements/ledger.csv` | ✅ | `PLEDGER_LEDGER` | The movements |
 | `movements/conversion.csv` | | `PLEDGER_CONVERSIONS` | The conversions between the base currency and the other ones |
+| `movements/investment.csv` | | `PLEDGER_INVESTMENT_MOVEMENTS` | The movements of the investments |
+| `movements/interest.csv` | | `PLEDGER_INTEREST` | The interest on money of the regular accounts |
 | `currencies.yaml` | ✅ | `PLEDGER_CURRENCIES` | Base and other currencies (with `base_currency.csv` and `currencies.csv` next to it) |
 | `investment.yaml` | | `PLEDGER_INVESTMENTS` | The investments of each investment account |
 | `creditors.yaml` | | `PLEDGER_CREDITORS` | Who each debt account is owed by or owes to |
@@ -170,6 +172,8 @@ and its result types can't get new base movements.
 > gains and losses, interest, broker fees...) and the internal transfers with an `INVESTMENT`
 > side (buying and selling investments...) can't be added or deleted from the Ledger tab or
 > `/api/movements`, but they can from the Investments tab and `/api/investments/movements`.
+> Their movements are kept in `movements/investment.csv` and `movements/interest.csv` (see
+> [Investments](#investments)), never in `ledger.csv`.
 
 The internal gain `USD - Result (G)` and loss `USD - Result (L)` are required in the same way
 once an account in another currency has to be revalued (see
@@ -255,9 +259,18 @@ quantity can't go below 0.
 The type is one of `public_bond`, `private_bond`, `mutual_fund`, `etf`, `forex`, `stock`,
 `derivative` and `fixed_term`.
 
-**How movements change the investments.** The investment named in the `additional_2` column of
-`ledger.csv`, in the investment account on either side, gets the amount and the quantity of the
-`additional` column (`Q = 1,234.50`) on a debit, and loses them on a credit.
+**How movements change the investments.** The movements of the investment base movements,
+but the interest on money, are kept in `movements/investment.csv`, with the columns of
+`ledger.csv` plus the `quantity` and the `investment`:
+
+```csv
+move_date;base_movement;acc_debit;amount;acc_credit;quantity;investment;comment
+2026-01-12;Investment - Bought;BMI;1,494,988.65;BM;27.00;OC01Q;
+2026-01-12;Broker fees;Eq;2,261.18;BM;;OC01Q;
+```
+
+The investment it names, in the investment account on either side, gets its amount and
+quantity on a debit, and loses them on a credit. The file is created when adding the first one.
 
 - The investment is required when a side is `INVESTMENT`.
 - The quantity is required for `Investment - Bought`, `Investment - Sold`, `Stock split (More)`
@@ -268,7 +281,7 @@ The type is one of `public_bond`, `private_bond`, `mutual_fund`, `etf`, `forex`,
   ones no longer held apart.
 
 A free side (neither fixed nor `INVESTMENT`) of an investment base movement can't be an
-investment account, in the form or in `ledger.csv`. What pays for an investment bought, gets
+investment account, in the form or in `investment.csv`. What pays for an investment bought, gets
 the money of one sold, or gets its dividends or pays its fees is another account (e.g. `Fi`).
 So only the `INVESTMENT` sides change the investments.
 
@@ -282,12 +295,22 @@ For each investment, held or not, and overall, the Investments tab shows:
 - the total of each other one (`Dividends & Interest`, `Broker fees`...);
 - the **total result**: all of them, losses subtracted, plus the net interest on money.
 
-**Interest on money.** The `Interest on Money (G)` and `Interest on Money (L)` movements that
-name no investment are the interest earned and paid on the money of a regular account (e.g.
-`MP`), with no investment involved. The Investments tab totals them in their own section, by
-the account that isn't equity and month by month, and adds their net (its *Net interest on
-money* card) to the total result. Naming an investment makes one a result of that investment
-instead.
+**Interest on money.** The interest earned and paid on the money of a regular account (e.g.
+`MP`), with no investment involved, is kept in `movements/interest.csv`: the account, never an
+investment one, and the amount, **positive if earned, negative if paid**.
+
+```csv
+move_date;acc_debit;amount;comment
+2026-01-05;MP;21,697.40;
+2026-01-12;St;-1,500.00;Overdraft
+```
+
+Earned interest is an `Interest on Money (G)` movement debiting the account, and paid interest
+an `Interest on Money (L)` one crediting it, against equity: both internal base movements are
+required for the rows that use them. The Investments tab adds and deletes them like the other
+investment movements, totals them in their own section, by account and month by month, and adds
+their net (its *Net interest on money* card) to the total result. The interest of an
+investment is one of its results instead (e.g. `Dividends & Interest`, in `investment.csv`).
 
 It also charts the total invested and the total result at each month end, and warns about
 the movements naming an investment of no investment account.
@@ -375,7 +398,20 @@ Month;Company;Position;Gross salary;Net salary;Received payment date
 
 The tab's form adds a month right after the last one (or right before the first one) or, for an
 existing month, replaces it. Each row's ✎ button loads it into the form. Only the first and last
-months can be deleted. The file is created if missing and doesn't affect the ledger.
+months can be deleted. The file is created if missing.
+
+**Salaries.** The gross salary of each worked month is in the ledger **week by week**, from the
+first date of the ledger on. Weeks go from Monday to Sunday, and each one belongs to the month
+with at least 4 of its days (the month of its Thursday), so a month has 4 or 5 weeks. The gross
+salary is split equally between them, to the cent (the cents left over go to the first weeks),
+as a `Work - Salary Main` movement on each Monday.
+
+- `Work - Salary Main` must be a gain with a fixed debit account, e.g. a debt account such as
+  `De`, so that the company owes the salary until it's paid.
+- Its comment names the company first (e.g. `Galicia (GAL DS): week 2/5 of 2026-01`), so a debt
+  account attributes it to the company (see [Debt](#debt)).
+- These movements are generated when the ledger is loaded, like the initial ones: they can't be
+  added by hand or be in `ledger.csv`. Editing a month of the Work tab updates them.
 
 ---
 
