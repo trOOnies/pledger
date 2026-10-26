@@ -1,9 +1,10 @@
+{% from "_id.html" import id_cell, id_header %}
 <div class="panel">
   <h2>Conversions <small>{{ conversions | length }}</small></h2>
   <div class="table-wrap">
     <table class="movements" data-sortable="conversions">
       <thead>
-        <tr><th>Date</th><th>Base movement</th><th>Debit</th><th class="num">Amount</th><th>Credit</th>
+        <tr>{{ id_header() }}<th>Date</th><th>Base movement</th><th>Debit</th><th class="num">Amount</th><th>Credit</th>
           <th class="num" title="In the currency of the account not in the base one">Other amount</th>
           <th class="num" title="The value of the other currency in the base one: the amount over the other amount">Rate</th>
           <th>Comment</th><th></th></tr>
@@ -11,6 +12,7 @@
       <tbody>
         {% for c in conversions %}
         <tr>
+          {{ id_cell(c.id) }}
           <td class="nowrap">{{ c.date }}</td>
           <td><span class="badge transfer" title="{{ c.currency }} {{ 'bought' if c.bought else 'sold' }}">T</span> {{ c.base }}</td>
           <td>{{ c.debit }}</td>
@@ -29,7 +31,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="9" class="muted">No conversions.</td></tr>
+        <tr><td colspan="10" class="muted">No conversions.</td></tr>
         {% endfor %}
       </tbody>
     </table>

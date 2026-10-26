@@ -547,6 +547,7 @@ def build_conversions(snapshot: Snapshot) -> list[dict]:
     and the value of the other currency in the base one they imply.
     """
     conversions = []
+    ids = [snapshot.ids[ix] for ix in snapshot.conversion_rows.index]  # in the order of the CSV
     for i, (ix, row) in enumerate(snapshot.conversions.iterrows()):
         base_amount = float(row[BASE_AMOUNT].replace(",", "") or 0)
         other_amount = float(row[OTHER_AMOUNT].replace(",", "") or 0)
@@ -554,6 +555,7 @@ def build_conversions(snapshot: Snapshot) -> list[dict]:
         other = debit if not debit.currency.is_base_currency else credit
         conversions.append({
             "index": i,
+            "id": ids[i],
             "fingerprint": conversion_fingerprint(row),
             "date": row["move_date"],
             "base": row["base_movement"],

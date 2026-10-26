@@ -81,6 +81,11 @@ def client(settings) -> TestClient:
     return TestClient(create_app(settings))
 
 
+def movement_ids(text: str) -> list[str]:
+    """The ids in the ID column of the tables of movements of a page, in order."""
+    return re.findall(r'<td class="nowrap muted small" data-sort="([^"]+)">', text)
+
+
 def rows(settings):
     return LedgerStore(settings).load().rows
 
@@ -1118,6 +1123,13 @@ class TestConversions:
         ids = LedgerStore(conv).load().ids
         assert {ids[ix] for ix in snapshot.conversion_rows.index} == {"C-1"} and len(set(ids.values())) == len(ids)
 
+    def test_conversions_table_shows_their_ids(self, conv, conv_client):
+        LedgerStore(conv).freeze_ids()
+        currencies = conv_client.get("/currencies").text
+        assert movement_ids(currencies.split('data-sortable="conversions"')[1]) == ["C-1"]
+        ledger = conv_client.get("/", params={"initial": True}).text
+        assert "C-1" in movement_ids(ledger)
+
     def test_add_and_delete(self, conv):
         store = LedgerStore(conv)
         store.add_conversion("2026-01-06", "Move", "Ca", "Bk", "1234.5", "1.2", "Sold; half")
@@ -1628,8 +1640,12 @@ class TestDebtPage:
     def test_movements(self, settings, client):
         with settings.ledger_path.open("a", encoding="utf-8") as f:
             f.write("2026-01-05;Card fee;Eq;20;Cc;dad\n2026-02-05;Card fee;Eq;30;Cc;no one\n")
+        LedgerStore(settings).freeze_ids()
         r = client.get("/debt", params={"month": ""})
         movements = r.text.split('data-sortable="debt-movements"')[1].split("</table>")[0]
+        # With their ids, the same as in the Ledger tab
+        assert movement_ids(movements) == ["L-6", "L-5", "A-Cc"]
+        assert set(movement_ids(movements)) <= set(movement_ids(client.get("/", params={"initial": True}).text))
         # The initial movement too, with the initial amounts of everyone
         assert "<h2>Movements <small>3, all time</small></h2>" in r.text
         assert movements.index("2026-02-05") < movements.index("2026-01-05") < movements.index("Initial (L)")
@@ -2173,6 +2189,10 @@ class TestInvestMovements:
         assert 'id="invest-form"' in r.text
         assert '<optgroup label="Gain">' in r.text and "<option selected>Capital gains</option>" in r.text
         assert "<h2>Investment movements <small>1</small></h2>" in r.text
+        assert client.get("/api/investments/movements").json()[0]["id"] is None  # until frozen
+        LedgerStore(client.app.state.store.settings).freeze_ids()
+        assert movement_ids(client.get("/investments").text) == ["I-1"]
+        assert "I-1" in movement_ids(client.get("/").text)
         assert 'hx-post="/investments/movements/0/delete"' in r.text
         assert client.get("/api/investments/movements").json()[0]["base"] == "Capital gains"
         assert client.get("/api/investments/movements").json()[0]["source"] == "investments"
@@ -2472,6 +2492,8 @@ class TestCreditCards:
     def test_movements(self, client):
         r = client.get("/credit-cards", params={"month": ""})
         movements = r.text.split('data-sortable="credit-card-movements"')[1].split("</table>")[0]
+        assert movement_ids(movements)[-1].startswith("A-")  # the ids of the Ledger tab, even filtered
+        assert set(movement_ids(movements)) <= set(movement_ids(client.get("/", params={"initial": True}).text))
         # With the initial ones, but not the ones of other accounts
         assert "<h2>Movements <small>4, all time</small></h2>" in r.text
         assert movements.count("<tr>") == 5 and "Initial (L)" in movements and "Salary" not in movements

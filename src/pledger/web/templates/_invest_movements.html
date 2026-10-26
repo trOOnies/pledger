@@ -1,13 +1,15 @@
+{% from "_id.html" import id_cell, id_header %}
 <div class="panel">
   <h2>Investment movements <small>{{ movements | length }}</small></h2>
   <div class="table-wrap">
     <table class="movements" data-sortable="invest-movements">
       <thead>
-        <tr><th>Date</th><th>Base movement</th><th>Investment</th><th class="num">Quantity</th><th>Debit</th><th class="num">Amount</th><th>Credit</th><th>Comment</th><th></th></tr>
+        <tr>{{ id_header() }}<th>Date</th><th>Base movement</th><th>Investment</th><th class="num">Quantity</th><th>Debit</th><th class="num">Amount</th><th>Credit</th><th>Comment</th><th></th></tr>
       </thead>
       <tbody>
         {% for m in movements %}
         <tr>
+          {{ id_cell(m.id) }}
           <td class="nowrap">{{ m.date }}</td>
           <td><span class="badge {{ m.type }}">{{ m.type[0] | upper }}</span> {{ m.base }}</td>
           <td class="{{ 'muted' if not m.investment }}">{{ m.investment or "-" }}</td>
@@ -26,7 +28,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="9" class="muted">No investment movements.</td></tr>
+        <tr><td colspan="10" class="muted">No investment movements.</td></tr>
         {% endfor %}
       </tbody>
     </table>
