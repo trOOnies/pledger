@@ -110,6 +110,16 @@ one line, and the rest of the file is left byte-for-byte as it was. New accounts
 movements are inserted at the end of their section in the YAML files (gains and losses under
 their result type, transfers under `transfer`), leaving the rest of each file as it was.
 
+**Every movement has an id that never changes**, shown in the Ledger tab and the API. The
+rows of the four CSVs of movements keep theirs in a last `id` column: `L-1`, `L-2`… in
+`ledger.csv`, `C-…` in `conversion.csv`, `I-…` in `investment.csv` and `M-…` in
+`interest.csv`. **Pledger gives them itself**: on startup and whenever it adds a movement to a
+CSV, every row without a valid id (one added by hand, or copied with another row's id) gets
+the next number, appended to its line, and the column is added if missing. Leave the `id`
+empty when adding rows by hand. The generated movements get theirs from what they come from:
+`A-<account>` (initial amounts), `W-<month>-<week>` (salaries) and `R-<account>-<date>`
+(results of the accounts in other currencies).
+
 ---
 
 ## 💡 Concepts

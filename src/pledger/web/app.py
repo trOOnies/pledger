@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -31,8 +34,18 @@ async def ledger_data_error(request: Request, exc: LedgerDataError):
     )
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Freeze the ids of the rows added to the CSVs of movements while pledger was off.
+    try:
+        app.state.store.freeze_ids()
+    except (OSError, ValueError, LedgerDataError) as e:  # the pages show what is wrong
+        logging.getLogger(__name__).warning("Could not freeze the ids of the movements: %s", e)
+    yield
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
-    app = FastAPI(title="pledger")
+    app = FastAPI(title="pledger", lifespan=lifespan)
     app.state.store = LedgerStore(settings or Settings.from_env())
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     app.add_exception_handler(LedgerDataError, ledger_data_error)

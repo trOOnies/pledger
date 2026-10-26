@@ -60,6 +60,14 @@ RESULT_LOSS = "USD - Result (L)"
 SALARY = "Work - Salary Main"
 GENERATED = [INITIAL_GAIN, INITIAL_LOSS, RESULT_GAIN, RESULT_LOSS, SALARY]
 
+# The id of each movement of the ledger: unique and unchanging. The rows of the CSVs of
+# movements keep theirs in an ID_COLUMN, the prefix of their CSV and a number, given by
+# pledger itself (see LedgerStore.freeze_ids); the generated movements get theirs from
+# what they are generated from, so they never change either.
+ID_COLUMN = "id"
+LEDGER_ID, CONVERSION_ID, INVESTMENT_ID, INTEREST_ID = "L", "C", "I", "M"
+INITIAL_ID, SALARY_ID, RESULT_ID = "A", "W", "R"
+
 # Columns of the conversions CSV, of the movements between an account in the base
 # currency and one in another currency: the amount in each currency. Its movements
 # are added to the ledger with the amount in the base currency.
@@ -169,6 +177,9 @@ class Snapshot:
     result_rows: DataFrame = field(init=False)
     # The balance of each account in another currency in that currency (see _result_rows)
     other_balances: dict[str, float] = field(init=False)
+    # The id of each movement by its index in all_rows: None for a CSV row without a
+    # valid one yet (see stored_ids), until the ids are frozen again.
+    ids: dict[int, str | None] = field(init=False)
 
     def __post_init__(self):
         dates = [
@@ -188,6 +199,16 @@ class Snapshot:
             setattr(self, name, generate(self, start))
             start -= len(getattr(self, name))
         self.result_rows, self.other_balances = _result_rows(self, start)
+        self.ids = {}
+        for generated, stored, prefix in (
+            (self.rows, self.rows, LEDGER_ID),
+            (self.investment_rows, self.investments, INVESTMENT_ID),
+            (self.interest_rows, self.interest, INTEREST_ID),
+            (self.conversion_rows, self.conversions, CONVERSION_ID),
+        ):
+            self.ids |= zip(generated.index, stored_ids(stored, prefix))
+        for generated in (self.initial_rows, self.salary_rows, self.result_rows):
+            self.ids |= zip(generated.index, generated[ID_COLUMN])
 
     @property
     def base_currency(self) -> Currency:
@@ -211,9 +232,8 @@ class Snapshot:
         interest on money, the conversions, the salaries and the results of the accounts
         in other currencies, in date order (each date in that order).
         """
-        return _concat(
-            [self.initial_rows, self.booked_rows, self.result_rows], self.rows.columns
-        ).sort_values("move_date", kind="stable")
+        rows = _concat([self.initial_rows, self.booked_rows, self.result_rows], self.rows.columns)
+        return rows.assign(**{ID_COLUMN: [self.ids[ix] for ix in rows.index]}).sort_values("move_date", kind="stable")
 
     def ledger(self, rows: DataFrame | None = None) -> Ledger:
         """Build a Ledger from these rows (all rows, initial ones included, by default)."""
@@ -358,6 +378,26 @@ def interest_fingerprint(row) -> str:
     return f"{row['move_date']}|{row[INTEREST_ACCOUNT]}|{row['amount']}"
 
 
+def stored_ids(rows: DataFrame, prefix: str) -> list[str | None]:
+    """
+    The id of each row of a CSV of movements, with this prefix: None if it is
+    missing, malformed or the same as one of a row before it.
+    """
+    values = rows[ID_COLUMN] if ID_COLUMN in rows.columns else [""] * len(rows)
+    ids, seen = [], set()
+    for value in values:
+        value = str(value).strip()
+        ids.append(value if re.fullmatch(rf"{prefix}-[1-9]\d*", value) and value not in seen else None)
+        seen.add(value)
+    return ids
+
+
+def next_id(rows: DataFrame, prefix: str) -> str:
+    """A new id for a row of a CSV of movements: the next number after the highest one."""
+    numbers = [int(i.split("-")[1]) for i in stored_ids(rows, prefix) if i]
+    return f"{prefix}-{max(numbers, default=0) + 1}"
+
+
 class LedgerStore:
     """Reads and writes the ledger files. The files are the source of truth."""
 
@@ -407,6 +447,51 @@ class LedgerStore:
             raise LedgerDataError(f"{type(e).__name__}: {e}") from e
         return snapshot
 
+    def freeze_ids(self) -> None:
+        """
+        Give a new id to each row of the CSVs of movements without a valid one (see
+        stored_ids), adding their ID_COLUMN if missing. Run on startup and when
+        adding a movement to a CSV, so the rows added to the CSVs by hand get theirs too.
+        """
+        s = self.settings
+        for path, prefix in (
+            (s.ledger_path, LEDGER_ID),
+            (s.conversions_path, CONVERSION_ID),
+            (s.investment_movements_path, INVESTMENT_ID),
+            (s.interest_path, INTEREST_ID),
+        ):
+            if _existing(path) and path.read_bytes().strip():
+                self._freeze_file(path, prefix)
+
+    def _freeze_file(self, path: Path, prefix: str) -> None:
+        rows = read_csv(path, sep=";", dtype=str, keep_default_na=False, encoding="utf-8-sig")
+        ids = stored_ids(rows, prefix)
+        if ID_COLUMN in rows.columns and all(ids):
+            return
+        csv_file = self._read_file(len(rows), path)
+        lines = csv_file.lines
+        header = next(csv.reader([lines[0]], delimiter=";"))
+        if ID_COLUMN not in header:
+            header.append(ID_COLUMN)
+            lines[0] += f";{ID_COLUMN}"
+        col = header.index(ID_COLUMN)
+        number = int(next_id(rows, prefix).split("-")[1])
+        for i, current in zip(csv_file.row_lines, ids):
+            if current:
+                continue
+            new, number = f"{prefix}-{number}", number + 1
+            fields = next(csv.reader([lines[i]], delimiter=";"))
+            if len(fields) <= col == len(header) - 1:
+                # The id is the last column and the line stops before it: keep its bytes.
+                lines[i] += ";" * (col - len(fields) + 1) + new
+            else:
+                fields += [""] * (len(header) - len(fields))
+                fields[col] = new
+                buf = io.StringIO()
+                csv.writer(buf, delimiter=";", lineterminator="").writerow(fields)
+                lines[i] = buf.getvalue()
+        self._write_file(csv_file)
+
     def add(
         self,
         move_date: str,
@@ -427,7 +512,8 @@ class LedgerStore:
         and the others to the investments CSV, with their investment and quantity (see
         _investment_details) and, for an investment new to its account, its type, which
         is added to the investments YAML. Without it, it must be of a non-internal base
-        movement whose movements aren't generated, and goes to the ledger CSV.
+        movement whose movements aren't generated, and goes to the ledger CSV. It gets
+        the next id of its CSV (see _appended).
         """
         snapshot = self.load()
         try:
@@ -474,9 +560,9 @@ class LedgerStore:
             "comment": comment,
         }
         if not invest:
-            path, field, what = self.settings.ledger_path, "rows", "ledger"
+            path, field, what, prefix = self.settings.ledger_path, "rows", "ledger", LEDGER_ID
         elif base_movement in INTEREST:
-            path, field, what = self.settings.interest_path, "interest", "interest"
+            path, field, what, prefix = self.settings.interest_path, "interest", "interest", INTEREST_ID
             gain = base.move_type == MovementType.GAIN
             new_row = {
                 "move_date": move_date,
@@ -485,7 +571,9 @@ class LedgerStore:
                 "comment": comment,
             }
         else:
-            path, field, what = self.settings.investment_movements_path, "investments", "investments"
+            path, field, what, prefix = (
+                self.settings.investment_movements_path, "investments", "investments", INVESTMENT_ID
+            )
             name, units = _investment_details(base, investment, quantity)
             new_row |= {INVESTMENT_COLUMN: name, QUANTITY_COLUMN: _quantity_text(units) if units else ""}
         if path is None:
@@ -500,10 +588,7 @@ class LedgerStore:
             if field == "investments" else None
         )
 
-        csv_file = self._read_file(len(frame), path, header=list(frame.columns))
-        buf = io.StringIO()
-        csv.writer(buf, delimiter=";", lineterminator="").writerow(new_row.values())
-        csv_file.lines.append(buf.getvalue())
+        csv_file = self._appended(path, prefix, new_row, list(frame.columns))
         if new_type is None:
             self._write_file(csv_file)
             return
@@ -892,7 +977,7 @@ class LedgerStore:
     ) -> None:
         """
         Validate a new conversion (see _check_conversion) and append it to the
-        conversions CSV, creating it if missing.
+        conversions CSV, creating it if missing, with the next id of the CSV (see _appended).
         """
         path = self.settings.conversions_path
         if path is None:
@@ -922,14 +1007,7 @@ class LedgerStore:
         except AssertionError as e:
             raise ValueError(str(e)) from None
 
-        if not _existing(path) or not path.read_bytes().strip():
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(";".join(CONVERSION_COLUMNS) + "\n", encoding="utf-8")
-        buf = io.StringIO()
-        csv.writer(buf, delimiter=";", lineterminator="").writerow(new_row.values())
-        csv_file = self._read_file(len(snapshot.conversions), path)
-        csv_file.lines.append(buf.getvalue())
-        self._write_file(csv_file)
+        self._write_file(self._appended(path, CONVERSION_ID, new_row, CONVERSION_COLUMNS))
 
     def delete_conversion(self, index: int, fingerprint: str | None = None) -> None:
         """Delete a row of the conversions CSV by position, optionally checking it is the expected one."""
@@ -943,6 +1021,26 @@ class LedgerStore:
         csv_file = self._read_file(len(rows), self.settings.conversions_path)
         del csv_file.lines[csv_file.row_lines[index]]
         self._write_file(csv_file)
+
+    def _appended(self, path: Path, prefix: str, row: dict, header: list[str]) -> _CsvFile:
+        """
+        A CSV of movements with its ids frozen (see freeze_ids) and this row appended
+        with the next id, ready to write. A missing or empty CSV is a new one with
+        this header and the ID_COLUMN.
+        """
+        if _existing(path) and path.read_bytes().strip():
+            self._freeze_file(path, prefix)
+            rows = read_csv(path, sep=";", dtype=str, keep_default_na=False, encoding="utf-8-sig")
+            columns = list(rows.columns)
+        else:
+            columns = [c for c in header if c != ID_COLUMN] + [ID_COLUMN]
+            rows = DataFrame(columns=columns, dtype=str)
+        values = row | {ID_COLUMN: next_id(rows, prefix)}
+        csv_file = self._read_file(len(rows), path, header=columns)
+        buf = io.StringIO()
+        csv.writer(buf, delimiter=";", lineterminator="").writerow([values.get(c, "") for c in columns])
+        csv_file.lines.append(buf.getvalue())
+        return csv_file
 
     def _read_file(self, n_rows: int, path: Path, header: list[str] | None = None) -> _CsvFile:
         """
@@ -1084,12 +1182,14 @@ def _initial_rows(
             "acc_debit": acc_debit,
             "acc_credit": acc_credit,
             "amount": repr(abs(amount)),
+            ID_COLUMN: f"{INITIAL_ID}-{acc.name}",
         })
     return _generated_rows(new_rows, columns, -1)
 
 
 def _generated_rows(new_rows: list[dict], columns, start: int) -> DataFrame:
-    """Generated movements as CSV rows with these columns, indexed from `start` down."""
+    """Generated movements as CSV rows with these columns and their id, indexed from `start` down."""
+    columns = [*columns, *([] if ID_COLUMN in columns else [ID_COLUMN])]
     return DataFrame(
         [{col: "" for col in columns} | row for row in new_rows],
         columns=columns,
@@ -1173,6 +1273,7 @@ def _salary_rows(snapshot: Snapshot, start: int) -> DataFrame:
                 "move_date": week.start.isoformat(),
                 "base_movement": SALARY,
                 "amount": f"{amount:,.2f}",
+                ID_COLUMN: f"{SALARY_ID}-{month.month}-{i}",
                 **({"comment": f"{month.company} ({month.position}): week {i}/{len(weeks)} of {month.month}"}
                    if "comment" in snapshot.rows.columns else {}),
             })
@@ -1303,6 +1404,7 @@ def _result_rows(snapshot: Snapshot, start: int) -> tuple[DataFrame, dict[str, f
             new_rows.append({
                 "move_date": day, "base_movement": base.name, "acc_debit": sides[0], "acc_credit": sides[1],
                 "amount": f"{abs(result):.2f}",
+                ID_COLUMN: f"{RESULT_ID}-{name}-{day}",
                 **({"comment": f"{other:,.4f} {acc.currency.name} at {value:,.4f}"}
                    if "comment" in snapshot.rows.columns else {}),
             })

@@ -32,6 +32,7 @@ from pledger.web.views import (
     build_currencies,
     build_investments,
     build_results,
+    build_view,
     column_chart,
     composition,
     equity_series,
@@ -88,11 +89,13 @@ class TestStore:
     def test_add_appends_one_line_and_keeps_the_rest(self, settings):
         path = settings.ledger_path
         path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n").rstrip(b"\r\n"))
+        store = LedgerStore(settings)
+        store.freeze_ids()
         before = path.read_bytes()
 
-        LedgerStore(settings).add("2026-02-01", "Food", "Eq", "Bk", "1234.5", "x; y")
+        store.add("2026-02-01", "Food", "Eq", "Bk", "1234.5", "x; y")
 
-        assert path.read_bytes() == before + b"\r\n2026-02-01;Food;Eq;1,234.50;Bk;x, y"
+        assert path.read_bytes() == before + b"\r\n2026-02-01;Food;Eq;1,234.50;Bk;x, y;L-5"
 
     def test_delete_removes_only_that_line(self, settings):
         path = settings.ledger_path
@@ -123,6 +126,56 @@ class TestStore:
         with pytest.raises(ValueError, match=message):
             LedgerStore(settings).add(*args)
         assert len(rows(settings)) == 4
+
+
+class TestIds:
+    def test_frozen_on_startup_keeping_every_other_byte(self, settings):
+        path = settings.ledger_path
+        before = path.read_text().splitlines()
+        with TestClient(create_app(settings)):  # runs the startup
+            pass
+        assert path.read_text().splitlines() == [
+            before[0] + ";id", *(f"{line};L-{i}" for i, line in enumerate(before[1:], 1))
+        ]
+        frozen = path.read_bytes()
+        LedgerStore(settings).freeze_ids()
+        assert path.read_bytes() == frozen
+
+    def test_missing_malformed_and_repeated_ones_get_new_ids(self, settings):
+        path = settings.ledger_path
+        lines = path.read_text().splitlines()
+        # A row copied with its id, one with a made-up id and one added without any
+        path.write_text("\n".join([
+            lines[0] + ";id", lines[1] + ";L-7", lines[2] + ";L-7", lines[3] + ";nope", lines[4],
+        ]) + "\n")
+        LedgerStore(settings).freeze_ids()
+        assert [line.rsplit(";", 1)[1] for line in path.read_text().splitlines()] == ["id", "L-7", "L-8", "L-9", "L-10"]
+
+    def test_unchanged_by_filters_and_by_deleting_other_rows(self, settings):
+        store = LedgerStore(settings)
+        store.freeze_ids()
+        by_fingerprint = {m["fingerprint"]: m["id"] for m in build_view(store.load(), initial=True)["movements"]}
+        assert len(set(by_fingerprint.values())) == len(by_fingerprint)
+        for view in (build_view(store.load(), month="2026-01"), build_view(store.load(), account="Ca")):
+            assert all(by_fingerprint[m["fingerprint"]] == m["id"] for m in view["movements"])
+        store.delete(1, row_fingerprint(store.load().rows.iloc[1]))
+        assert [m["id"] for m in build_view(store.load())["movements"]] == ["L-4", "L-3", "L-1"]
+        # A new row never takes the id of one deleted before it
+        store.add("2026-02-01", "Food", "Eq", "Ca", "1")
+        assert build_view(store.load())["movements"][0]["id"] == "L-5"
+
+    def test_rows_added_while_running_show_none_until_frozen(self, settings, client):
+        LedgerStore(settings).freeze_ids()
+        with settings.ledger_path.open("a") as f:
+            f.write("2026-01-05;Food;Eq;1;Ca;\n")
+        movements = client.get("/api/movements").json()
+        assert [m["id"] for m in movements] == [None, "L-4", "L-3", "L-2", "L-1"]
+        assert 'title="Added to the CSV while pledger runs' in client.get("/").text
+        # Adding a movement freezes it first; an id sent by the client is ignored
+        body = {"move_date": "2026-01-06", "base_movement": "Food", "acc_debit": "Eq",
+                "acc_credit": "Ca", "amount": 2, "id": "L-1"}
+        assert client.post("/api/movements", json=body).status_code == 201
+        assert [m["id"] for m in client.get("/api/movements").json()][:2] == ["L-6", "L-5"]
 
 
 class TestAccountChecks:
@@ -1054,24 +1107,37 @@ class TestConversions:
         with pytest.raises(LedgerDataError, match=re.escape("missing the columns ['amount_other_currency']")):
             LedgerStore(conv).load()
 
+    def test_ids_of_the_generated_movements(self, conv):
+        snapshot = LedgerStore(conv).load()
+        ids = snapshot.ids
+        assert [ids[ix] for ix in snapshot.initial_rows.index] == ["A-Bk"]
+        assert [ids[ix] for ix in snapshot.conversion_rows.index] == [None]  # not frozen yet
+        assert all(ids[ix].startswith("R-Bk-") for ix in snapshot.result_rows.index)
+        assert len(set(ids.values()) - {None}) == len(ids) - 5  # all but the 4 ledger rows and the conversion
+        LedgerStore(conv).freeze_ids()
+        ids = LedgerStore(conv).load().ids
+        assert {ids[ix] for ix in snapshot.conversion_rows.index} == {"C-1"} and len(set(ids.values())) == len(ids)
+
     def test_add_and_delete(self, conv):
         store = LedgerStore(conv)
         store.add_conversion("2026-01-06", "Move", "Ca", "Bk", "1234.5", "1.2", "Sold; half")
         assert conv.conversions_path.read_text().splitlines()[-1] == (
-            "2026-01-06;Move;Ca;1,234.50;Bk;Sold, half;1.2000"
+            "2026-01-06;Move;Ca;1,234.50;Bk;Sold, half;1.2000;C-2"
         )
         conversions = store.load().conversions
         assert len(conversions) == 2
         with pytest.raises(StaleRowError):
             store.delete_conversion(1, "2026-01-06|Move|1,234.50|9.0000")
         store.delete_conversion(1, conversion_fingerprint(conversions.iloc[1]))
-        assert conv.conversions_path.read_text() == self.HEADER + "2026-01-05;Move;Bk;1,100.00;Ca;Bought;1.0000\n"
+        assert conv.conversions_path.read_text() == (
+            self.HEADER.replace("\n", ";id\n") + "2026-01-05;Move;Bk;1,100.00;Ca;Bought;1.0000;C-1\n"
+        )
 
     def test_adding_creates_the_csv(self, revalued, tmp_path):
         path = tmp_path / "movements" / "conversion.csv"
         store = LedgerStore(replace(revalued, conversions_path=path))
         store.add_conversion("2026-01-06", "Move", "Bk", "Ca", "100", "0.1")
-        assert path.read_text() == self.HEADER + "2026-01-06;Move;Bk;100.00;Ca;;0.1000\n"
+        assert path.read_text() == self.HEADER.replace("\n", ";id\n") + "2026-01-06;Move;Bk;100.00;Ca;;0.1000;C-1\n"
 
     @pytest.mark.parametrize(
         ("args", "error"),
@@ -1978,6 +2044,8 @@ class TestSalaries:
         cc = snapshot.debt_accounts()[0]
         assert (cc.creditors["Globex"].amount, cc.creditors["Acme"].amount, cc.unassigned) == (-1600, -5, 0)
         assert snapshot.debt_accounts("2026-01")[0].creditors["Globex"].amount == -1600
+        # Each salary's id is its month and week, so editing other months never changes it
+        assert [snapshot.ids[ix] for ix in snapshot.salary_rows.index] == [f"W-2026-01-{i}" for i in range(2, 6)]
         r = TestClient(create_app(settings)).get("/")
         assert r.text.count('href="/work" title="Generated each week from the gross salary of the Work tab" aria-label="Generated each week from the gross salary of the Work tab">🟠</a>') == 4
         assert r.text.count('aria-label="Delete movement"') == 4  # only the CSV rows
@@ -2130,7 +2198,7 @@ class TestInvestMovements:
         data = {"move_date": "2026-02-10", "base_movement": "Interest on Money (L)",
                 "acc_debit": "Eq", "acc_credit": "Bk", "amount": "1"}
         assert "Added Interest on Money (L): $1.00" in client.post("/investments/movements", data=data).text
-        assert settings.interest_path.read_text() == "move_date;acc_debit;amount;comment\n2026-02-10;Bk;-1.00;\n"
+        assert settings.interest_path.read_text() == "move_date;acc_debit;amount;comment;id\n2026-02-10;Bk;-1.00;;M-1\n"
         with pytest.raises(ValueError, match="Only movements of the investments have an investment"):
             LedgerStore(settings).add(**{**data, "investment": "T"}, invest=True)
         with settings.interest_path.open("a") as f:
@@ -2160,7 +2228,7 @@ class TestInvestMovements:
         fp = interest_fingerprint(LedgerStore(settings).load().interest.iloc[1])
         assert client.post("/investments/interest/1/delete", data={"fingerprint": fp}).status_code == 200
         assert client.delete("/api/investments/interest/1").status_code == 200
-        assert settings.interest_path.read_text() == "move_date;acc_debit;amount;comment\n2026-02-10;Bk;-1.00;\n"
+        assert settings.interest_path.read_text() == "move_date;acc_debit;amount;comment;id\n2026-02-10;Bk;-1.00;;M-1\n"
 
     @pytest.mark.parametrize(
         ("line", "message"),
@@ -2260,7 +2328,7 @@ class TestInvestMovements:
         r = client.post("/investments/movements", data={**data, "investment_type": "public_bond"})
         assert "Added Investment - Bought of AL30" in r.text
         path = settings.investment_movements_path
-        assert path.read_text().splitlines()[-1] == "2026-02-01;Investment - Bought;Br;30.00;Ca;1,234.50;AL30;"
+        assert path.read_text().splitlines()[-1] == "2026-02-01;Investment - Bought;Br;30.00;Ca;1,234.50;AL30;;I-2"
         assert "  AL30: public_bond\n" in settings.investments_path.read_text()
         assert self.holding(settings, "AL30") == (InvestmentType.PUBLIC_BOND, 30, 1234.5)
         # Selling more than is held changes nothing
@@ -2279,7 +2347,9 @@ class TestInvestMovements:
     def test_adding_creates_the_csv(self, settings):
         settings.investment_movements_path.unlink()
         LedgerStore(settings).add("2026-02-01", "Dividends", "Ca", "Eq", "4", "x", invest=True, investment="T")
-        assert settings.investment_movements_path.read_text() == INVESTMENT_HEADER + "2026-02-01;Dividends;Ca;4.00;Eq;;T;x\n"
+        assert settings.investment_movements_path.read_text() == (
+            INVESTMENT_HEADER.replace("\n", ";id\n") + "2026-02-01;Dividends;Ca;4.00;Eq;;T;x;I-1\n"
+        )
 
     def test_investments_tab_shows_held_and_untyped_ones(self, settings, client):
         self.append(settings, "2026-01-09;Investment - Bought;Br;50;Ca;1;NEW;\n"

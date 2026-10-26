@@ -91,6 +91,7 @@ def movement_rows(snapshot: Snapshot, rows: DataFrame, ledger: Ledger) -> list[d
     movements = [
         {
             "index": int(ix),
+            "id": snapshot.ids[ix],  # None for a CSV row added while pledger runs, until frozen
             "fingerprint": row_fingerprint(row),
             "date": move.move_date,
             "base": move.move_base.name,
