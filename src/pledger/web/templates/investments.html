@@ -80,20 +80,26 @@
           "x": p.x, "y": p.y, "label": p.month, "change": p.change,
           "value_text": p.value | money,
           "change_text": ("+" if p.change >= 0 else "") ~ (p.change | money) ~ " in the month",
+          "real_text": (p.real | money) if p.get("real") is not none else "-",
         }] %}
       {% endfor %}
       {{ line_chart(chart, ns.points, title ~ " from " ~ series[0].month ~ " to " ~ chart.last.month ~ ", ending at " ~ (chart.last.value | money), series=loop.index) }}
+      {% if chart.real_path %}
+      <p class="muted small"><strong>Real</strong>: the total invested at each month end deflated by the CPI, at the
+        prices of {{ chart.real_date }}.</p>
+      {% endif %}
       <details class="chart-table">
         <summary>Show table</summary>
         <div class="table-wrap">
           <table data-sortable="{{ key }}-over-time">
-            <thead><tr><th>Month</th><th class="num">Change</th><th class="num">{{ what }}</th></tr></thead>
+            <thead><tr><th>Month</th><th class="num">Change</th><th class="num">{{ what }}</th>{% if chart.real_path %}<th class="num" title="At the prices of {{ chart.real_date }}">Real</th>{% endif %}</tr></thead>
             <tbody>
             {% for p in series | reverse %}
             <tr>
               <td class="nowrap">{{ p.month }}</td>
               <td class="num money {{ 'gain' if p.change > 0 else 'loss' if p.change < 0 }}" data-sort="{{ p.change }}">{{ p.change | money }}</td>
               <td class="num money" data-sort="{{ p.value }}">{{ p.value | money }}</td>
+              {% if chart.real_path %}<td class="num money {{ 'muted' if p.real is none }}" data-sort="{{ p.real if p.real is not none else '' }}">{{ (p.real | money) if p.real is not none else "-" }}</td>{% endif %}
             </tr>
             {% endfor %}
             </tbody>

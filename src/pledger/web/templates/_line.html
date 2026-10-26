@@ -1,7 +1,14 @@
 {# A line chart from views.line_chart, in the color of a categorical `series` slot. Each
    point of `points` adds its tooltip texts: `label`, `value_text` and `change_text`
-   (colored as a gain or loss if `change` is set). #}
+   (colored as a gain or loss if `change` is set), and `real_text` if the chart has a
+   real line (dashed, with a legend). #}
 {% macro line_chart(chart, points, aria, money=True, change_money=True, series=1) %}
+{% if chart.real_path %}
+<ul class="legend" style="--line: var(--series-{{ series }})">
+  <li><span class="line-swatch"></span>Nominal</li>
+  <li><span class="line-swatch dashed"></span>Real <span class="muted">(prices of {{ chart.real_date }})</span></li>
+</ul>
+{% endif %}
 <div class="line-chart" data-points='{{ points | tojson }}' style="--line: var(--series-{{ series }})">
   <div class="y-axis" aria-hidden="true">
     {% for t in chart.y_ticks %}<span class="{{ 'money' if money }}" style="top: {{ t.y }}%">{{ t.label }}</span>{% endfor %}
@@ -11,14 +18,17 @@
       {% for t in chart.y_ticks %}
       <line class="{{ 'axis' if loop.first else 'grid' }}" x1="0" x2="100" y1="{{ t.y }}" y2="{{ t.y }}"/>
       {% endfor %}
-      <path class="line" d="{{ chart.path }}"/>
+      <path class="line" d="{{ chart.path }}"><title>Nominal</title></path>
+      {% if chart.real_path %}<path class="line dashed" d="{{ chart.real_path }}"><title>Real, at prices of {{ chart.real_date }}</title></path>{% endif %}
       <line class="crosshair" x1="0" x2="0" y1="0" y2="100"/>
     </svg>
     <span class="dot end-dot" style="left: {{ chart.last.x }}%; top: {{ chart.last.y }}%"></span>
+    {% if chart.real_last %}<span class="dot end-dot" style="left: {{ chart.real_last.x }}%; top: {{ chart.real_last.y }}%"></span>{% endif %}
     <span class="dot hover-dot"></span>
     <div class="tooltip" aria-hidden="true">
       <div class="tip-date muted"></div>
       <div class="tip-value {{ 'money' if money }}"></div>
+      {% if chart.real_path %}<div class="tip-real muted">Real <span class="{{ 'money' if money }}"></span></div>{% endif %}
       <div class="tip-change {{ 'money' if change_money }}"></div>
     </div>
   </div>

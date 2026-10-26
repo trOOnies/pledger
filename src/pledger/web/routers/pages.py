@@ -93,7 +93,7 @@ def credit_cards(request: Request, store: StoreDep, month: str | None = None):
 
 @router.get("/work")
 def work(request: Request, store: StoreDep):
-    context = build_work(store.load_work())
+    context = build_work(store.load_work(), cpi=store.load_cpi())
     return templates.TemplateResponse(
         request, "work.html", {**context, "settings": store.settings}
     )

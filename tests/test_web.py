@@ -833,6 +833,10 @@ class TestCharts:
         chart = build_results(snapshot)["equity"]
         assert chart["points"][0]["x"] == 0 and chart["points"][-1]["x"] == 100
         assert chart["change"] == pytest.approx(960.25)  # the profit
+        # The real equity, at the prices of its last date
+        assert chart["real_date"] == "2026-01-04" and chart["real_path"]
+        first, *_, last = chart["points"]
+        assert last["real"] == pytest.approx(last["value"]) and first["real"] > first["value"]
         assert build_results(snapshot, "2025-12")["equity"] is None
         assert build_results(snapshot, "2025-12", initial=True)["equity"]["change"] == pytest.approx(100.5)
 
@@ -1872,7 +1876,10 @@ def test_salary_charts(settings, tmp_path):
     assert gross[2]["change_text"] == "No job" and gross[0]["change_text"] == "Acme · Acme Jr"
     assert gross[2]["y"] == 100  # the no-job month is at 0, on the axis
     # Each salary in its own color
-    assert re.findall(r'style="--line: var\((--series-\d)\)"', r.text) == ["--series-1", "--series-2"]
+    assert re.findall(r'class="line-chart" [^>]*style="--line: var\((--series-\d)\)"', r.text) == ["--series-1", "--series-2"]
+    # The real salaries, at the CPI of the end of each month: none before base_currency.csv
+    assert net[0]["real_text"] == "-" and net[-1]["real_text"] == "$1,600.00"
+    assert r.text.count("(prices of 2026-01-31)") == 2
 
 
 def test_no_salary_charts_without_months(client):
@@ -2180,6 +2187,10 @@ class TestInvestMovements:
             ("2025-12", 100.0, 100.0), ("2026-01", 105.0, 5.0)
         ]
         assert [(p["month"], p["value"]) for p in charts["result_series"]] == [("2025-12", 0.0), ("2026-01", 5.0)]
+        # The real total invested, at the CPI of each month end
+        assert charts["invested_chart"]["real_date"] == "2026-01-31"
+        assert [p["real"] for p in charts["invested_series"]] == [pytest.approx(103.0), pytest.approx(105.0)]
+        assert not charts["result_chart"]["real_path"]
         assert snapshot.investment_accounts(month="2025-12")[0].investments["T"]["total_amount"] == 100
         r = client.get("/investments")
         assert "Total invested <small>all time, at each month end</small>" in r.text

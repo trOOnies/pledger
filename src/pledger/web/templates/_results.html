@@ -76,20 +76,26 @@
       "x": p.x, "y": p.y, "label": p.date, "change": p.change,
       "value_text": p.value | money,
       "change_text": ("+" if p.change >= 0 else "") ~ (p.change | money) ~ " that day",
+      "real_text": (p.real | money) if p.real is not none else "-",
     }] %}
   {% endfor %}
   {{ line_chart(equity, ns.points, "Equity from " ~ equity_series[0].date ~ " to " ~ equity.last.date ~ ", ending at " ~ (equity.last.value | money)) }}
+  {% if equity.real_path %}
+  <p class="muted small"><strong>Real</strong>: the equity deflated by the CPI, at the prices of {{ equity.real_date }}.
+    When it goes down, the equity grew less than prices.</p>
+  {% endif %}
   <details class="chart-table">
     <summary>Show table</summary>
     <div class="table-wrap">
       <table data-sortable="equity">
-        <thead><tr><th>Date</th><th class="num">Change</th><th class="num">Equity</th></tr></thead>
+        <thead><tr><th>Date</th><th class="num">Change</th><th class="num">Equity</th>{% if equity.real_path %}<th class="num" title="At the prices of {{ equity.real_date }}">Real</th>{% endif %}</tr></thead>
         <tbody>
         {% for p in equity_series | reverse %}
         <tr>
           <td class="nowrap">{{ p.date }}</td>
           <td class="num money {{ 'gain' if p.change >= 0 else 'loss' }}" data-sort="{{ p.change }}">{{ p.change | money }}</td>
           <td class="num money" data-sort="{{ p.value }}">{{ p.value | money }}</td>
+          {% if equity.real_path %}<td class="num money {{ 'muted' if p.real is none }}" data-sort="{{ p.real if p.real is not none else '' }}">{{ (p.real | money) if p.real is not none else "-" }}</td>{% endif %}
         </tr>
         {% endfor %}
         </tbody>

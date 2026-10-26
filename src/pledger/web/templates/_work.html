@@ -19,9 +19,14 @@
           {% set ns.points = ns.points + [{
             "x": p.x, "y": p.y, "label": p.month.month, "value_text": p.value | money,
             "change_text": "No job" if p.month.is_gap else p.month.company ~ " · " ~ p.month.position,
+            "real_text": (p.real | money) if p.real is not none else "-",
           }] %}
         {% endfor %}
         {{ line_chart(chart, ns.points, title ~ " per month from " ~ chart.points[0].month.month ~ " to " ~ chart.last.month.month ~ ", ending at " ~ (chart.last.value | money), change_money=False, series=loop.index) }}
+        {% if chart.real_path %}
+        <p class="muted small"><strong>Real</strong>: each salary deflated by the CPI at the end of its month, at the
+          prices of {{ chart.real_date }}.</p>
+        {% endif %}
       </section>
       {% endfor %}
     </div>

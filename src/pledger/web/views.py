@@ -393,7 +393,7 @@ def investment_charts(snapshot: Snapshot) -> dict:
     """
     The total invested (the amounts of all investments) and the total result of
     the investments, held or not, and of the interest on money, at the end of each
-    month of the ledger.
+    month of the ledger. The total invested also gets its real value (see with_real).
     """
     dates = snapshot.all_rows.move_date
     if not len(dates):
@@ -415,8 +415,14 @@ def investment_charts(snapshot: Snapshot) -> dict:
             change = value - series[-1]["value"] if series else value
             series.append({"date": f"{month}-01", "month": month, "value": value, "change": change})
         month = next_month(month)
+    invested_real = with_real(
+        invested, snapshot.base_currency.customer_price_index, [month_end(p["month"]) for p in invested]
+    )
+    invested_chart = line_chart(invested)
+    if invested_chart:
+        invested_chart["real_date"] = invested_real
     return {
-        "invested_chart": line_chart(invested),
+        "invested_chart": invested_chart,
         "invested_series": invested,
         "result_chart": line_chart(result),
         "result_series": result,
@@ -740,11 +746,12 @@ def work_form(work: Work, month: str = "", values: dict | None = None) -> dict:
     }
 
 
-def build_work(work: Work, form: dict | None = None) -> dict:
+def build_work(work: Work, form: dict | None = None, cpi: Series | None = None) -> dict:
     """
     The companies worked for and their job positions, every month of the work
     history (the newest first) and the totals of this year, plus the form state.
     Worked months already over with no received payment date are flagged as unpaid.
+    With the `cpi` of the base currency, the salary charts also get their real values.
     """
     today = dt.date.today()
     year, this_month = str(today.year), today.strftime("%Y-%m")
@@ -769,22 +776,29 @@ def build_work(work: Work, form: dict | None = None) -> dict:
         "gross": sum(m.gross for m in this_year),
         "net": sum(m.net for m in this_year),
         "form": form or work_form(work),
-        **salary_charts(work),
+        **salary_charts(work, cpi),
     }
 
 
-def salary_charts(work: Work) -> dict:
-    """The gross and net salary of every month, with the months without a job at 0."""
-    def series(key: str) -> list[dict]:
-        return [
+def salary_charts(work: Work, cpi: Series | None = None) -> dict:
+    """
+    The gross and net salary of every month, with the months without a job at 0,
+    and their real values at the CPI of the end of each month (see with_real).
+    """
+    def chart(key: str) -> dict | None:
+        series = [
             {"date": f"{m.month}-01", "month": m, "value": getattr(m, key) or 0.0}
             for m in work.months
         ]
+        real_date = with_real(series, cpi, [month_end(m.month) for m in work.months])
+        drawn = line_chart(series)
+        if drawn:
+            drawn["real_date"] = real_date
+        return drawn
 
-    gross, net = series("gross"), series("net")
     return {
-        "gross_chart": line_chart(gross),
-        "net_chart": line_chart(net),
+        "gross_chart": chart("gross"),
+        "net_chart": chart("net"),
     }
 
 
@@ -977,12 +991,15 @@ def line_chart(series: list[dict], tick_label=compact) -> dict | None:
     """
     Points, path and axes to draw a line of {date, value} points (a None value
     breaks the line). Coordinates are percentages of the plot area, so HTML
-    labels and the SVG line share them.
+    labels and the SVG line share them. Points with a `real` value (see with_real)
+    also get a second, dashed line of those, on the same axes.
     """
     shown = [p for p in series if p["value"] is not None]
     if not shown:
         return None
-    ticks = nice_ticks(min(p["value"] for p in shown), max(p["value"] for p in shown))
+    reals = [p["real"] for p in shown if p.get("real") is not None]
+    values = [p["value"] for p in shown] + reals
+    ticks = nice_ticks(min(values), max(values))
     y_lo, y_hi = ticks[0], ticks[-1]
 
     def y(v: float) -> float:
@@ -990,21 +1007,54 @@ def line_chart(series: list[dict], tick_label=compact) -> dict | None:
 
     x, x_ticks = time_axis([dt.date.fromisoformat(p["date"]) for p in series])
     points, path, joined = [], [], False
+    real_path, real_joined, real_last = [], False, None
     for p in series:
         if p["value"] is None:
-            joined = False
+            joined = real_joined = False
             continue
         point = {**p, "x": x(p["date"]), "y": y(p["value"])}
         points.append(point)
         path.append(f"{'L' if joined else 'M'}{point['x']},{point['y']}")
         joined = True
+        if p.get("real") is None:
+            real_joined = False
+            continue
+        real_last = {"x": point["x"], "y": y(p["real"])}
+        real_path.append(f"{'L' if real_joined else 'M'}{real_last['x']},{real_last['y']}")
+        real_joined = True
     return {
         "path": " ".join(path),
         "points": points,
         "y_ticks": [{"y": y(t), "label": tick_label(t)} for t in ticks],
         "x_ticks": x_ticks,
         "last": points[-1],
+        "real_path": " ".join(real_path) if reals else None,
+        "real_last": real_last,
     }
+
+
+def month_end(month: str) -> str:
+    """The ISO date of the last day of a YYYY-MM month."""
+    return Period(month, freq="M").end_time.date().isoformat()
+
+
+def with_real(series: list[dict], cpi: Series | None, dates: list[str] | None = None) -> str | None:
+    """
+    Add to each {date, value} point its `real` value: deflated by the CPI of its
+    date (or of its date in `dates`), in the base currency of the last of those
+    dates with a CPI, which is returned (see real_values). None where there is no
+    CPI, and everywhere without one.
+    """
+    for p in series:
+        p["real"] = None
+    if cpi is None or not len(cpi) or not series:
+        return None
+    index = [Timestamp(d) for d in (dates or [p["date"] for p in series])]
+    values = Series([p["value"] if p["value"] is not None else math.nan for p in series], index=index)
+    real, real_date = real_values(values, cpi)
+    for p, r in zip(series, real):
+        p["real"] = None if math.isnan(r) else float(r)
+    return real_date if any(p["real"] is not None for p in series) else None
 
 
 def column_chart(series: list[dict], tick_label=compact) -> dict | None:
@@ -1337,10 +1387,12 @@ def build_results(snapshot: Snapshot, month: str = "", initial: bool = False) ->
         })
 
     series = equity_series(snapshot, month, initial)
+    real_date = with_real(series, snapshot.base_currency.customer_price_index)
     equity = line_chart(series)
     if equity:
         equity["change"] = sum(p["change"] for p in series)
         equity["since"] = "in the month" if month else f"since {series[0]['date']}"
+        equity["real_date"] = real_date
     return {
         "months": months_of(snapshot),
         "month": month,

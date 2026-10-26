@@ -197,6 +197,12 @@
         dot.style.top = `${y}%`;
         const value = tip.querySelector(".tip-value");
         if (value.classList.contains("money")) setMoney(value, p.value_text); else value.textContent = p.value_text;
+        // A chart with a real line also shows the real value of the point.
+        const real = tip.querySelector(".tip-real span");
+        if (real) {
+          const text = p.real_text ?? "-";
+          if (real.classList.contains("money")) setMoney(real, text); else real.textContent = text;
+        }
         const change = tip.querySelector(".tip-change");
         if (change.classList.contains("money")) setMoney(change, p.change_text); else change.textContent = p.change_text;
         change.classList.remove("gain", "loss", "muted");

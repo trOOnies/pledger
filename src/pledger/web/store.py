@@ -15,7 +15,7 @@ from functools import cached_property
 from pathlib import Path
 
 import yaml
-from pandas import DataFrame, Timestamp, concat, read_csv
+from pandas import DataFrame, Series, Timestamp, concat, read_csv
 
 from pledger.enums import (
     AccountCheck,
@@ -700,6 +700,14 @@ class LedgerStore:
         except LedgerDataError as e:
             _atomic_write(path, before)
             raise ValueError(f"Could not add {name!r}: {e}") from None
+
+    def load_cpi(self) -> Series | None:
+        """The daily CPI of the base currency, or None if the currencies can't be read."""
+        try:
+            base_currency, _ = Currency.load_yaml(str(self.settings.currencies_path))
+        except (OSError, KeyError, ValueError, AssertionError):
+            return None
+        return base_currency.customer_price_index
 
     def load_work(self) -> Work:
         """

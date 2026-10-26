@@ -379,7 +379,7 @@ td .swatch { display: inline-block; }
 .line-chart .tooltip.flip { transform: translate(calc(-100% - 12px), -50%); }
 .tip-date { font-size: .75rem; }
 .tip-value { font-weight: 600; }
-.tip-change { font-size: .8rem; }
+.tip-change, .tip-real { font-size: .8rem; }
 .statement tbody tr:hover { background: var(--bg); }
 tfoot th { position: static; color: var(--text); border-top: 2px solid var(--border); font-size: inherit; }
 .chart-table { margin-top: .75rem; }

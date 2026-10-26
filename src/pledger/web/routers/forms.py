@@ -295,7 +295,7 @@ def create_account(
 
 def render_work(request: Request, store: LedgerStore, form: dict | None = None, **extra):
     return templates.TemplateResponse(
-        request, "_work.html", {**build_work(store.load_work(), form), **extra}
+        request, "_work.html", {**build_work(store.load_work(), form, store.load_cpi()), **extra}
     )
 
 
