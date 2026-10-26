@@ -65,7 +65,7 @@
         <tbody>
         {% for row in months %}
         {% set m = row.month %}
-        <tr>
+        <tr id="{{ row_anchor('month', m.month) }}">
           <td class="nowrap"><strong>{{ m.month }}</strong></td>
           {% if m.is_gap %}
           <td class="muted" colspan="2">No job</td>

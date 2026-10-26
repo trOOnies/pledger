@@ -1129,6 +1129,10 @@ class TestConversions:
         assert movement_ids(currencies.split('data-sortable="conversions"')[1]) == ["C-1"]
         ledger = conv_client.get("/", params={"initial": True}).text
         assert "C-1" in movement_ids(ledger)
+        # The circles link to the same row, or to the row they are generated from
+        assert 'href="/currencies#movement-C-1"' in ledger and '<tr id="movement-C-1">' in currencies
+        assert 'href="/currencies#account-Bk"' in ledger and '<tr id="account-Bk">' in currencies
+        assert 'href="/accounts#account-Bk"' in ledger and '<tr id="account-Bk">' in conv_client.get("/accounts").text
 
     def test_add_and_delete(self, conv):
         store = LedgerStore(conv)
@@ -1482,6 +1486,18 @@ class TestDebtSides:
         store.add("2026-02-01", "Borrow", "Ca", "De", "1")
         assert rows(settings).iloc[-1]["acc_credit"] == "De"
 
+    def test_internal_ones_link_to_their_row_in_the_debt_tab(self, settings, client):
+        path = settings.base_movements_path
+        path.write_text(path.read_text().replace(
+            INITIAL_YAML, INITIAL_YAML + "  transfer:\n    Debt - Paid:\n      description: d\n      debit: DEBT\n", 1
+        ))
+        with settings.ledger_path.open("a") as f:
+            f.write("2026-02-03;Debt - Paid;De;5;Ca;\n")
+        LedgerStore(settings).freeze_ids()
+        # To the Debt tab in the month of the movement, so it isn't filtered out
+        assert 'href="/debt?month=2026-02#movement-L-5" title="A debt movement' in client.get("/").text
+        assert '<tr id="movement-L-5">' in client.get("/debt", params={"month": "2026-02"}).text
+
     def test_form_offers_only_debt_accounts(self, client):
         r = client.get("/form/accounts", params={"base_movement": "Borrow"})
         debit, credit = r.text.split("<span>Credit")
@@ -1508,7 +1524,7 @@ class TestDebtSides:
         assert "<th>Liquid</th><th>Special</th>" in r.text
         specials = {
             row.split("<strong>")[1].split("</strong>")[0]: row.split("</td>")[4].split(">")[-1]
-            for row in r.text.split("<tbody>", 1)[1].split("<tr>")[1:]
+            for row in re.split(r'<tr id="account-[^"]+">', r.text.split("<tbody>", 1)[1])[1:]
             if "<strong>" in row
         }
         assert specials == {"Ca": "-", "Bk": "-", "Br": "Investment", "Cc": "-", "De": "Debt", "Eq": "-"}
@@ -2063,7 +2079,9 @@ class TestSalaries:
         # Each salary's id is its month and week, so editing other months never changes it
         assert [snapshot.ids[ix] for ix in snapshot.salary_rows.index] == [f"W-2026-01-{i}" for i in range(2, 6)]
         r = TestClient(create_app(settings)).get("/")
-        assert r.text.count('href="/work" title="Generated each week from the gross salary of the Work tab" aria-label="Generated each week from the gross salary of the Work tab">🟠</a>') == 4
+        # Each links to the row of its month in the Work tab
+        assert r.text.count('href="/work#month-2026-01" title="Generated each week from the gross salary of the Work tab" aria-label="Generated each week from the gross salary of the Work tab">🟠</a>') == 4
+        assert '<tr id="month-2026-01">' in TestClient(create_app(settings)).get("/work").text
         assert r.text.count('aria-label="Delete movement"') == 4  # only the CSV rows
 
     def test_cannot_be_stored_or_added_by_hand(self, settings):
@@ -2198,7 +2216,8 @@ class TestInvestMovements:
         assert client.get("/api/investments/movements").json()[0]["source"] == "investments"
         # The ledger shows them with a lock that leads to the Investments tab
         index = client.get("/").text
-        assert 'href="/investments" title="Added and deleted from the Investments tab" aria-label="Added and deleted from the Investments tab">🟢</a>' in index
+        assert 'href="/investments#movement-I-1" title="Added and deleted from the Investments tab" aria-label="Added and deleted from the Investments tab">🟢</a>' in index
+        assert '<tr id="movement-I-1">' in client.get("/investments").text
         assert index.count('aria-label="Delete movement"') == 4
 
     def test_interest_on_money(self, settings, client):
@@ -2496,7 +2515,7 @@ class TestCreditCards:
         assert set(movement_ids(movements)) <= set(movement_ids(client.get("/", params={"initial": True}).text))
         # With the initial ones, but not the ones of other accounts
         assert "<h2>Movements <small>4, all time</small></h2>" in r.text
-        assert movements.count("<tr>") == 5 and "Initial (L)" in movements and "Salary" not in movements
+        assert movements.count("<tr") == 5 and "Initial (L)" in movements and "Salary" not in movements
         r = client.get("/credit-cards", params={"month": "2026-01"}, headers=HTMX)
         assert "<h2>Movements <small>2, in 2026-01</small></h2>" in r.text  # with the initial one
 

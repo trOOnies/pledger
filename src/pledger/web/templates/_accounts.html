@@ -98,7 +98,7 @@
         <thead><tr><th>Account</th><th>Description</th><th>Currency</th><th>Liquid</th><th>Special</th><th>Checks</th><th class="num">Balance</th></tr></thead>
         <tbody>
         {% for a in accs %}
-        <tr>
+        <tr id="{{ row_anchor('account', a.name) }}">
           <td class="nowrap"><strong>{{ a.name }}</strong></td>
           <td class="muted">{{ a.description }}</td>
           <td>{{ a.currency }}</td>

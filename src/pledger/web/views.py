@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 import math
+import re
 
 from pandas import DataFrame, Period, Series, Timedelta, Timestamp
 
@@ -49,15 +50,39 @@ from pledger.web.store import (
 ACCOUNT_TYPE_ORDER = list(AccountType)
 
 # The tab where each kind of movement that can't be deleted from the Ledger tab is
-# handled: its colored circle there, the link to it and its tooltip.
+# handled: its colored circle there and its tooltip. The circle links to its row in
+# that tab (see source_link).
 MOVEMENT_SOURCES = {
-    "investments": ("🟢", "/investments", "Added and deleted from the Investments tab"),
-    "currencies": ("🔵", "/currencies", "Added and deleted from the Currencies tab"),
-    "revaluation": ("🔵", "/currencies", "Generated from the values of the Currencies tab"),
-    "work": ("🟠", "/work", "Generated each week from the gross salary of the Work tab"),
-    "accounts": ("🟣", "/accounts", "Generated from the initial amount of the account, in the Accounts tab"),
-    "debt": ("🟡", "/debt", "A debt movement, shown in the Debt tab; it can only be changed in the ledger CSV"),
+    "investments": ("🟢", "Added and deleted from the Investments tab"),
+    "currencies": ("🔵", "Added and deleted from the Currencies tab"),
+    "revaluation": ("🔵", "Generated from the values of the Currencies tab"),
+    "work": ("🟠", "Generated each week from the gross salary of the Work tab"),
+    "accounts": ("🟣", "Generated from the initial amount of the account, in the Accounts tab"),
+    "debt": ("🟡", "A debt movement, shown in the Debt tab; it can only be changed in the ledger CSV"),
 }
+
+
+def row_anchor(kind: str, key: str) -> str:
+    """The HTML id of the row of a table that a link can jump to, e.g. movement-L-12."""
+    return f"{kind}-" + re.sub(r"\s+", "_", key)
+
+
+def source_link(source: str, move, move_id: str | None) -> str:
+    """
+    The link from a movement of the Ledger tab to its row in the tab of its `source`:
+    the same movement, or the row it is generated from (the account revalued, the
+    month of the salary, the account of the initial amount). Without an id yet, the tab.
+    """
+    if source == "revaluation":
+        account = move.acc_debit.name if move.move_type == MovementType.GAIN else move.acc_credit.name
+        return f"/currencies#{row_anchor('account', account)}"
+    if source == "accounts":
+        account = move.acc_debit.name if move.move_type == MovementType.GAIN else move.acc_credit.name
+        return f"/accounts#{row_anchor('account', account)}"
+    if source == "work":
+        return f"/work#{row_anchor('month', move_id[2:9])}"  # W-<month>-<week>
+    tab = {"investments": "/investments", "currencies": "/currencies", "debt": f"/debt?month={move.move_date[:7]}"}[source]
+    return f"{tab}#{row_anchor('movement', move_id)}" if move_id else tab
 
 
 def months_of(snapshot: Snapshot) -> list[str]:
@@ -108,6 +133,8 @@ def movement_rows(snapshot: Snapshot, rows: DataFrame, ledger: Ledger) -> list[d
         }
         for (ix, row), move in zip(rows.iterrows(), ledger.movements)
     ]
+    for m, move in zip(movements, ledger.movements):
+        m["link"] = source_link(m["source"], move, m["id"]) if m["source"] else None
     movements.reverse()
     return movements
 

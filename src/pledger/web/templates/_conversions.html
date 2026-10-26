@@ -11,7 +11,7 @@
       </thead>
       <tbody>
         {% for c in conversions %}
-        <tr>
+        <tr{% if c.id %} id="{{ row_anchor('movement', c.id) }}"{% endif %}>
           {{ id_cell(c.id) }}
           <td class="nowrap">{{ c.date }}</td>
           <td><span class="badge transfer" title="{{ c.currency }} {{ 'bought' if c.bought else 'sold' }}">T</span> {{ c.base }}</td>

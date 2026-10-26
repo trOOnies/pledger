@@ -12,7 +12,7 @@
       </thead>
       <tbody>
         {% for m in movements %}
-        <tr>
+        <tr{% if m.id %} id="{{ row_anchor('movement', m.id) }}"{% endif %}>
           {{ id_cell(m.id) }}
           <td class="nowrap">{{ m.date }}</td>
           <td><span class="badge {{ m.type }}">{{ m.type[0] | upper }}</span> {{ m.base }}</td>

@@ -82,7 +82,7 @@
         </tr></thead>
         <tbody>
         {% for c in own_accounts %}{% for a in c.own %}
-        <tr>
+        <tr id="{{ row_anchor('account', a.name) }}">
           <td>{{ a.name }}</td>
           <td>{{ a.description }}</td>
           <td><span class="swatch" style="background: var(--series-{{ c.slot }})"></span> {{ c.name }}</td>

@@ -25,8 +25,8 @@
           <td class="muted">{{ m.comment }}</td>
           <td>
             {% if m.source %}
-            {% set emoji, href, title = movement_sources[m.source] %}
-            <a class="source" href="{{ href }}" title="{{ title }}" aria-label="{{ title }}">{{ emoji }}</a>
+            {% set emoji, title = movement_sources[m.source] %}
+            <a class="source" href="{{ m.link }}" title="{{ title }}" aria-label="{{ title }}">{{ emoji }}</a>
             {% elif m.internal %}
             <span class="source" title="Added by pledger itself; it cannot be deleted by hand" aria-label="Added by pledger itself">⚪</span>
             {% else %}

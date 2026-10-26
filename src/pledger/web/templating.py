@@ -17,6 +17,7 @@ from pledger.web.views import (
     base_fields,
     conversion_fields,
     invest_fields,
+    row_anchor,
 )
 
 HERE = Path(__file__).parent
@@ -68,6 +69,7 @@ def static_version(path: str) -> int:
 
 templates.env.globals["static_version"] = static_version
 templates.env.globals["movement_sources"] = MOVEMENT_SOURCES
+templates.env.globals["row_anchor"] = row_anchor
 
 
 def is_partial(request: Request) -> bool:
