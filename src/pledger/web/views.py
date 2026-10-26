@@ -17,6 +17,7 @@ from pledger.enums import (
 )
 from pledger.ledger import Ledger
 from pledger.models import (
+    DEBT,
     INVESTMENT,
     SPECIAL_LABELS,
     CreditCardAccount,
@@ -47,6 +48,17 @@ from pledger.web.store import (
 
 ACCOUNT_TYPE_ORDER = list(AccountType)
 
+# The tab where each kind of movement that can't be deleted from the Ledger tab is
+# handled: its colored circle there, the link to it and its tooltip.
+MOVEMENT_SOURCES = {
+    "investments": ("🟢", "/investments", "Added and deleted from the Investments tab"),
+    "currencies": ("🔵", "/currencies", "Added and deleted from the Currencies tab"),
+    "revaluation": ("🔵", "/currencies", "Generated from the values of the Currencies tab"),
+    "work": ("🟠", "/work", "Generated each week from the gross salary of the Work tab"),
+    "accounts": ("🟣", "/accounts", "Generated from the initial amount of the account, in the Accounts tab"),
+    "debt": ("🟡", "/debt", "A debt movement, shown in the Debt tab; it can only be changed in the ledger CSV"),
+}
+
 
 def months_of(snapshot: Snapshot) -> list[str]:
     """Months with movements, newest first."""
@@ -58,6 +70,24 @@ def movement_rows(snapshot: Snapshot, rows: DataFrame, ledger: Ledger) -> list[d
     invest = snapshot.invest_base_movements()
     conversions = set(snapshot.conversion_rows.index)
     salaries = set(snapshot.salary_rows.index)
+    revaluations = set(snapshot.result_rows.index)
+    initials = set(snapshot.initial_rows.index)
+
+    def source(ix, move) -> str | None:
+        if move.move_base.name in invest:
+            return "investments"
+        if ix in conversions:
+            return "currencies"
+        if ix in revaluations:
+            return "revaluation"
+        if ix in salaries:
+            return "work"
+        if ix in initials:
+            return "accounts"
+        if move.move_base.internal and DEBT in {move.move_base.debit_special, move.move_base.credit_special}:
+            return "debt"
+        return None
+
     movements = [
         {
             "index": int(ix),
@@ -73,6 +103,7 @@ def movement_rows(snapshot: Snapshot, rows: DataFrame, ledger: Ledger) -> list[d
             "invest": move.move_base.name in invest,  # added and deleted from the Investments tab
             "conversion": ix in conversions,  # added and deleted from the Currencies tab
             "salary": ix in salaries,  # generated from the Work tab
+            "source": source(ix, move),  # a key of MOVEMENT_SOURCES, if not deletable here
         }
         for (ix, row), move in zip(rows.iterrows(), ledger.movements)
     ]

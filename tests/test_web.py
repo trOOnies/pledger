@@ -1091,7 +1091,8 @@ class TestConversions:
 
     def test_ledger_tab_links_them_to_the_currencies_tab(self, conv_client):
         r = conv_client.get("/")
-        assert '<a class="muted" href="/currencies" title="Added and deleted from the Currencies tab">' in r.text
+        assert '<a class="source" href="/currencies" title="Added and deleted from the Currencies tab"' in r.text
+        assert "🔵</a>" in r.text
         assert r.text.count('hx-post="/movements/') == 4  # only the CSV rows
         assert "USD - Result (G)" in r.text  # internal: not deletable either
         (moved,) = [m for m in conv_client.get("/api/movements").json() if m["conversion"]]
@@ -1971,7 +1972,7 @@ class TestSalaries:
         assert (cc.creditors["Globex"].amount, cc.creditors["Acme"].amount, cc.unassigned) == (-1600, -5, 0)
         assert snapshot.debt_accounts("2026-01")[0].creditors["Globex"].amount == -1600
         r = TestClient(create_app(settings)).get("/")
-        assert r.text.count('href="/work" title="Generated each week from the gross salary of the Work tab"') == 4
+        assert r.text.count('href="/work" title="Generated each week from the gross salary of the Work tab" aria-label="Generated each week from the gross salary of the Work tab">🟠</a>') == 4
         assert r.text.count('aria-label="Delete movement"') == 4  # only the CSV rows
 
     def test_cannot_be_stored_or_added_by_hand(self, settings):
@@ -2102,7 +2103,7 @@ class TestInvestMovements:
         assert client.get("/api/investments/movements").json()[0]["source"] == "investments"
         # The ledger shows them with a lock that leads to the Investments tab
         index = client.get("/").text
-        assert 'href="/investments" title="Added and deleted from the Investments tab"' in index
+        assert 'href="/investments" title="Added and deleted from the Investments tab" aria-label="Added and deleted from the Investments tab">🟢</a>' in index
         assert index.count('aria-label="Delete movement"') == 4
 
     def test_interest_on_money(self, settings, client):

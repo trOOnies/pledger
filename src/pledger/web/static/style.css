@@ -249,6 +249,8 @@ button.icon {
 }
 button.icon:hover { color: var(--loss); }
 button.icon.edit:hover { color: var(--accent); }
+/* The colored circle of a movement handled in another tab, linking to it. */
+.source { padding: 0 .4rem; font-size: .8rem; line-height: 1; text-decoration: none; }
 
 .msg { margin: 0; padding: .5rem .75rem; border-radius: 6px; }
 .msg.error { background: var(--loss-bg); color: var(--loss); }

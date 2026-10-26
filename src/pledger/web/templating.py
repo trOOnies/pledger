@@ -12,7 +12,12 @@ from jinja2 import pass_context
 
 from pledger.enums import MovementType
 from pledger.web.store import Snapshot
-from pledger.web.views import base_fields, conversion_fields, invest_fields
+from pledger.web.views import (
+    MOVEMENT_SOURCES,
+    base_fields,
+    conversion_fields,
+    invest_fields,
+)
 
 HERE = Path(__file__).parent
 
@@ -62,6 +67,7 @@ def static_version(path: str) -> int:
 
 
 templates.env.globals["static_version"] = static_version
+templates.env.globals["movement_sources"] = MOVEMENT_SOURCES
 
 
 def is_partial(request: Request) -> bool:
