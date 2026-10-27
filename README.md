@@ -1,4 +1,4 @@
-# 📒 pledger
+# <img src="src/pledger/web/static/favicon.svg" alt="" width="36" align="top"> pledger
 
 **Your money, one movement at a time.**
 

@@ -674,7 +674,7 @@ class TestPages:
         r = client.get("/help")
         assert r.status_code == 200
         assert 'href="/help" aria-current="page"' in r.text
-        assert "<h1>Pledger</h1>" in r.text and "help-logo" not in r.text
+        assert "help-logo" in r.text and "> Pledger</h1>" in r.text
         # Section headings carry the same numbers as the index
         toc = r.text.split('<ol>')[1].split("</ol>")[0]
         titles = [li.split("</span> ")[1].split("</a>")[0] for li in toc.split("<li>")[1:]]

@@ -117,7 +117,8 @@ main { padding: 1rem 1.5rem 3rem; max-width: 1400px; width: 100%; margin: 0 auto
   background: linear-gradient(135deg, var(--gain-bg), var(--transfer-bg) 55%, var(--surface));
   border: 1px solid var(--border);
 }
-.help-hero h1 { margin: 0; font-size: 2rem; letter-spacing: -.02em; }
+.help-hero h1 { margin: 0; font-size: 2rem; letter-spacing: -.02em; display: flex; align-items: center; gap: .6rem; }
+.help-logo { flex: none; }
 .help-tagline { margin: .25rem 0 0; color: var(--muted); font-size: 1rem; }
 .help-tagline strong { color: var(--text); }
 .help-steps {

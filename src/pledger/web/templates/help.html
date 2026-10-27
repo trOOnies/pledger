@@ -14,7 +14,7 @@
 {% macro heading(n) %}{% set s = sections[n - 1] %}<h2 class="help-heading"><span class="help-num">{{ n }}.</span> <span aria-hidden="true">{{ s[1] }}</span> {{ s[2] }}</h2>{% endmacro %}
 
 <header class="help-hero">
-  <h1>Pledger</h1>
+  <h1><img class="help-logo" src="{{ url_for('static', path='favicon.svg') }}?v={{ static_version('favicon.svg') }}" alt="" width="40" height="40"> Pledger</h1>
   <p class="help-tagline">Your money, <strong>one movement at a time</strong>. Here is everything you need to know to use it.</p>
   <ol class="help-steps">
     <li><span aria-hidden="true">✍️</span> <strong>Record</strong> every time money moves</li>
