@@ -67,7 +67,7 @@ A FastAPI + HTMX UI, one tab per area:
 | 🏦 **Accounts** | Balances, total assets, liabilities and equity, a form to add accounts, the composition of assets and liabilities (by currency or by liquidity) and, at each month end, debt over equity and net liquidity (liquid assets minus liquid liabilities) over equity. |
 | 💱 **Currencies** | Balances per currency, the balance of each account in other currencies in its own currency, the daily CPI of the base currency, its monthly inflation, the nominal and real value of each other currency, and the share of each currency in the assets at each month end. The conversions are added and deleted here. |
 | 📊 **Results** | Gains and losses by result type, a waterfall of the result by type (with its result statement as a table) and equity over time. Result types and base movements are listed and added here. |
-| 💼 **Work** | The company, job position, gross and net salary of each month, with a chart of both salaries (0 for the months without a job). |
+| 💼 **Work** | The company, job position and salary of each month, from gross to net through its deductions (taxes, contributions...), with a chart of both salaries (0 for the months without a job). |
 | 📈 **Investments** | The investments of the investment accounts with their price (amount over quantity), their composition by type or by account, the results of each one, the interest on money of regular accounts, and charts of the total invested and the total result. The internal `Invest` movements are added and deleted here. |
 | 🤝 **Debt** | Who we owe and who owes us in the debt accounts (people, services and companies), with alerts and the movements of the month. |
 | 💳 **Credit Cards** | What we owe on each card, what was charged and paid in the month, a chart of the monthly charges, the net owed over equity, and the movements of the month. |
@@ -393,21 +393,26 @@ the movements of the cards in the month picked, the initial ones included.
 The Work tab reads the work history from `work.csv`, one row per month, in order:
 
 ```csv
-Month;Company;Position;Gross salary;Net salary;Received payment date
-2024-09;Acme;Acme Sr;4291295.67;4111961.22;2024-10-03
-2024-10;;;;;
-2024-11;Globex;GX Dev;3165000.42;2694595.00;
+Month;Company;Position;Work - Salary Main;Received payment date;Taxes - Income (L);Taxes - Pension
+2024-09;Acme;Acme Sr;4291295.67;2024-10-03;100,000.00;79,334.45
+2024-10;;;;;;
+2024-11;Globex;GX Dev;3165000.42;;250,000.00;220,405.42
 ```
 
 - **No month can be missing.** A month without a job is a row with no company, position or
   salary.
-- A worked month needs both salaries, and the net one can't be larger than the gross one.
+- `Work - Salary Main` is the gross salary, required for a worked month.
+- **Every other column is a deduction** of the gross salary, named after its base movement:
+  taxes, contributions, fees... The **net salary** is the gross one minus them all, so they
+  can't add up to more than it. Empty cells are 0.
 - The `Received payment date` column is optional. It is added when a date is first entered.
 - The companies and their job positions come from the rows. The job of the last month, if it
   isn't a gap, is the current one.
 
-The tab's form adds a month right after the last one (or right before the first one) or, for an
-existing month, replaces it. Each row's ✎ button loads it into the form. Only the first and last
+The tab shows the gross, deducted and net salary of each month, and how this year's gross salary
+gets to the net one through each deduction. Its form adds a month right after the last one (or
+right before the first one) or, for an existing month, replaces it. It has a field for each
+deduction column; add a new deduction as a column of `work.csv`. Each row's ✎ button loads it into the form. Only the first and last
 months can be deleted. The file is created if missing.
 
 **Salaries.** The gross salary of each worked month is in the ledger **week by week**, from the
@@ -422,6 +427,15 @@ as a `Work - Salary Main` movement on each Monday.
   account attributes it to the company (see [Debt](#debt)).
 - These movements are generated when the ledger is loaded, like the initial ones: they can't be
   added by hand or be in `ledger.csv`. Editing a month of the Work tab updates them.
+
+**Deductions.** Each deduction of a month is split between the same weeks the same way, as a
+movement of its base movement on each Monday, next to the salary's. It credits the debit account
+of `Work - Salary Main`, so that account ends up with the net salary.
+
+- The base movement of a deduction must be a non-internal loss with a fixed debit account
+  (e.g. `Eq`), and no fixed credit account other than the debit one of `Work - Salary Main`.
+- Unlike the salary's, these base movements can still be used by hand in `ledger.csv`, e.g. for
+  taxes paid outside of work. Don't record a deduction there too, or it counts twice.
 
 ---
 

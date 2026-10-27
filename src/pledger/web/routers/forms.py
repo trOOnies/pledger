@@ -308,21 +308,24 @@ def work_month_form(request: Request, store: StoreDep, month: str = ""):
 
 
 @router.post("/work/months")
-def save_work_month(
+async def save_work_month(
     request: Request,
     store: StoreDep,
     month: Annotated[str, Form()] = "",
     company: Annotated[str, Form()] = "",
     position: Annotated[str, Form()] = "",
     gross: Annotated[str, Form()] = "",
-    net: Annotated[str, Form()] = "",
     payment_date: Annotated[str, Form()] = "",
 ):
+    # One "deduction:<base movement>" field per deduction of the salary
+    deductions = {
+        k.removeprefix("deduction:"): str(v) for k, v in (await request.form()).items() if k.startswith("deduction:")
+    }
     try:
-        created = store.save_month(month, company, position, gross, net, payment_date)
+        created = store.save_month(month, company, position, gross, deductions, payment_date)
     except ValueError as e:
         values = {
-            "company": company, "position": position, "gross": gross, "net": net,
+            "company": company, "position": position, "gross": gross, "deductions": deductions,
             "payment_date": payment_date,
         }
         work = store.load_work()

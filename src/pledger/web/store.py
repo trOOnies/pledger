@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import datetime as dt
+import hashlib
 import io
 import math
 import os
@@ -55,8 +56,9 @@ INITIAL_LOSS = "Initial (L)"
 # when loading (see _result_rows), never stored in the CSV.
 RESULT_GAIN = "USD - Result (G)"
 RESULT_LOSS = "USD - Result (L)"
-# Base movement of the salary of the work history. Its movements are generated each
-# week from the gross salary of its month (see _salary_rows), never stored in the CSV.
+# Base movement of the salary of the work history, and the column of its gross salary.
+# Its movements are generated each week from the gross salary of its month (see
+# _salary_rows), never stored in the CSV, like those of the deductions of the salary.
 SALARY = "Work - Salary Main"
 GENERATED = [INITIAL_GAIN, INITIAL_LOSS, RESULT_GAIN, RESULT_LOSS, SALARY]
 
@@ -336,11 +338,11 @@ class Snapshot:
         }
 
 
-# Columns of the work CSV; the received payment date one is optional.
-MONTH, COMPANY, POSITION, GROSS, NET, PAYMENT_DATE = (
-    "Month", "Company", "Position", "Gross salary", "Net salary", "Received payment date",
-)
-WORK_COLUMNS = [MONTH, COMPANY, POSITION, GROSS, NET, PAYMENT_DATE]
+# Columns of the work CSV; the received payment date one is optional. Any other column
+# is a deduction of the gross salary (taxes, contributions...) on the way to the net
+# one, named after its loss base movement.
+MONTH, COMPANY, POSITION, GROSS, PAYMENT_DATE = "Month", "Company", "Position", SALARY, "Received payment date"
+WORK_COLUMNS = [MONTH, COMPANY, POSITION, GROSS, PAYMENT_DATE]
 
 
 @dataclass
@@ -352,6 +354,11 @@ class Work:
 
     def __post_init__(self):
         self.companies: dict[str, Company] = Company.from_months(self.months)
+
+    @property
+    def deductions(self) -> list[str]:
+        """The base movements of the deductions of the salary: the other columns, in order."""
+        return deduction_columns(self.rows.columns)
 
     @property
     def current(self) -> WorkMonth | None:
@@ -808,7 +815,8 @@ class LedgerStore:
                     raise ValueError(f"The work CSV is missing the columns {missing}")
             else:
                 rows = DataFrame(columns=WORK_COLUMNS, dtype=str)
-            months = [_work_month(row) for _, row in rows.iterrows()]
+            deductions = deduction_columns(rows.columns)
+            months = [_work_month(row, deductions) for _, row in rows.iterrows()]
             WorkMonth.check_sequence(months)
         except (OSError, KeyError, ValueError) as e:
             raise LedgerDataError(f"{type(e).__name__}: {e}") from e
@@ -820,14 +828,16 @@ class LedgerStore:
         company: str = "",
         position: str = "",
         gross: str | float = "",
-        net: str | float = "",
+        deductions: dict[str, str | float] | None = None,
         payment_date: str = "",
     ) -> bool:
         """
         Save a month of the work history: replacing it if it is already there, else
         adding it right after the last month or right before the first one, so there
-        are no missing months. Without a company, it is a gap (no job). Returns
-        whether the month is new. Creates the work CSV if missing.
+        are no missing months. Without a company, it is a gap (no job). The deductions
+        of the salary are by the name of their loss base movement, 0 if left out; a
+        new one adds its column, 0 for every other month with a job. Returns whether
+        the month is new. Creates the work CSV if missing.
         """
         path = self.settings.work_path
         if path is None:
@@ -837,12 +847,18 @@ class LedgerStore:
         for what, text in texts.items():
             if any(c in str(text) for c in "\r\n"):
                 raise ValueError(f"The {what} cannot contain line breaks")
+        deductions = {str(n).strip(): v for n, v in (deductions or {}).items()}
+        reserved = [n for n in deductions if n in WORK_COLUMNS or not n or any(c in n for c in "\r\n;\"")]
+        if reserved:
+            raise ValueError(f"Invalid deduction of the salary: {reserved[0]!r}")
         entry = WorkMonth(
             month=parse_month(month, "month"),
             company=str(company).strip() or None,
             position=str(position).strip() or None,
             gross=_parse_amount(gross, "gross salary") if str(gross).strip() else None,
-            net=_parse_amount(net, "net salary") if str(net).strip() else None,
+            deductions={
+                n: _parse_amount(v, f"deduction {n!r}") for n, v in deductions.items() if str(v).strip()
+            },
             payment_date=_parse_date(payment_date, "received payment date"),
         )
 
@@ -868,20 +884,25 @@ class LedgerStore:
         before = path.read_bytes().decode("utf-8")
         csv_file = self._read_file(len(work.rows), path)
         columns = list(work.rows.columns)
+        new_columns = [n for n in entry.deductions if n not in columns and entry.deductions[n]]
         if entry.payment_date and PAYMENT_DATE not in columns:
-            # Add the optional column, empty for every other month.
-            columns.append(PAYMENT_DATE)
-            csv_file.lines[0] += ";" + PAYMENT_DATE
-            for i in csv_file.row_lines:
-                csv_file.lines[i] += ";"
-        new_row = {col: old_row.get(col, "") for col in columns}  # keeps any other columns
+            new_columns.append(PAYMENT_DATE)
+        for column in new_columns:
+            # Add the column: empty for every other month, 0 for the deductions of the worked ones.
+            columns.append(column)
+            csv_file.lines[0] += ";" + column
+            for i, other in zip(csv_file.row_lines, work.months):
+                csv_file.lines[i] += ";" + ("0.00" if column != PAYMENT_DATE and not other.is_gap else "")
+        new_row = {col: old_row.get(col, "") for col in columns}
         new_row.update({
             MONTH: entry.month,
             COMPANY: entry.company or "",
             POSITION: entry.position or "",
             GROSS: "" if entry.gross is None else f"{entry.gross:.2f}",
-            NET: "" if entry.net is None else f"{entry.net:.2f}",
         })
+        for column in deduction_columns(columns):
+            amount = entry.deductions.get(column, 0.0)
+            new_row[column] = "" if entry.is_gap else f"{amount:.2f}"
         if PAYMENT_DATE in columns:
             new_row[PAYMENT_DATE] = entry.payment_date.isoformat() if entry.payment_date else ""
         buf = io.StringIO()
@@ -895,6 +916,8 @@ class LedgerStore:
         self._write_file(csv_file)
         try:
             self.load_work()
+            if any(c != PAYMENT_DATE for c in new_columns):
+                self.load()  # a new deduction must be of a valid base movement
         except LedgerDataError as e:
             _atomic_write(path, before)
             raise ValueError(f"Could not save {entry.month}: {e}") from None
@@ -1076,18 +1099,25 @@ class LedgerStore:
 
 def work_fingerprint(row) -> str:
     """Identifies a work CSV row's content, like row_fingerprint."""
-    return "|".join(str(row.get(c, "")) for c in WORK_COLUMNS)
+    return "|".join(str(v) for v in row.values)
 
 
-def _work_month(row) -> WorkMonth:
-    """A WorkMonth from a work CSV row (all strings, empty for missing values)."""
+def deduction_columns(columns) -> list[str]:
+    """The columns of the work CSV of the deductions of the salary: all but WORK_COLUMNS."""
+    return [c for c in columns if c not in WORK_COLUMNS]
+
+
+def _work_month(row, deductions: list[str]) -> WorkMonth:
+    """A WorkMonth from a work CSV row (all strings, empty for missing values or 0 deductions)."""
     month = row[MONTH]
     return WorkMonth(
         month=month,
         company=row[COMPANY].strip() or None,
         position=row[POSITION].strip() or None,
         gross=_parse_amount(row[GROSS], f"gross salary of {month}") if row[GROSS].strip() else None,
-        net=_parse_amount(row[NET], f"net salary of {month}") if row[NET].strip() else None,
+        deductions={
+            n: _parse_amount(row[n], f"deduction {n!r} of {month}") for n in deductions if row[n].strip()
+        },
         payment_date=_parse_date(row.get(PAYMENT_DATE, ""), f"received payment date of {month}"),
     )
 
@@ -1257,36 +1287,80 @@ def _salary_rows(snapshot: Snapshot, start: int) -> DataFrame:
     """
     The salaries of the work history, as CSV rows indexed from `start` down: the gross
     salary of each month split equally between its weeks (see weeks.Week), as a SALARY
-    movement on the Monday of each one, from the first date of the ledger on. Their
-    comment names the company first, so that a debt account on their debit side owes
-    them to it (see DebtAccount.creditor_in).
+    movement on the Monday of each one, from the first date of the ledger on, each
+    followed by the deductions of that week, split the same way, crediting the account
+    the salary went to (see _deduction_bases). Their comment names the company first,
+    so that a debt account on their side owes them to it (see DebtAccount.creditor_in).
     """
+    salary = snapshot.base_movements.get(SALARY)
+    bases = _deduction_bases(snapshot, salary)
     new_rows = []
     for month in snapshot.work.months:
         if month.is_gap:
             continue
         weeks = prorate_by_week(month.month, month.gross)
+        deductions = {
+            n: [amount for _, amount in prorate_by_week(month.month, d)] for n, d in month.deductions.items()
+        }
         for i, (week, amount) in enumerate(weeks, 1):
-            if week.start.isoformat() < snapshot.start_date or amount == 0:
+            if week.start.isoformat() < snapshot.start_date:
                 continue
-            new_rows.append({
-                "move_date": week.start.isoformat(),
-                "base_movement": SALARY,
-                "amount": f"{amount:,.2f}",
-                ID_COLUMN: f"{SALARY_ID}-{month.month}-{i}",
-                **({"comment": f"{month.company} ({month.position}): week {i}/{len(weeks)} of {month.month}"}
-                   if "comment" in snapshot.rows.columns else {}),
-            })
+            job = f"{month.company} ({month.position})"
+            moves = [(SALARY, amount, "", f"{SALARY_ID}-{month.month}-{i}")] + [
+                (n, d[i - 1], f"{n}, ", f"{SALARY_ID}-{month.month}-{i}-{deduction_id(n)}")
+                for n, d in deductions.items()
+            ]
+            for name, value, what, move_id in moves:
+                if value == 0:
+                    continue
+                new_rows.append({
+                    "move_date": week.start.isoformat(),
+                    "base_movement": name,
+                    "amount": f"{value:,.2f}",
+                    ID_COLUMN: move_id,
+                    **({"comment": f"{job}: {what}week {i}/{len(weeks)} of {month.month}"}
+                       if "comment" in snapshot.rows.columns else {}),
+                })
     if new_rows:
-        base = snapshot.base_movements.get(SALARY)
-        if base is None or base.move_type != MovementType.GAIN or base.acc_debit is None:
+        if salary is None or salary.move_type != MovementType.GAIN or salary.acc_debit is None:
             raise ValueError(
                 f"The base movement {SALARY!r} is required for the salaries of the work history: "
                 "a gain with a fixed debit account"
             )
         for row in new_rows:
-            row |= {"acc_debit": base.acc_debit.name, "acc_credit": base.acc_credit.name}
+            base = bases.get(row["base_movement"], salary)
+            credit = base.acc_credit or salary.acc_debit
+            row |= {"acc_debit": base.acc_debit.name, "acc_credit": credit.name}
     return _generated_rows(new_rows, snapshot.rows.columns, start)
+
+
+def deduction_id(name: str) -> str:
+    """The part of the ids of the movements of a deduction of the salary naming it, unchanging."""
+    return hashlib.sha1(name.encode()).hexdigest()[:6]
+
+
+def _deduction_bases(snapshot: Snapshot, salary: MovementBase | None) -> dict[str, MovementBase]:
+    """
+    The base movements of the deductions of the salary, the columns of the work CSV
+    but its WORK_COLUMNS: each a non-internal loss, with a fixed debit account and
+    no fixed credit one but the debit one of the SALARY, which they credit.
+    """
+    bases = {}
+    for name in snapshot.work.deductions:
+        base = snapshot.base_movements.get(name)
+        if base is None:
+            raise ValueError(f"The column {name!r} of the work CSV is not a base movement")
+        salary_account = salary.acc_debit.name if salary is not None and salary.acc_debit else None
+        if (
+            base.internal or base.move_type != MovementType.LOSS or base.acc_debit is None
+            or base.acc_credit is not None and base.acc_credit.name != salary_account
+        ):
+            raise ValueError(
+                f"The column {name!r} of the work CSV must be a deduction of the salary: a non-internal "
+                f"loss with a fixed debit account, crediting the account of {SALARY!r}"
+            )
+        bases[name] = base
+    return bases
 
 
 def _conversion_rows(snapshot: Snapshot, start: int) -> DataFrame:

@@ -34,6 +34,7 @@ def list_months(store: StoreDep):
             "company": m.company,
             "position": m.position,
             "gross": m.gross,
+            "deductions": m.deductions,
             "net": m.net,
             "payment_date": m.payment_date.isoformat() if m.payment_date else None,
         }
@@ -48,7 +49,7 @@ def save_month(store: StoreDep, month: WorkMonthIn):
         created = store.save_month(
             month.month, month.company, month.position,
             "" if month.gross is None else month.gross,
-            "" if month.net is None else month.net,
+            month.deductions,
             month.payment_date,
         )
     except ValueError as e:

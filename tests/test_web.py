@@ -21,6 +21,7 @@ from pledger.web.store import (
     StaleRowError,
     _insert_yaml_entry,
     conversion_fingerprint,
+    deduction_id,
     interest_fingerprint,
     row_fingerprint,
     work_fingerprint,
@@ -1741,18 +1742,22 @@ def test_quantity_format():
 
 
 WORK_CSV = """\
-Month;Company;Position;Gross salary;Net salary
-2025-10;Acme;Acme Jr;1000.00;800.00
-2025-11;Acme;Acme Sr;1500.50;1200.00
+Month;Company;Position;Work - Salary Main;Tax
+2025-10;Acme;Acme Jr;1000.00;200.00
+2025-11;Acme;Acme Sr;1500.50;300.50
 2025-12;;;;
-2026-01;Globex;GX Dev;2000.00;1600.00"""
+2026-01;Globex;GX Dev;2000.00;400.00"""
 
 
 def with_salaries(settings, debit="Ca"):
-    """The settings, with the base movement of the salaries of the work history debiting that account."""
+    """
+    The settings, with the base movement of the salaries of the work history debiting
+    that account, and the Tax loss of their deductions.
+    """
     path = settings.base_movements_path
     salary = f"        Work - Salary Main:\n          description: Main salary\n          debit: {debit}\n"
-    path.write_text(path.read_text().replace("        Salary:\n", salary + "        Salary:\n", 1))
+    text = path.read_text().replace("        Salary:\n", salary + "        Salary:\n", 1)
+    path.write_text(text.replace("        Food:\n", "        Tax: Income taxes\n        Food:\n", 1))
     return settings
 
 
@@ -1793,8 +1798,10 @@ class TestWork:
             ("2026-01;;;;", "is expected"),
             ("2026-02;Globex;;1;1", "both a company and a job position"),
             ("2026-02;;;1;1", "cannot have a salary"),
-            ("2026-02;Globex;GX Dev;;", "both a gross and a net salary"),
-            ("2026-02;Globex;GX Dev;1;2", "over the gross"),
+            ("2026-02;;;;1", "cannot have a salary"),
+            ("2026-02;Globex;GX Dev;;", "must have a gross salary"),
+            ("2026-02;Globex;GX Dev;1;2", "deductions of 2026-02 cannot be over its gross salary"),
+            ("2026-02;Globex;GX Dev;1;x", "Invalid deduction 'Tax' of 2026-02"),
         ],
     )
     def test_data_errors(self, store, settings, line, error):
@@ -1802,41 +1809,50 @@ class TestWork:
         with pytest.raises(LedgerDataError, match=error):
             store.load_work()
 
+    def test_deductions(self, store):
+        work = store.load_work()
+        assert work.deductions == ["Tax"]
+        acme = work.months[1]
+        assert (acme.gross, acme.deductions, acme.net) == (1500.5, {"Tax": 300.5}, 1200)
+        assert work.months[2].net is None  # a gap
+
     def test_missing_columns(self, store, settings):
         settings.work_path.write_text("Month;Company\n2026-01;;\n", encoding="utf-8")
         with pytest.raises(LedgerDataError, match="missing the columns"):
             store.load_work()
 
     def test_add_after_the_last_month_keeps_the_file(self, store, settings):
-        assert store.save_month("2026-02", "Globex", "GX Dev", "2,100", "1700") is True
-        assert self.text(settings) == WORK_CSV + "\n2026-02;Globex;GX Dev;2100.00;1700.00"
+        assert store.save_month("2026-02", "Globex", "GX Dev", "2,100", {"Tax": "400"}) is True
+        assert self.text(settings) == WORK_CSV + "\n2026-02;Globex;GX Dev;2100.00;400.00"
         assert store.save_month("2026-03") is True  # a gap
         assert self.text(settings).endswith("\n2026-03;;;;")
+        assert store.save_month("2026-04", "Globex", "GX Dev", "1") is True  # deductions left out are 0
+        assert self.text(settings).endswith("\n2026-04;Globex;GX Dev;1.00;0.00")
 
     def test_add_before_the_first_month(self, store, settings):
-        store.save_month("2025-09", "Acme", "Acme Jr", "900", "700")
+        store.save_month("2025-09", "Acme", "Acme Jr", "900", {"Tax": "200"})
         assert self.text(settings).startswith(
-            "Month;Company;Position;Gross salary;Net salary\n2025-09;Acme;Acme Jr;900.00;700.00\n2025-10;"
+            "Month;Company;Position;Work - Salary Main;Tax\n2025-09;Acme;Acme Jr;900.00;200.00\n2025-10;"
         )
 
     def test_existing_months_are_replaced(self, store, settings):
-        assert store.save_month("2025-12", "Acme", "Acme Sr", "1500.5", "1200") is False
-        assert "\n2025-12;Acme;Acme Sr;1500.50;1200.00\n" in self.text(settings)
+        assert store.save_month("2025-12", "Acme", "Acme Sr", "1500.5", {"Tax": "300.5"}) is False
+        assert "\n2025-12;Acme;Acme Sr;1500.50;300.50\n" in self.text(settings)
         assert store.save_month("2025-11") is False  # now a gap
         assert "\n2025-11;;;;\n" in self.text(settings)
         assert len(store.load_work().months) == 4
 
     def test_payment_date_adds_its_column(self, store, settings):
-        store.save_month("2025-11", "Acme", "Acme Sr", "1500.5", "1200", "2025-12-05")
+        store.save_month("2025-11", "Acme", "Acme Sr", "1500.5", {"Tax": "300.5"}, "2025-12-05")
         assert self.text(settings) == (
-            "Month;Company;Position;Gross salary;Net salary;Received payment date\n"
-            "2025-10;Acme;Acme Jr;1000.00;800.00;\n"
-            "2025-11;Acme;Acme Sr;1500.50;1200.00;2025-12-05\n"
+            "Month;Company;Position;Work - Salary Main;Tax;Received payment date\n"
+            "2025-10;Acme;Acme Jr;1000.00;200.00;\n"
+            "2025-11;Acme;Acme Sr;1500.50;300.50;2025-12-05\n"
             "2025-12;;;;;\n"
-            "2026-01;Globex;GX Dev;2000.00;1600.00;"
+            "2026-01;Globex;GX Dev;2000.00;400.00;"
         )
         assert store.load_work().months[1].payment_date == dt.date(2025, 12, 5)
-        store.save_month("2026-02", "Globex", "GX Dev", "1", "1")
+        store.save_month("2026-02", "Globex", "GX Dev", "1", {"Tax": "1"})
         assert self.text(settings).endswith("\n2026-02;Globex;GX Dev;1.00;1.00;")
 
     @pytest.mark.parametrize(
@@ -1844,12 +1860,16 @@ class TestWork:
         [
             (("2026-03",), "Months cannot be skipped: add 2026-02 \\(after the last month\\) first"),
             (("2025-08",), "Months cannot be skipped"),
-            (("2026-02", "Globex", "", "1", "1"), "both a company and a job position"),
-            (("2026-02", "", "", "1", "1"), "cannot have a salary"),
-            (("2026-02", "Globex", "GX Dev", "1", ""), "both a gross and a net salary"),
-            (("2026-02", "Globex", "GX Dev", "1", "2"), "over the gross"),
-            (("2026-02", "Globex", "GX Dev", "1", "-1"), "cannot be negative"),
-            (("2026-02", "Globex", "GX Dev", "1", "1", "2026-02-30"), "Invalid received payment date"),
+            (("2026-02", "Globex", "", "1", {"Tax": "1"}), "both a company and a job position"),
+            (("2026-02", "", "", "1"), "cannot have a salary"),
+            (("2026-02", "", "", "", {"Tax": "1"}), "cannot have a salary"),
+            (("2026-02", "Globex", "GX Dev", "", {"Tax": "1"}), "must have a gross salary"),
+            (("2026-02", "Globex", "GX Dev", "1", {"Tax": "2"}), "cannot be over its gross salary"),
+            (("2026-02", "Globex", "GX Dev", "1", {"Tax": "-1"}), "cannot be negative"),
+            (("2026-02", "Globex", "GX Dev", "1", {"Tax": "x"}), "Invalid deduction 'Tax'"),
+            (("2026-02", "Globex", "GX Dev", "1", {"Month": "1"}), "Invalid deduction of the salary: 'Month'"),
+            (("2026-02", "Globex", "GX Dev", "1", {"A;B": "1"}), "Invalid deduction of the salary"),
+            (("2026-02", "Globex", "GX Dev", "1", {"Tax": "1"}, "2026-02-30"), "Invalid received payment date"),
             (("June",), "must be YYYY-MM"),
         ],
     )
@@ -1870,12 +1890,15 @@ class TestWork:
         r = client.get("/work")
         assert r.status_code == 200
         assert 'href="/work" aria-current="page"' in r.text
-        assert card_labels(r.text) == ["Current job", "Gross", "Net"]
+        assert card_labels(r.text) == ["Current job", "Gross", "Deductions", "Net"]
         assert "<strong>Globex</strong> <span class=\"badge gain\">Current</span>" in r.text
         salaries = r.text.split('data-sortable="salaries"')[1]
         assert re.findall(r"<strong>(\d{4}-\d{2})</strong>", salaries) == ["2026-01", "2025-12", "2025-11", "2025-10"]
         assert '<td class="muted" colspan="2">No job</td>' in salaries
         assert "$1,500.50" in salaries
+        # Gross, deductions (itemized on hover) and net
+        assert '<td class="num money " data-sort="300.5"\n            title="Tax: $300.50">$300.50</td>' in salaries
+        assert '<td class="num money" data-sort="1200.0">$1,200.00</td>' in salaries
         # Only the first and last months have a delete button
         assert salaries.count('aria-label="Delete') == 2
         # The form is ready for the next month, at the last job
@@ -1887,18 +1910,18 @@ class TestWork:
         r = client.get("/work")
         assert "⚠ 3 past months with a job have no received payment date: 2026-01, 2025-11, 2025-10." in r.text
         assert r.text.count("⚠ Not received") == 3
-        store.save_month("2025-11", "Acme", "Acme Sr", "1500.5", "1200", "2025-12-05")
-        store.save_month("2026-01", "Globex", "GX Dev", "2000", "1600", "2026-02-05")
+        store.save_month("2025-11", "Acme", "Acme Sr", "1500.5", {"Tax": "300.5"}, "2025-12-05")
+        store.save_month("2026-01", "Globex", "GX Dev", "2000", {"Tax": "400"}, "2026-02-05")
         r = client.get("/work")
         assert "⚠ 1 past month with a job has no received payment date: 2025-10." in r.text
-        store.save_month("2025-10", "Acme", "Acme Jr", "1000", "800", "2025-11-05")
+        store.save_month("2025-10", "Acme", "Acme Jr", "1000", {"Tax": "200"}, "2025-11-05")
         assert "no received payment date" not in client.get("/work").text
 
     def test_current_month_is_not_unpaid(self, client, store, settings):
         today = dt.date.today()
         settings.work_path.write_text(
-            "Month;Company;Position;Gross salary;Net salary;Received payment date\n"
-            f"{today:%Y-%m};Acme;Dev;10;8;\n",
+            "Month;Company;Position;Work - Salary Main;Received payment date\n"
+            f"{today:%Y-%m};Acme;Dev;10;\n",
             encoding="utf-8",
         )
         r = client.get("/work")
@@ -1907,6 +1930,7 @@ class TestWork:
     def test_edit_form(self, client):
         r = client.get("/work/form", params={"month": "2025-11"})
         assert "<h2>Edit 2025-11</h2>" in r.text and 'value="1,500.50"' in r.text
+        assert 'name="deduction:Tax" inputmode="decimal" value="300.50"' in r.text
         assert "Save 2025-11" in r.text
         r = client.get("/work/form", params={"month": "2026-02"})
         assert "<h2>New month</h2>" in r.text
@@ -1916,10 +1940,17 @@ class TestWork:
         assert "Months cannot be skipped" in r.text and 'value="2026-03"' in r.text
         r = client.post(
             "/work/months",
-            data={"month": "2026-02", "company": "Globex", "position": "GX Dev", "gross": "2,000.00", "net": "1,600.00"},
+            data={"month": "2026-02", "company": "Globex", "position": "GX Dev", "gross": "2,000.00", "deduction:Tax": "400"},
             headers=HTMX,
         )
         assert "Added 2026-02 (GX Dev at Globex)" in r.text
+        assert store.load_work().months[-1].deductions == {"Tax": 400}
+        r = client.post(
+            "/work/months",
+            data={"month": "2026-03", "company": "Globex", "position": "GX Dev", "gross": "1", "deduction:Tax": "2"},
+            headers=HTMX,
+        )
+        assert "cannot be over its gross salary" in r.text and 'name="deduction:Tax" inputmode="decimal" value="2"' in r.text
         assert 'name="month" value="2026-03"' in r.text  # ready for the next one
         r = client.post("/work/months", data={"month": "2025-12"}, headers=HTMX)
         assert "Updated 2025-12 (no job)" in r.text
@@ -1938,11 +1969,12 @@ class TestWork:
                 {"name": "Acme Jr", "start": "2025-10", "end": "2025-10", "months": 1},
             ],
         }
-        r = client.put("/api/work/months", json={"month": "2026-02", "company": "Globex", "position": "GX Dev", "gross": 10, "net": 8})
+        body = {"month": "2026-02", "company": "Globex", "position": "GX Dev", "gross": 10, "deductions": {"Tax": 2}}
+        r = client.put("/api/work/months", json=body)
         assert r.status_code == 200 and r.json()["created"] is True
         assert client.get("/api/work/months").json()[-1] == {
             "month": "2026-02", "company": "Globex", "position": "GX Dev",
-            "gross": 10.0, "net": 8.0, "payment_date": None,
+            "gross": 10.0, "deductions": {"Tax": 2.0}, "net": 8.0, "payment_date": None,
         }
         r = client.put("/api/work/months", json={"month": "2026-04"})
         assert r.status_code == 422 and "cannot be skipped" in r.json()["detail"]
@@ -1953,10 +1985,10 @@ def test_work_file_is_created_when_adding(settings, tmp_path):
     r = TestClient(create_app(settings)).get("/work")
     assert r.status_code == 200 and "No companies yet" in r.text and "No months yet." in r.text
     store = LedgerStore(settings)
-    store.save_month("2025-01", "Acme", "Dev", "10", "8", "2025-02-01")
+    store.save_month("2025-01", "Acme", "Dev", "10", {"Food": "2"}, "2025-02-01")
     assert settings.work_path.read_text(encoding="utf-8") == (
-        "Month;Company;Position;Gross salary;Net salary;Received payment date\n"
-        "2025-01;Acme;Dev;10.00;8.00;2025-02-01\n"
+        "Month;Company;Position;Work - Salary Main;Received payment date;Food\n"
+        "2025-01;Acme;Dev;10.00;2025-02-01;2.00\n"
     )
 
 
@@ -2013,7 +2045,7 @@ class TestDebtKinds:
 
     def test_new_companies_of_the_work_history(self, settings):
         store = LedgerStore(settings)
-        store.save_month("2026-02", "Initech", "Dev", "10", "8")
+        store.save_month("2026-02", "Initech", "Dev", "10", {"Tax": "2"})
         with settings.ledger_path.open("a", encoding="utf-8") as f:
             f.write("2026-02-05;Card fee;Eq;7;Cc;initech bonus\n")
         assert store.load().debt_accounts()[0].creditors["Initech"].amount == 7
@@ -2061,26 +2093,41 @@ class TestSalaries:
     def test_each_week_of_a_month_from_the_start_of_the_ledger(self, settings):
         # 2026-01 has 5 weeks, from Monday 2025-12-29 (Thursday 2026-01-01) on, but the
         # ledger starts on 2026-01-01: the months of Acme, and that week, are left out.
+        # Each salary is followed by its deductions, split the same way, out of its account.
         assert self.salaries(settings) == [
-            (day, "Work - Salary Main", "Cc", "400.00", "Eq", f"Globex (GX Dev): week {i}/5 of 2026-01")
+            row
             for i, day in enumerate(["2026-01-05", "2026-01-12", "2026-01-19", "2026-01-26"], 2)
+            for row in (
+                (day, "Work - Salary Main", "Cc", "400.00", "Eq", f"Globex (GX Dev): week {i}/5 of 2026-01"),
+                (day, "Tax", "Eq", "80.00", "Cc", f"Globex (GX Dev): Tax, week {i}/5 of 2026-01"),
+            )
         ]
-        LedgerStore(settings).save_month("2026-02", "Globex", "GX Dev", "1000.01", "800")
-        assert [(r[0], r[3]) for r in self.salaries(settings)[4:]] == [
-            ("2026-02-02", "250.01"), ("2026-02-09", "250.00"), ("2026-02-16", "250.00"), ("2026-02-23", "250.00"),
+        LedgerStore(settings).save_month("2026-02", "Globex", "GX Dev", "1000.01", {"Tax": "200.01"})
+        assert [(r[0], r[1], r[3]) for r in self.salaries(settings)[8:]] == [
+            row
+            for day, salary, tax in (
+                ("2026-02-02", "250.01", "50.01"), ("2026-02-09", "250.00", "50.00"),
+                ("2026-02-16", "250.00", "50.00"), ("2026-02-23", "250.00", "50.00"),
+            )
+            for row in ((day, "Work - Salary Main", salary), (day, "Tax", tax))
         ]
 
     def test_are_in_the_ledger_and_owed_by_the_company(self, settings):
         snapshot = LedgerStore(settings).load()
-        assert snapshot.ledger().balances()["Cc"] == -1605  # with the initial -5 of Acme
+        # The net salary: 1,600 of salary minus 320 of tax, with the initial -5 of Acme
+        assert snapshot.ledger().balances()["Cc"] == -1285
         cc = snapshot.debt_accounts()[0]
-        assert (cc.creditors["Globex"].amount, cc.creditors["Acme"].amount, cc.unassigned) == (-1600, -5, 0)
-        assert snapshot.debt_accounts("2026-01")[0].creditors["Globex"].amount == -1600
-        # Each salary's id is its month and week, so editing other months never changes it
-        assert [snapshot.ids[ix] for ix in snapshot.salary_rows.index] == [f"W-2026-01-{i}" for i in range(2, 6)]
+        assert (cc.creditors["Globex"].amount, cc.creditors["Acme"].amount, cc.unassigned) == (-1280, -5, 0)
+        assert snapshot.debt_accounts("2026-01")[0].creditors["Globex"].amount == -1280
+        # Each salary's id is its month and week, and each deduction's also names it, so
+        # editing other months or columns never changes them
+        tax = deduction_id("Tax")
+        assert [snapshot.ids[ix] for ix in snapshot.salary_rows.index] == [
+            move_id for i in range(2, 6) for move_id in (f"W-2026-01-{i}", f"W-2026-01-{i}-{tax}")
+        ]
         r = TestClient(create_app(settings)).get("/")
         # Each links to the row of its month in the Work tab
-        assert r.text.count('href="/work#month-2026-01" title="Generated each week from the gross salary of the Work tab" aria-label="Generated each week from the gross salary of the Work tab">🟠</a>') == 4
+        assert r.text.count('href="/work#month-2026-01" title="Generated each week from the salary of the Work tab" aria-label="Generated each week from the salary of the Work tab">🟠</a>') == 8
         assert '<tr id="month-2026-01">' in TestClient(create_app(settings)).get("/work").text
         assert r.text.count('aria-label="Delete movement"') == 4  # only the CSV rows
 
@@ -2107,6 +2154,55 @@ class TestSalaries:
         # Not without salaries to generate
         settings.work_path.write_text(WORK_CSV.rsplit("\n", 1)[0], encoding="utf-8")
         LedgerStore(settings).load()
+
+    @pytest.mark.parametrize(
+        ("column", "error"),
+        [
+            ("Taxes", "The column 'Taxes' of the work CSV is not a base movement"),
+            ("Gift", "The column 'Gift' of the work CSV must be a deduction of the salary"),  # a gain
+            ("Card fee", "The column 'Card fee' of the work CSV must be a deduction"),  # credits Cc
+            ("Initial (L)", "The column 'Initial \\(L\\)' of the work CSV must be a deduction"),  # internal
+        ],
+    )
+    def test_deductions_must_be_losses_out_of_the_salary(self, settings, column, error):
+        settings.work_path.write_text(WORK_CSV.replace(";Tax\n", f";{column}\n", 1), encoding="utf-8")
+        if column == "Card fee":  # fine while Cc is the account of the salary, but not of another one
+            LedgerStore(settings).load()
+            path = settings.base_movements_path
+            path.write_text(path.read_text().replace("          debit: Cc\n", "          debit: Ca\n", 1))
+        with pytest.raises(LedgerDataError, match=error):
+            LedgerStore(settings).load()
+
+    def test_a_new_deduction_adds_its_column(self, settings):
+        store = LedgerStore(settings)
+        store.save_month("2026-02", "Globex", "GX Dev", "1000", {"Tax": "200", "Food": "100"})
+        assert settings.work_path.read_text(encoding="utf-8") == (
+            "Month;Company;Position;Work - Salary Main;Tax;Food\n"
+            "2025-10;Acme;Acme Jr;1000.00;200.00;0.00\n"
+            "2025-11;Acme;Acme Sr;1500.50;300.50;0.00\n"
+            "2025-12;;;;;\n"
+            "2026-01;Globex;GX Dev;2000.00;400.00;0.00\n"
+            "2026-02;Globex;GX Dev;1000.00;200.00;100.00"
+        )
+        assert store.load().work.months[-1].net == 700
+        # Not of a base movement that can't be a deduction
+        before = settings.work_path.read_text(encoding="utf-8")
+        with pytest.raises(ValueError, match="Could not save 2026-02: .* 'Gift' of the work CSV must be a deduction"):
+            store.save_month("2026-02", "Globex", "GX Dev", "1000", {"Gift": "1"})
+        assert settings.work_path.read_text(encoding="utf-8") == before
+
+    def test_work_tab_from_gross_to_net(self, settings):
+        today = dt.date.today()
+        settings.work_path.write_text(
+            f"Month;Company;Position;Work - Salary Main;Tax;Food\n{today:%Y-%m};Globex;GX Dev;2000.00;400.00;0.00\n",
+            encoding="utf-8",
+        )
+        r = TestClient(create_app(settings)).get("/work")
+        assert f"<h2>From gross to net <small>{today.year}</small></h2>" in r.text
+        table = r.text.split('data-sortable="deductions"')[1].split("</table>")[0]
+        assert "<td>Tax</td>" in table and "20.0%" in table and "<td>Food</td>" not in table  # none this year
+        assert '<th class="num money">$2,000.00</th>' in table and '<th class="num money">$1,600.00</th>' in table
+        assert 'name="deduction:Tax"' in r.text
 
 
 INVEST_YAML = (

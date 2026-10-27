@@ -884,16 +884,27 @@ class TestWorkMonth:
         m = WorkMonth(dt.date(2026, 5, 20))
         assert m.month == "2026-05" and m.is_gap
         with pytest.raises(ValueError, match="no job, so it cannot have a salary"):
-            WorkMonth("2026-05", gross=10.0, net=5.0)
+            WorkMonth("2026-05", gross=10.0)
+        with pytest.raises(ValueError, match="no job, so it cannot have a salary"):
+            WorkMonth("2026-05", deductions={"Tax": 1.0})
+        assert WorkMonth("2026-05", deductions={"Tax": 0.0}).net is None  # empty cells
+
+    def test_net_is_gross_minus_deductions(self):
+        m = WorkMonth("2026-01", "Acme", "Dev", 100.0, {"Tax": 20.5, "Pension": 9.5})
+        assert (m.total_deductions, m.net) == (30, 70)
+        assert WorkMonth("2026-01", "Acme", "Dev", 100.0).net == 100
+        assert WorkMonth("2026-01", "Acme", "Dev", 100.0, {"Tax": 100.0}).net == 0
 
     @pytest.mark.parametrize(
         ("args", "error"),
         [
-            (("Acme", None, 10.0, 5.0), "both a company and a job position"),
+            (("Acme", None, 10.0), "both a company and a job position"),
             ((None, "Dev"), "both a company and a job position"),
-            (("Acme", "Dev", 10.0), "both a gross and a net salary"),
-            (("Acme", "Dev", 10.0, 11.0), "over the gross"),
-            (("Acme", "Dev", -1.0, -2.0), "cannot be negative"),
+            (("Acme", "Dev"), "must have a gross salary"),
+            (("Acme", "Dev", None, {"Tax": 1.0}), "must have a gross salary"),
+            (("Acme", "Dev", 10.0, {"Tax": 6.0, "Pension": 5.0}), "deductions of 2026-01 cannot be over its gross"),
+            (("Acme", "Dev", -1.0), "cannot be negative"),
+            (("Acme", "Dev", 10.0, {"Tax": -1.0}), "cannot be negative"),
         ],
     )
     def test_invalid(self, args, error):
@@ -901,7 +912,7 @@ class TestWorkMonth:
             WorkMonth("2026-01", *args)
 
     def test_sequence_must_have_no_missing_months(self):
-        WorkMonth.check_sequence(months(("2025-12",), ("2026-01", "A", "Dev", 1.0, 1.0)))
+        WorkMonth.check_sequence(months(("2025-12",), ("2026-01", "A", "Dev", 1.0)))
         with pytest.raises(ValueError, match="2026-02 comes after 2025-12, but 2026-01 is expected"):
             WorkMonth.check_sequence(months(("2025-12",), ("2026-02",)))
         with pytest.raises(ValueError, match="is expected"):
@@ -911,11 +922,11 @@ class TestWorkMonth:
 class TestCompany:
     def test_from_months(self):
         companies = Company.from_months(months(
-            ("2025-01", "Acme", "Jr", 1.0, 1.0),
-            ("2025-02", "Acme", "Sr", 2.0, 1.0),
+            ("2025-01", "Acme", "Jr", 1.0),
+            ("2025-02", "Acme", "Sr", 2.0, {"Tax": 1.0}),
             ("2025-03",),
-            ("2025-04", "Globex", "Dev", 3.0, 2.0),
-            ("2025-05", "Acme", "Sr", 2.0, 1.0),  # back again
+            ("2025-04", "Globex", "Dev", 3.0, {"Tax": 1.0}),
+            ("2025-05", "Acme", "Sr", 2.0),  # back again
         ))
         assert list(companies) == ["Acme", "Globex"]  # the latest first
         acme = companies["Acme"]

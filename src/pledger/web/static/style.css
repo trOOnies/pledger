@@ -210,6 +210,8 @@ table[data-sortable] th[aria-sort="descending"]::after { content: " ▼"; opacit
 .stack { display: grid; gap: .75rem; }
 .stack label, .pair label { display: grid; gap: .25rem; font-size: .8rem; color: var(--muted); }
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
+fieldset.stack { border: 1px solid var(--border); border-radius: var(--radius); margin: 0; padding: .5rem .75rem .75rem; min-width: 0; }
+fieldset.stack legend { padding: 0 .25rem; font-size: .8rem; color: var(--muted); }
 
 input, select, button {
   font: inherit; color: var(--text); background: var(--surface);

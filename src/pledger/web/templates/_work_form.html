@@ -17,18 +17,24 @@
   </div>
   <datalist id="work-companies">{% for name in form.company_names %}<option value="{{ name }}">{% endfor %}</datalist>
   <datalist id="work-positions">{% for name in form.position_names %}<option value="{{ name }}">{% endfor %}</datalist>
-  <div class="pair">
-    <label>Gross salary
-      <input name="gross" inputmode="decimal" value="{{ v.gross }}" placeholder="0.00" autocomplete="off" data-money>
+  <label>Gross salary
+    <input name="gross" inputmode="decimal" value="{{ v.gross }}" placeholder="0.00" autocomplete="off" data-money>
+  </label>
+  {% if form.deductions %}
+  <fieldset class="stack">
+    <legend>Deductions</legend>
+    {% for name in form.deductions %}
+    <label>{{ name }}
+      <input name="deduction:{{ name }}" inputmode="decimal" value="{{ (v.deductions or {}).get(name, '') }}" placeholder="0.00" autocomplete="off" data-money>
     </label>
-    <label>Net salary
-      <input name="net" inputmode="decimal" value="{{ v.net }}" placeholder="0.00" autocomplete="off" data-money>
-    </label>
-  </div>
+    {% endfor %}
+  </fieldset>
+  {% endif %}
   <label><span>Received payment date <em class="optional">(optional)</em></span>
     <input type="date" name="payment_date" value="{{ v.payment_date }}">
   </label>
-  <p class="muted small">Leave the company, position and salaries empty for a month without a job.
+  <p class="muted small">The net salary is the gross one minus its deductions; add a deduction as a column of the work
+    CSV, named after its loss base movement. Leave the company, position and salaries empty for a month without a job.
     {% if form.editing %}Saving replaces this month.{% else %}New months go right after the last one (or right before the first one).{% endif %}</p>
   <button type="submit">{% if form.editing %}Save {{ v.month }}{% else %}Add month{% endif %}</button>
 </form>

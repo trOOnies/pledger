@@ -6,8 +6,33 @@
     <div class="cards">
       <div class="card" title="The job of the last month, if any"><span class="label">Current job</span><span class="num">{{ current.company if current else "-" }}</span>{% if current %}<span class="muted small">{{ current.position }}</span>{% endif %}</div>
       <div class="card" title="Gross salaries of the months of this year"><span class="label">Gross <small>{{ year }}</small></span><span class="num money">{{ gross | money }}</span></div>
-      <div class="card" title="Net salaries of the months of this year"><span class="label">Net <small>{{ year }}</small></span><span class="num money">{{ net | money }}</span></div>
+      <div class="card" title="Deductions of the gross salaries of the months of this year: taxes, contributions..."><span class="label">Deductions <small>{{ year }}</small></span><span class="num money">{{ deducted | money }}</span>{% if gross %}<span class="muted small">{{ "%.1f" | format(deducted / gross * 100) }}% of gross</span>{% endif %}</div>
+      <div class="card" title="Net salaries of the months of this year: gross minus deductions"><span class="label">Net <small>{{ year }}</small></span><span class="num money">{{ net | money }}</span></div>
     </div>
+
+    {% if deductions %}
+    <div class="panel">
+      <h2>From gross to net <small>{{ year }}</small></h2>
+      <table data-sortable="deductions">
+        <thead><tr><th>Deduction</th><th class="num">Amount</th><th class="num" title="Share of the gross salary">Of gross</th></tr></thead>
+        <tbody>
+        {% for d in deductions %}
+        <tr>
+          <td>{{ d.name }}</td>
+          <td class="num money loss" data-sort="{{ d.amount }}">{{ -d.amount | money }}</td>
+          <td class="num" data-sort="{{ d.share }}">{{ "%.1f" | format(d.share * 100) }}%</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr><th>Gross salary</th><th class="num money">{{ gross | money }}</th><th class="num">100.0%</th></tr>
+          <tr><th>Net salary</th><th class="num money">{{ net | money }}</th><th class="num">{{ "%.1f" | format(net / gross * 100) }}%</th></tr>
+        </tfoot>
+      </table>
+      <p class="muted small">Each deduction is a column of the work CSV, named after its loss base movement. Its movements are
+        generated each week with those of the salary, out of the account it goes to.</p>
+    </div>
+    {% endif %}
 
     {% if gross_chart %}
     <div class="charts-grid">
@@ -61,7 +86,7 @@
       {% endif %}
       <div class="table-wrap">
       <table data-sortable="salaries">
-        <thead><tr><th>Month</th><th>Company</th><th>Position</th><th class="num">Gross salary</th><th class="num">Net salary</th><th>Received payment date</th><th></th></tr></thead>
+        <thead><tr><th>Month</th><th>Company</th><th>Position</th><th class="num">Gross salary</th><th class="num" title="Taxes, contributions... of the gross salary">Deductions</th><th class="num">Net salary</th><th>Received payment date</th><th></th></tr></thead>
         <tbody>
         {% for row in months %}
         {% set m = row.month %}
@@ -71,11 +96,15 @@
           <td class="muted" colspan="2">No job</td>
           <td class="num muted" data-sort="-1">-</td>
           <td class="num muted" data-sort="-1">-</td>
+          <td class="num muted" data-sort="-1">-</td>
           <td class="muted">-</td>
           {% else %}
           <td>{{ m.company }}</td>
           <td>{{ m.position }}</td>
           <td class="num money" data-sort="{{ m.gross }}">{{ m.gross | money }}</td>
+          {% set itemized = m.deductions.items() | selectattr(1) | list %}
+          <td class="num money {{ 'muted' if not itemized }}" data-sort="{{ m.total_deductions }}"
+            {% if itemized %}title="{% for n, d in itemized %}{{ n }}: {{ d | money }}{{ '&#10;' | safe if not loop.last }}{% endfor %}"{% endif %}>{{ m.total_deductions | money }}</td>
           <td class="num money" data-sort="{{ m.net }}">{{ m.net | money }}</td>
           {% if row.unpaid %}
           <td class="nowrap hint warn" title="This month is over, but its payment hasn't been received">⚠ Not received</td>
@@ -96,7 +125,7 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="7" class="muted">No months yet.</td></tr>
+        <tr><td colspan="8" class="muted">No months yet.</td></tr>
         {% endfor %}
         </tbody>
       </table>

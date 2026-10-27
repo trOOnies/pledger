@@ -48,7 +48,7 @@ class WorkMonthIn(BaseModel):
     company: str = ""  # empty for a month without a job
     position: str = ""
     gross: float | None = None
-    net: float | None = None
+    deductions: dict[str, float] = {}  # by base movement, taking the gross salary to the net one
     payment_date: str = ""  # empty if not received yet
 
 

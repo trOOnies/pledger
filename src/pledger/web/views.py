@@ -56,7 +56,7 @@ MOVEMENT_SOURCES = {
     "investments": ("🟢", "Added and deleted from the Investments tab"),
     "currencies": ("🔵", "Added and deleted from the Currencies tab"),
     "revaluation": ("🔵", "Generated from the values of the Currencies tab"),
-    "work": ("🟠", "Generated each week from the gross salary of the Work tab"),
+    "work": ("🟠", "Generated each week from the salary of the Work tab"),
     "accounts": ("🟣", "Generated from the initial amount of the account, in the Accounts tab"),
     "debt": ("🟡", "A debt movement, shown in the Debt tab; it can only be changed in the ledger CSV"),
 }
@@ -765,11 +765,12 @@ def work_form(work: Work, month: str = "", values: dict | None = None) -> dict:
                 "company": m.company or "",
                 "position": m.position or "",
                 "gross": "" if m.gross is None else f"{m.gross:,.2f}",
-                "net": "" if m.net is None else f"{m.net:,.2f}",
+                "deductions": {n: f"{d:,.2f}" for n, d in m.deductions.items()},
                 "payment_date": m.payment_date.isoformat() if m.payment_date else "",
             }
     return {
         "fields": {"month": month, **values},
+        "deductions": work.deductions,
         "editing": month in by_month,
         "company_names": list(work.companies),
         "position_names": sorted({p for c in work.companies.values() for p in c.positions}),
@@ -779,13 +780,16 @@ def work_form(work: Work, month: str = "", values: dict | None = None) -> dict:
 def build_work(work: Work, form: dict | None = None, cpi: Series | None = None) -> dict:
     """
     The companies worked for and their job positions, every month of the work
-    history (the newest first) and the totals of this year, plus the form state.
+    history (the newest first) and the totals of this year, from the gross salary
+    to the net one through each deduction (the largest first), plus the form state.
     Worked months already over with no received payment date are flagged as unpaid.
     With the `cpi` of the base currency, the salary charts also get their real values.
     """
     today = dt.date.today()
     year, this_month = str(today.year), today.strftime("%Y-%m")
     this_year = [m for m in work.months if m.month[:4] == year and not m.is_gap]
+    gross, net = sum(m.gross for m in this_year), sum(m.net for m in this_year)
+    deducted = {n: sum(m.deductions.get(n, 0.0) for m in this_year) for n in work.deductions}
     last_index = len(work.months) - 1
     months = [
         {
@@ -803,8 +807,13 @@ def build_work(work: Work, form: dict | None = None, cpi: Series | None = None) 
         "months": months,
         "unpaid": [r["month"].month for r in months if r["unpaid"]],
         "year": year,
-        "gross": sum(m.gross for m in this_year),
-        "net": sum(m.net for m in this_year),
+        "gross": gross,
+        "deducted": gross - net,
+        "net": net,
+        "deductions": [
+            {"name": n, "amount": a, "share": a / gross if gross else 0.0}
+            for n, a in sorted(deducted.items(), key=lambda d: -d[1]) if a
+        ],
         "form": form or work_form(work),
         **salary_charts(work, cpi),
     }

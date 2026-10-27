@@ -983,15 +983,16 @@ def next_month(month: str) -> str:
 class WorkMonth:
     """
     A month (YYYY-MM) of the work history: the company and job position worked at,
-    with the salary, gross and net, and when it was received, if it was. A month
-    without a company is a gap (no job) and has no salary.
+    with the gross salary, its deductions (by the name of their loss base movement,
+    like taxes) that take it to the net salary, and when it was received, if it was.
+    A month without a company is a gap (no job) and has no salary.
     """
 
     month: str
     company: str | None = None
     position: str | None = None
     gross: float | None = None
-    net: float | None = None
+    deductions: dict[str, float] = field(default_factory=dict)
     payment_date: dt.date | None = None
 
     def __post_init__(self):
@@ -999,19 +1000,28 @@ class WorkMonth:
         if (self.company is None) != (self.position is None):
             raise ValueError(f"{self.month} must have both a company and a job position, or neither")
         if self.is_gap:
-            if self.gross is not None or self.net is not None or self.payment_date is not None:
+            if self.gross is not None or any(self.deductions.values()) or self.payment_date is not None:
                 raise ValueError(f"{self.month} has no job, so it cannot have a salary")
             return
-        if self.gross is None or self.net is None:
-            raise ValueError(f"{self.month} must have both a gross and a net salary")
-        if self.gross < 0 or self.net < 0:
+        if self.gross is None:
+            raise ValueError(f"{self.month} must have a gross salary")
+        if self.gross < 0 or any(d < 0 for d in self.deductions.values()):
             raise ValueError(f"The salary of {self.month} cannot be negative")
-        if self.net > self.gross + 1e-9:
-            raise ValueError(f"The net salary of {self.month} cannot be over the gross salary")
+        if self.net < -1e-9:
+            raise ValueError(f"The deductions of {self.month} cannot be over its gross salary")
 
     @property
     def is_gap(self) -> bool:
         return self.company is None
+
+    @property
+    def total_deductions(self) -> float:
+        return sum(self.deductions.values())
+
+    @property
+    def net(self) -> float | None:
+        """The gross salary minus its deductions, None without a job."""
+        return None if self.gross is None else self.gross - self.total_deductions
 
     @staticmethod
     def check_sequence(months: list[WorkMonth]) -> None:
