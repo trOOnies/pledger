@@ -105,6 +105,11 @@ with an environment variable:
 | `credit_cards.yaml` | | `PLEDGER_CREDIT_CARDS` | The credit card accounts |
 | `work.csv` | | `PLEDGER_WORK` | The work history, one row per month |
 
+On startup, `pledger-web` checks that every one of these files (and `base_currency.csv` and
+`currencies.csv`) exists. Any missing ones are created, the YAMLs empty and the CSVs with just
+their header. pledger then lists them and exits, so you can fill in the required ones before
+you start it again.
+
 **The CSV stays the source of truth.** Adding a movement appends one line, deleting removes
 one line, and the rest of the file is left byte-for-byte as it was. New accounts and base
 movements are inserted at the end of their section in the YAML files (gains and losses under

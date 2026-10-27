@@ -2658,3 +2658,32 @@ class TestCreditCards:
         settings.ledger_path.write_text("".join(settings.ledger_path.read_text().splitlines(True)[:-3]))
         r = TestClient(create_app(replace(settings, credit_cards_path=None))).get("/credit-cards")
         assert "No credit card accounts yet" in r.text
+
+
+def test_missing_files_are_created(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    settings = Settings.from_env()
+    created = settings.create_missing_files()
+    assert created == list(settings.expected_files())
+    assert all(p.is_file() for p in created) and (tmp_path / "info" / "movements").is_dir()
+    assert settings.ledger_path.read_text() == "move_date;base_movement;acc_debit;amount;acc_credit;comment;id\n"
+    assert settings.accounts_path.read_text() == ""
+    settings.accounts_path.write_text("asset: {}\n")
+    assert settings.create_missing_files() == []  # nothing missing, nothing touched
+    assert settings.accounts_path.read_text() == "asset: {}\n"
+
+
+def test_startup_aborts_with_missing_files(tmp_path, monkeypatch, capsys):
+    from pledger.web import __main__
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("sys.argv", ["pledger-web"])
+    monkeypatch.setattr(__main__.uvicorn, "run", lambda *a, **k: pytest.fail("pledger started"))
+    with pytest.raises(SystemExit) as e:
+        __main__.main()
+    assert "info/accounts.yaml" in str(e.value) and "were created empty" in str(e.value)
+    # They were all created, so it starts now
+    started = []
+    monkeypatch.setattr(__main__.uvicorn, "run", lambda *a, **k: started.append(a))
+    __main__.main()
+    assert started

@@ -27,6 +27,7 @@ from pledger.enums import (
 )
 from pledger.ledger import Ledger
 from pledger.models import (
+    INFLATION_COLUMN,
     INVESTMENT,
     SPECIAL_SIDES,
     Account,
@@ -69,6 +70,9 @@ GENERATED = [INITIAL_GAIN, INITIAL_LOSS, RESULT_GAIN, RESULT_LOSS, SALARY]
 ID_COLUMN = "id"
 LEDGER_ID, CONVERSION_ID, INVESTMENT_ID, INTEREST_ID = "L", "C", "I", "M"
 INITIAL_ID, SALARY_ID, RESULT_ID = "A", "W", "R"
+
+# Columns of the ledger CSV.
+LEDGER_CSV_COLUMNS = ["move_date", "base_movement", "acc_debit", "amount", "acc_credit", "comment"]
 
 # Columns of the conversions CSV, of the movements between an account in the base
 # currency and one in another currency: the amount in each currency. Its movements
@@ -150,6 +154,39 @@ class Settings:
             interest_path=Path(os.environ.get("PLEDGER_INTEREST", "info/movements/interest.csv")),
             currency=os.environ.get("PLEDGER_CURRENCY", "$"),
         )
+
+    def expected_files(self) -> dict[Path, str]:
+        """
+        Every data file, with what it is created with when missing: the YAMLs empty,
+        the CSVs with just their header.
+        """
+        currencies_folder = self.currencies_path.parent
+        files = {
+            self.accounts_path: "",
+            self.base_movements_path: "",
+            self.ledger_path: _header([*LEDGER_CSV_COLUMNS, ID_COLUMN]),
+            self.currencies_path: "",
+            currencies_folder / "base_currency.csv": _header(["month", INFLATION_COLUMN]),
+            currencies_folder / "currencies.csv": _header(["date"]),
+            self.investments_path: "",
+            self.creditors_path: "",
+            self.work_path: _header(WORK_COLUMNS),
+            self.credit_cards_path: "",
+            self.conversions_path: _header([*CONVERSION_COLUMNS, ID_COLUMN]),
+            self.investment_movements_path: _header([*INVESTMENT_COLUMNS, ID_COLUMN]),
+            self.interest_path: _header([*INTEREST_COLUMNS, ID_COLUMN]),
+        }
+        return {path: text for path, text in files.items() if path is not None}
+
+    def create_missing_files(self) -> list[Path]:
+        """Create the missing data files (see expected_files) and their folders. Returns those created."""
+        created = []
+        for path, text in self.expected_files().items():
+            if not path.exists():
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(text, encoding="utf-8")
+                created.append(path)
+        return created
 
 
 @dataclass
@@ -1617,6 +1654,11 @@ def _apply_investments(snapshot: Snapshot, accounts: dict[str, Account], rows: D
         else:
             acc.add_result(r["investment"], r["base"], r["amount"])
     return unattributed
+
+
+def _header(columns: list[str]) -> str:
+    """A CSV with just this header."""
+    return ";".join(columns) + "\n"
 
 
 def _existing(path: Path | None) -> str | None:
