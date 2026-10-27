@@ -2,7 +2,7 @@
    deleted from the Ledger tab. With `who`, the movements say who their comment names, and
    with `account`, which of the accounts they are of. #}
 {% from "_id.html" import id_cell, id_header %}
-{% macro account_movements(movements, key, period, who=False, account=False) %}
+{% macro account_movements(movements, key, period, who=False, account=False, added_here=False) %}
 <div class="panel">
   <h2>Movements <small>{{ movements | length }}, {{ period }}</small></h2>
   <div class="table-wrap">
@@ -29,6 +29,7 @@
       </tbody>
     </table>
   </div>
-  <p class="muted small">The initial movements set the initial amounts; add and delete the others from the <a href="/">Ledger</a> tab.</p>
+  <p class="muted small">The initial movements set the initial amounts; {% if added_here %}add {{ added_here }} with the form, and add the
+    other movements and delete any of them from the <a href="/">Ledger</a> tab{% else %}add and delete the others from the <a href="/">Ledger</a> tab{% endif %}.</p>
 </div>
 {% endmacro %}

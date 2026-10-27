@@ -63,14 +63,14 @@ A FastAPI + HTMX UI, one tab per area:
 
 | Tab | What it shows |
 | --- | --- |
-| 📋 **Ledger** | Lists, adds and deletes movements, with the gains, losses and profit of the period. |
+| 📋 **Ledger** | Lists, adds and deletes movements. Conversions, debt movements and card payments are added in their own tabs instead. |
 | 🏦 **Accounts** | Balances, total assets, liabilities and equity, a form to add accounts, the composition of assets and liabilities (by currency or by liquidity) and, at each month end, debt over equity and net liquidity (liquid assets minus liquid liabilities) over equity. |
-| 💱 **Currencies** | Balances per currency, the balance of each account in other currencies in its own currency, the daily CPI of the base currency, its monthly inflation, the nominal and real value of each other currency, and the share of each currency in the assets at each month end. The conversions are added and deleted here. |
-| 📊 **Results** | Gains and losses by result type, a waterfall of the result by type (with its result statement as a table) and equity over time. Result types and base movements are listed and added here. |
+| 💱 **Currencies** | Balances per currency, the balance of each account in other currencies in its own currency, the daily CPI of the base currency, its monthly inflation, the nominal and real value of each other currency, and the share of each currency in the assets at each month end. The conversions are added (picking the currency sold and the one bought) and deleted here. |
+| 📊 **Results** | The nominal and real change of equity in the period and the months of expenses it covers, gains and losses by result type, a waterfall of the result by type (with its result statement as a table) and equity over time. Result types and base movements are listed and added here. |
 | 💼 **Work** | The company, job position and salary of each month, from gross to net through its deductions (taxes, contributions...), with a chart of both salaries (0 for the months without a job). |
 | 📈 **Investments** | The investments of the investment accounts with their price (amount over quantity), their composition by type or by account, the results of each one, the interest on money of regular accounts, and charts of the total invested and the total result. The internal `Invest` movements are added and deleted here. |
-| 🤝 **Debt** | Who we owe and who owes us in the debt accounts (people, services and companies), with alerts and the movements of the month. |
-| 💳 **Credit Cards** | What we owe on each card, what was charged and paid in the month, a chart of the monthly charges, the net owed over equity, and the movements of the month. |
+| 🤝 **Debt** | Who we owe and who owes us in the debt accounts (people, services and companies), with alerts and the movements of the month. The debt movements are added here. |
+| 💳 **Credit Cards** | What we owe on each card, what was charged and paid in the month, a chart of the monthly charges, the net owed over equity, and the movements of the month. The card payments are added here. |
 | ❓ **Help** | The concepts, explained for everyday users. |
 
 A few things are shared across tabs:
@@ -224,6 +224,9 @@ day before the first month, and each month's inflation compounds evenly over its
 the month's last day, the CPI has grown by the whole month's inflation. On day `d` of `n`, it
 is the previous month's CPI times `(1 + inflation) ** (d / n)`.
 
+The Currencies tab also shows the share of equity in the accounts in other currencies, valued
+in the base currency.
+
 `currencies.csv` has, for each `date`, the value of each other currency in the base one, one
 column each (no other columns). Values must be positive and dates can't repeat. An empty cell
 is a date without that value. Without other currencies, the file is optional.
@@ -252,6 +255,10 @@ Each one is a transfer, of a non-internal base movement, between an account in t
 currency and one in another currency (`comment` is optional, and other columns are kept). The
 ledger gets it as a movement of `amount_base_currency`. They are added and deleted from the
 Currencies tab and `/api/conversions`, and the file is created with the first one.
+
+New conversions are of the transfers named after the other currency: `USD - Bought` debiting
+the account in USD, or `USD - Sold` crediting it. The Currencies tab picks it from the currency
+sold and the one bought, so they can't be added from the Ledger or Investments tabs.
 
 #### Results of the other currencies
 
@@ -290,10 +297,14 @@ quantity on a debit, and loses them on a credit. The file is created when adding
 - The investment is required when a side is `INVESTMENT`.
 - The quantity is required for `Investment - Bought`, `Investment - Sold`, `Stock split (More)`
   and `Stock split (Less)`. `Capital repayments` may have one, and no other base movement can.
+- A movement of an investment account names one of its investments: one in `investment.yaml`
+  or only in the ledger. Add a new one first, with its type (and optionally its initial amount
+  and quantity), in the *New investment* form of the Investments tab (or `POST /api/investments`).
 - An investment that is only in the ledger has no type until it is added to `investment.yaml`.
-  The Investments tab warns about these, and its form adds the type of a new investment there.
-- The tab lists the investments held, with their price (amount over quantity), and lists the
-  ones no longer held apart.
+  The Investments tab warns about these, and its *New investment* form gives them their type.
+- The tab lists the investments held, with their price (amount over quantity), their results,
+  the `Broker fees` as a share of their total result (when positive) and a totals row, and lists
+  the ones no longer held apart.
 
 A free side (neither fixed nor `INVESTMENT`) of an investment base movement can't be an
 investment account, in the form or in `investment.csv`. What pays for an investment bought, gets
@@ -369,6 +380,12 @@ whoever is named in their `comment`: as a whole word, ignoring case, the earlies
 and the longest one if several start there. A credit is more that we owe them, and a debit is
 less.
 
+The **debt movements**, the non-internal transfers with a `DEBT` side or a fixed debt account,
+are added from the Debt tab (or `/api/debt/movements`), not the Ledger one. Its form asks who
+the movement is about, and names them first in the comment: people and services, never a
+company, whose debt comes from the salaries of the Work tab (it is still listed as usual). They are still deleted from the
+Ledger tab.
+
 Like Accounts, the Debt tab shows everyone as of the end of the month picked. It lists people,
 services and companies apart, and the movements naming no one as unassigned. It alerts when
 there is unassigned debt (listing it by comment) and when anyone is in the opposite role to the
@@ -387,6 +404,10 @@ Vi:
   description: Visa Credit Card from Santander
   initial_amount: 57236.80
 ```
+
+The **card payments**, the non-internal transfers with a fixed credit card debit (e.g. `Card
+payment`, debiting `Vi`), are added from the Credit Cards tab (or `/api/credit-cards/payments`),
+not the Ledger one. They are still deleted from the Ledger tab.
 
 The Credit Cards tab warns about the cards with a negative balance (more paid than charged),
 which is rare and may be an error. It also charts what was charged to them in each month (their
@@ -417,7 +438,9 @@ Month;Company;Position;Work - Salary Main;Received payment date;Taxes - Income (
 The tab shows the gross, deducted and net salary of each month, and how this year's gross salary
 gets to the net one through each deduction. Its form adds a month right after the last one (or
 right before the first one) or, for an existing month, replaces it. It has a field for each
-deduction column; add a new deduction as a column of `work.csv`. Each row's ✎ button loads it into the form. Only the first and last
+deduction column; add a new deduction as a column of `work.csv`. Its *Fill in from* button fills
+the form in with the company, position and salaries of the last month (not its month or received
+payment date), in the browser only. Each row's ✎ button loads it into the form. Only the first and last
 months can be deleted. The file is created if missing.
 
 **Salaries.** The gross salary of each worked month is in the ledger **week by week**, from the

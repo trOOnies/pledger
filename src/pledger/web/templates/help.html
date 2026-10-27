@@ -9,6 +9,7 @@
   ("examples", "🧾", "Examples"),
   ("glossary", "📖", "Glossary"),
   ("faq", "❓", "Questions"),
+  ("about", "🐙", "Source code and license"),
 ] %}
 {% macro heading(n) %}{% set s = sections[n - 1] %}<h2 class="help-heading"><span class="help-num">{{ n }}.</span> <span aria-hidden="true">{{ s[1] }}</span> {{ s[2] }}</h2>{% endmacro %}
 
@@ -53,7 +54,8 @@
       <dl>
         <dt>📋 Ledger</dt>
         <dd>Your <strong>movements</strong>, newest first, with the form to <strong>add new
-          ones</strong>. The cards at the top show your <strong>gains, losses and profit</strong>.
+          ones</strong>: pick its <strong>type</strong> (gain, loss or transfer) and then its base movement.
+          Conversions, debt movements and card payments are added in their own tabs.
           Use the <em>Month</em> and <em>Account</em> filters to narrow everything down. The
           movements setting each account's <strong>initial amount</strong> are left out unless
           you tick <em>Initial movements</em>. Each movement has an <strong>ID</strong> that
@@ -81,11 +83,13 @@
           currency grew less than prices). It also shows the balances of the accounts in each currency, what the
           accounts in other currencies hold <strong>in their own currency</strong>, and how your
           assets are split <strong>by currency</strong> at each month end. Buying or selling another currency is a
-          <strong>conversion</strong>: add it here, with the amount in each currency. Every time the
+          <strong>conversion</strong>: add it here, picking the currency sold and the one bought, with the amount in each one. Every time the
           currency's value changes, its accounts get a <strong>USD - Result</strong> gain or loss, so their
           balance always matches what they hold at that value.</dd>
         <dt>📊 Results</dt>
-        <dd>Your gains and losses <strong>grouped by result type</strong> (click a result type to
+        <dd>How much your <strong>equity changed</strong> in the period, nominal and real (taking
+          out inflation), and how many <strong>months of expenses</strong> it covers (at the average
+          monthly losses of the year up to then, leaving out the deductions of the salary). Your gains and losses <strong>grouped by result type</strong> (click a result type to
           see what is inside it), a <strong>waterfall</strong> of the gains and then the losses of
           each result type adding up to your profit (with its table one click away), and a line
           showing your <strong>equity over time</strong>, nominal and real (dashed, deflated by the CPI
@@ -99,7 +103,7 @@
           contributions... each a column of the work CSV, named after its loss base movement),
           which take it to the <strong>net salary</strong>, and the date you <strong>received the
           payment</strong>. A table shows how this year's gross salary gets to the net one. Months without a job are kept too, so no month is ever missing. Add
-          the next month with the form, or click ✎ on a month to <strong>edit it</strong>. Two
+          the next month with the form (<em>Fill in from</em> copies the last month into it), or click ✎ on a month to <strong>edit it</strong>. Two
           charts show your <strong>gross and net salary</strong> over time, nominal and real (dashed). Each month's gross
           salary also goes into the ledger <strong>week by week</strong>, split equally between
           the weeks of the month (Monday to Sunday, each in the month with at least 4 of its days),
@@ -126,14 +130,15 @@
           worked for (from the Work tab) are listed automatically. A warning shows up when a
           movement names no one, or when someone owes the other way around from what is
           <strong>expected</strong> (by default, you owe services and companies owe you). The
-          <strong>movements</strong> of the debt accounts are listed too, with who each one names.</dd>
+          <strong>movements</strong> of the debt accounts are listed too, with who each one names.
+          Lending, borrowing and paying debts back are <strong>added here</strong>, picking who they are about.</dd>
         <dt>💳 Credit Cards</dt>
         <dd>What you <strong>owe on each credit card</strong>, plus what was <strong>charged</strong>
           to it and <strong>paid</strong> off it. With a month picked, the balance is the one at
           the end of that month, and the charges and payments are the ones of that month. A bar chart shows what was
           <strong>charged each month</strong> (your purchases, not your payments), and another one
           shows what you owe on them <strong>as a share of your equity</strong>, month by month,
-          and their <strong>movements</strong> are listed below.</dd>
+          and their <strong>movements</strong> are listed below. <strong>Card payments</strong> are added here.</dd>
         <dt>❓ Help</dt>
         <dd>This page.</dd>
       </dl>
@@ -239,9 +244,10 @@
         your bank account. Interest, dividends and broker fees are recorded there too.</p>
 
       <h3>🤝 Keep track of who owes you</h3>
-      <p>Use a debt account for the movement and write the person's, service's or company's
-        <strong>name in the comment</strong>, such as "Lunch with Dad". The
-        <a href="/debt">Debt</a> tab adds it to them, and warns you about movements that name no one.</p>
+      <p>Add lending, borrowing and paying back from the <a href="/debt">Debt</a> tab, picking
+        <strong>who</strong> it is about. For other movements of a debt account, write the person's,
+        service's or company's <strong>name in the comment</strong>, such as "Lunch with Dad". The
+        Debt tab adds them to them, and warns you about movements that name no one.</p>
 
       <h3>🔎 Look at a single month or account</h3>
       <p>Use the <strong>Month</strong> filter on Ledger, Accounts, Results, Debt or Credit Cards (it is remembered
@@ -318,6 +324,17 @@
       <p>One of the settings files or the ledger has a problem, for example a movement that uses an
         account or base movement that no longer exists. <strong>The message says what is
         wrong</strong>; fix that entry in the file and reload the page.</p>
+    </section>
+
+    <section class="panel" id="about">
+      {{ heading(8) }}
+      <p>Pledger is <strong>open source</strong>: its code lives on GitHub at
+        <a href="https://github.com/trOOnies/pledger" target="_blank" rel="noopener noreferrer">github.com/trOOnies/pledger</a>.
+        Report problems, suggest ideas or follow its changes there.</p>
+      <p>It is <strong>free software</strong>, released under the
+        <a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank" rel="noopener noreferrer">GNU General Public License v3.0</a>
+        (see the <code>LICENSE</code> file of the repository): you can use, study, share and change it, and
+        anything you share built on it has to keep that same freedom.</p>
     </section>
   </article>
 </div>

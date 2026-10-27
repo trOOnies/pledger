@@ -18,6 +18,11 @@
       <span class="num">{{ ("%.2f%%" | format(100 * last_month.last_12)) if last_month and last_month.last_12 is not none else "-" }}</span>
       {% if last_12_monthly is not none %}<span class="muted small">{{ "%.2f%%" | format(100 * last_12_monthly) }} a month on average</span>{% endif %}
     </div>
+    <div class="card" title="The share of equity (assets minus liabilities) in the accounts in {{ others | map(attribute='name') | join(', ') or 'other currencies' }}, valued in {{ base.name }}, today">
+      <span class="label">Equity in other currencies</span>
+      <span class="num">{{ ("%.1f%%" | format(100 * other_equity_share)) if other_equity_share is not none else "-" }}</span>
+      {% if other_equity_share is not none %}<span class="muted small"><span class="money">{{ other_equity | money }}</span> not in {{ base.name }}</span>{% endif %}
+    </div>
   </div>
 
   <section class="panel">

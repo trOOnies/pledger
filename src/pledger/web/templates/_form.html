@@ -1,3 +1,4 @@
+{% from "_type_buttons.html" import type_buttons %}
 <form id="movement-form" class="stack" hx-post="/movements" hx-swap="outerHTML">
   {% if error %}<p class="msg error">{{ error }}</p>{% endif %}
   {% if success %}<p class="msg success">{{ success }}</p>{% endif %}
@@ -5,13 +6,7 @@
     <input type="date" name="move_date" value="{{ values.move_date }}" required data-future-warning>
     <span class="hint warn" hidden>⚠️ This date is in the future.</span>
   </label>
-  <label>Type
-    <select name="move_type" hx-get="/form/bases" hx-target="#base-fields" hx-swap="innerHTML">
-      {% for type in move_types %}
-      <option value="{{ type }}" {% if type == move_type %}selected{% endif %}>{{ type | capitalize }}</option>
-      {% endfor %}
-    </select>
-  </label>
+  {{ type_buttons(move_types, move_type, "/form/bases", "#base-fields") }}
   <div id="base-fields" class="stack">{% include "_base_fields.html" %}</div>
   <label>Amount
     <span class="money-input">

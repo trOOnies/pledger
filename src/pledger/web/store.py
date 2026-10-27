@@ -21,17 +21,20 @@ from pandas import DataFrame, Series, Timestamp, concat, read_csv
 from pledger.enums import (
     AccountCheck,
     AccountType,
+    CreditorKind,
     InvestmentType,
     LedgerSide,
     MovementType,
 )
 from pledger.ledger import Ledger
 from pledger.models import (
+    DEBT,
     INFLATION_COLUMN,
     INVESTMENT,
     SPECIAL_SIDES,
     Account,
     Company,
+    CreditCardAccount,
     Currency,
     DebtAccount,
     Investment,
@@ -79,6 +82,10 @@ LEDGER_CSV_COLUMNS = ["move_date", "base_movement", "acc_debit", "amount", "acc_
 # are added to the ledger with the amount in the base currency.
 BASE_AMOUNT, OTHER_AMOUNT = "amount_base_currency", "amount_other_currency"
 CONVERSION_COLUMNS = ["move_date", "base_movement", "acc_debit", BASE_AMOUNT, "acc_credit", "comment", OTHER_AMOUNT]
+
+# Base movements of the conversions of each other currency: a transfer bringing it
+# in (debiting an account in it) or taking it out (crediting one), e.g. "USD - Bought".
+CONVERSION_BOUGHT, CONVERSION_SOLD = "{} - Bought", "{} - Sold"
 
 # Internal result type of the investment results. Its base movements, and the
 # internal transfers with an INVESTMENT side, are added and deleted from the
@@ -359,6 +366,49 @@ class Snapshot:
         """Base movements that can be picked for a new movement (not internal or generated ones)."""
         return {n: b for n, b in self.base_movements.items() if not b.internal and n not in GENERATED}
 
+    @property
+    def conversion_base_names(self) -> set[str]:
+        """The names of the base movements of the conversions: CONVERSION_BOUGHT and CONVERSION_SOLD of each other currency."""
+        return {
+            name.format(c.name)
+            for c in self.currencies.values() if not c.is_base_currency
+            for name in (CONVERSION_BOUGHT, CONVERSION_SOLD)
+        }
+
+    def conversion_base_movements(self) -> dict[str, MovementBase]:
+        """The base movements of the conversions, added from the Currencies tab: transfers named after their currency."""
+        return {
+            n: b for n, b in self.manual_base_movements().items()
+            if n in self.conversion_base_names and b.move_type == MovementType.TRANSFER
+        }
+
+    def debt_base_movements(self) -> dict[str, MovementBase]:
+        """
+        The transfers of the debt accounts, added from the Debt tab: those with a DEBT
+        side or a fixed debt account.
+        """
+        return {
+            n: b for n, b in self.manual_base_movements().items()
+            if b.move_type == MovementType.TRANSFER and (
+                DEBT in {b.debit_special, b.credit_special}
+                or any(isinstance(a, DebtAccount) for a in (b.acc_debit, b.acc_credit))
+            )
+        }
+
+    def card_payment_base_movements(self) -> dict[str, MovementBase]:
+        """The transfers paying a credit card, added from the Credit Cards tab: those with a fixed credit card debit."""
+        return {
+            n: b for n, b in self.manual_base_movements().items()
+            if b.move_type == MovementType.TRANSFER and isinstance(b.acc_debit, CreditCardAccount)
+        }
+
+    def ledger_base_movements(self) -> dict[str, MovementBase]:
+        """The base movements that can be picked in the Ledger tab: the manual ones but those of other tabs."""
+        other_tabs = (
+            self.conversion_base_names | set(self.debt_base_movements()) | set(self.card_payment_base_movements())
+        )
+        return {n: b for n, b in self.manual_base_movements().items() if n not in other_tabs}
+
     def invest_base_movements(self) -> dict[str, MovementBase]:
         """
         The internal base movements handled in the Investments tab: those of the
@@ -547,17 +597,20 @@ class LedgerStore:
         invest: bool = False,
         investment: str = "",
         quantity: str | float = "",
-        investment_type: str = "",
+        debt: bool = False,
+        card_payment: bool = False,
     ) -> None:
         """
         Validate a new movement and append it to its CSV. With `invest` (from the
         Investments tab), it must be of an investment base movement (see
         Snapshot.invest_base_movements): the interest on money goes to the interest CSV,
         and the others to the investments CSV, with their investment and quantity (see
-        _investment_details) and, for an investment new to its account, its type, which
-        is added to the investments YAML. Without it, it must be of a non-internal base
-        movement whose movements aren't generated, and goes to the ledger CSV. It gets
-        the next id of its CSV (see _appended).
+        _investment_details); an investment of an investment account must be one it has
+        (see _check_known_investment). Without it, it must be of a non-internal base
+        movement whose movements aren't generated, and goes to the ledger CSV: one of a
+        debt base movement with `debt` (from the Debt tab), one of a card payment base
+        movement with `card_payment` (from the Credit Cards tab), else one of the Ledger
+        tab (see _check_tab). It gets the next id of its CSV (see _appended).
         """
         snapshot = self.load()
         try:
@@ -567,7 +620,8 @@ class LedgerStore:
         if base_movement not in snapshot.base_movements:
             raise ValueError(f"Unknown base movement: {base_movement!r}")
         _check_invest(snapshot, base_movement, invest, "added")
-        has_details = str(investment).strip() or str(quantity).strip() or investment_type
+        _check_tab(snapshot, base_movement, invest, debt, card_payment)
+        has_details = str(investment).strip() or str(quantity).strip()
         if has_details and (not invest or base_movement in INTEREST):
             raise ValueError("Only movements of the investments have an investment and a quantity")
         for name in (acc_debit, acc_credit):
@@ -627,67 +681,48 @@ class LedgerStore:
         changed = replace(snapshot, **{field: concat([frame, DataFrame([new_row])], ignore_index=True)})
         changed.ledger().check_accounts()
         changed.investment_accounts()  # e.g. not selling more than is held
-        new_type = (
-            self._new_investment_type(snapshot, acc_debit, acc_credit, new_row[INVESTMENT_COLUMN], investment_type)
-            if field == "investments" else None
-        )
+        if field == "investments":
+            _check_known_investment(snapshot, acc_debit, acc_credit, new_row[INVESTMENT_COLUMN])
+        self._write_file(self._appended(path, prefix, new_row, list(frame.columns)))
 
-        csv_file = self._appended(path, prefix, new_row, list(frame.columns))
-        if new_type is None:
-            self._write_file(csv_file)
-            return
-
-        # A new investment type also changes the investments YAML: roll back if the
-        # files no longer load.
-        yaml_path = self.settings.investments_path
-        before = {p: p.read_bytes().decode("utf-8") if p.exists() else None for p in (path, yaml_path)}
-        acc_name, name, inv_type = new_type
-        _atomic_write(yaml_path, _insert_yaml_entry(before[yaml_path], (acc_name,), name, inv_type.value))
-        self._write_file(csv_file)
+    def add_investment(
+        self, account: str, name: str, investment_type: str, amount: str | float = "", quantity: str | float = ""
+    ) -> None:
+        """
+        Add an investment to an investment account in the investments YAML, with its
+        type and, optionally, its initial amount and quantity (0 by default). An
+        investment only in the ledger gets its type this way; one in the YAML already
+        has it.
+        """
+        snapshot = self.load()
+        path = self.settings.investments_path
+        if path is None:
+            raise ValueError("No investments YAML is set")
+        accounts = {a.name: a for a in snapshot.accounts.values() if isinstance(a, InvestmentAccount)}
+        if account not in accounts:
+            raise ValueError(f"{account!r} is not an investment account")
+        name = _check_name(name, accounts[account].investments, "investment")
+        try:
+            inv_type = InvestmentType(investment_type)
+        except ValueError:
+            raise ValueError(f"Unknown investment type: {investment_type!r}") from None
+        fields: str | dict = inv_type.value
+        if str(amount).strip() or str(quantity).strip():
+            fields = {
+                "type": inv_type.value,
+                "amount": _parse_amount(amount or 0, "initial amount"),
+                "quantity": _parse_amount(quantity or 0, "initial quantity"),
+            }
+        before = path.read_bytes().decode("utf-8") if path.exists() else None
+        _atomic_write(path, _insert_yaml_entry(before or "", (account,), name, fields))
         try:
             self.load()
         except LedgerDataError as e:
-            for p, text in before.items():
-                if text is None:
-                    p.unlink()
-                else:
-                    _atomic_write(p, text)
-            raise ValueError(f"Could not add the movement: {e}") from None
-
-    @staticmethod
-    def _new_investment_type(
-        snapshot: Snapshot, acc_debit: str, acc_credit: str, name: str, investment_type: str
-    ) -> tuple[str, str, InvestmentType] | None:
-        """
-        The (account, investment, type) to add to the investments YAML, if any: an
-        investment new to its account needs its type, and one only in the ledger
-        can get it. Others keep the type they have.
-        """
-        account = next(
-            (snapshot.accounts[n] for n in (acc_debit, acc_credit) if isinstance(snapshot.accounts[n], InvestmentAccount)),
-            None,
-        )
-        if account is None or not name:
-            if investment_type:
-                raise ValueError("Only an investment of an investment account has a type")
-            return None
-        inv_type = None
-        if investment_type:
-            try:
-                inv_type = InvestmentType(investment_type)
-            except ValueError:
-                raise ValueError(f"Unknown investment type: {investment_type!r}") from None
-        held = next(a for a in snapshot.investment_accounts() if a.name == account.name).investments
-        if name in account.investments:  # in the investments YAML
-            current = account.investments[name]["investment"].type
-            if inv_type is not None and inv_type != current:
-                raise ValueError(f"Investment {name!r} of the account {account.name!r} is a {current.value}")
-            return None
-        if inv_type is None:
-            if name not in held:
-                raise ValueError(f"{name!r} is a new investment of the account {account.name!r}: pick its type")
-            return None
-        return account.name, name, inv_type
+            if before is None:
+                path.unlink()
+            else:
+                _atomic_write(path, before)
+            raise ValueError(f"Could not add {name!r}: {e}") from None
 
     def add_account(
         self,
@@ -1053,7 +1088,17 @@ class LedgerStore:
         }
         if acc_debit == acc_credit:
             raise ValueError("Debit and credit accounts must be different")
-        _, base_value, other_value = _check_conversion(snapshot, new_row)
+        if base_movement not in snapshot.conversion_base_movements():
+            names = sorted(snapshot.conversion_base_movements())
+            raise ValueError(
+                f"Conversions must be of {' or '.join(map(repr, names)) or 'a conversion base movement'}, "
+                f"not {base_movement!r}"
+            )
+        other, base_value, other_value = _check_conversion(snapshot, new_row)
+        expected = (CONVERSION_BOUGHT if other.name == acc_debit else CONVERSION_SOLD).format(other.currency.name)
+        if base_movement != expected:
+            raise ValueError(f"Moving {other.currency.name} {'into' if other.name == acc_debit else 'out of'} "
+                             f"{other.name} is a {expected!r} conversion, not a {base_movement!r} one")
         if base_value == 0:
             raise ValueError("The amounts of a conversion must be positive")
         new_row[BASE_AMOUNT], new_row[OTHER_AMOUNT] = f"{base_value:,.2f}", f"{other_value:,.4f}"
@@ -1068,6 +1113,64 @@ class LedgerStore:
             raise ValueError(str(e)) from None
 
         self._write_file(self._appended(path, CONVERSION_ID, new_row, CONVERSION_COLUMNS))
+
+    def add_exchange(
+        self,
+        move_date: str,
+        sold: str,
+        bought: str,
+        acc_from: str,
+        acc_to: str,
+        amount_sold: str | float,
+        amount_bought: str | float,
+        comment: str = "",
+    ) -> str:
+        """
+        Add a conversion selling one currency for another, one of them the base one:
+        from an account in the `sold` currency to one in the `bought` currency. Its
+        base movement is the one of the other currency (see exchange_base_movement),
+        which is returned.
+        """
+        snapshot = self.load()
+        base_movement = exchange_base_movement(snapshot, sold, bought)
+        for name, currency, side in ((acc_from, sold, "from"), (acc_to, bought, "to")):
+            account = snapshot.accounts.get(name)
+            if account is None:
+                raise ValueError(f"Unknown account: {name!r}")
+            if account.currency.name != currency:
+                raise ValueError(f"The account {side} must be in {currency}, but {name} is in {account.currency.name}")
+        amounts = (amount_sold, amount_bought) if sold == snapshot.base_currency.name else (amount_bought, amount_sold)
+        self.add_conversion(move_date, base_movement, acc_to, acc_from, *amounts, comment)
+        return base_movement
+
+    def add_debt_movement(
+        self,
+        move_date: str,
+        base_movement: str,
+        acc_debit: str,
+        acc_credit: str,
+        amount: str | float,
+        who: str,
+        comment: str = "",
+    ) -> None:
+        """
+        Add a movement of a debt base movement to the ledger CSV, about `who`, someone of
+        its debt account but a company (their debt comes from the work history): its
+        comment names them first (prefixed if it doesn't), so the Debt tab adds it to them.
+        """
+        snapshot = self.load()
+        accounts = [snapshot.accounts.get(n) for n in (acc_debit, acc_credit)]
+        debts = [a for a in accounts if isinstance(a, DebtAccount)]
+        who, comment = who.strip(), comment.replace(";", ",").strip()
+        if not who:
+            raise ValueError("Pick who the debt movement is about")
+        if debts and not any(who in a.creditors for a in debts):
+            raise ValueError(f"{who!r} is not someone of the debt account {debts[0].name}")
+        if any(a.creditors[who].kind == CreditorKind.COMPANY for a in debts if who in a.creditors):
+            raise ValueError(f"{who!r} is a company: its debt comes from the salaries of the Work tab")
+        if not debts or debts[0].creditor_in(comment) != who:
+            comment = f"{who}: {comment}" if comment else who
+        self.add(move_date, base_movement, acc_debit, acc_credit, amount, comment, debt=True)
 
     def delete_conversion(self, index: int, fingerprint: str | None = None) -> None:
         """Delete a row of the conversions CSV by position, optionally checking it is the expected one."""
@@ -1174,6 +1277,42 @@ def _check_invest(snapshot: Snapshot, base_name: str, invest: bool, action: str)
         raise ValueError(f"Base movement {base_name!r} is internal and its movements cannot be {action} by hand")
     if base_name in GENERATED:
         raise ValueError(f"The movements of the base movement {base_name!r} are generated by pledger")
+
+
+def _check_known_investment(snapshot: Snapshot, acc_debit: str, acc_credit: str, name: str) -> None:
+    """
+    A movement of an investment account must name one of its investments: in the
+    investments YAML or only in the ledger. A new one is added first (see
+    LedgerStore.add_investment), with its type.
+    """
+    account = next((snapshot.accounts[n] for n in (acc_debit, acc_credit)
+                    if isinstance(snapshot.accounts[n], InvestmentAccount)), None)
+    if account is None or not name:
+        return
+    held = next(a for a in snapshot.investment_accounts() if a.name == account.name).investments
+    if name not in account.investments and name not in held:
+        raise ValueError(f"{name!r} is not an investment of {account.name}: add it as a new investment first")
+
+
+def _check_tab(snapshot: Snapshot, base_name: str, invest: bool, debt: bool, card_payment: bool) -> None:
+    """
+    Each tab adds the movements of its own base movements: the conversions are only
+    added from the Currencies tab, the debt movements from the Debt tab, the card
+    payments from the Credit Cards tab, and all the others from the Ledger tab (or
+    the Investments tab, see _check_invest).
+    """
+    if base_name in snapshot.conversion_base_names:
+        raise ValueError(f"The conversions ({base_name!r}) are added from the Currencies tab")
+    for wanted, bases, what, tab in (
+        (debt, snapshot.debt_base_movements(), "debt", "Debt"),
+        (card_payment, snapshot.card_payment_base_movements(), "card payment", "Credit Cards"),
+    ):
+        if wanted and base_name not in bases:
+            raise ValueError(f"Base movement {base_name!r} is not a {what} base movement")
+        if base_name in bases and not wanted:
+            raise ValueError(f"Movements of the base movement {base_name!r} are added from the {tab} tab")
+    if invest and (debt or card_payment):
+        raise ValueError("A movement of the investments is not a debt movement or a card payment")
 
 
 def _required_base(
@@ -1413,6 +1552,25 @@ def _conversion_rows(snapshot: Snapshot, start: int) -> DataFrame:
             "amount": row[BASE_AMOUNT],
         })
     return _generated_rows(new_rows, snapshot.rows.columns, start)
+
+
+def exchange_base_movement(snapshot: Snapshot, sold: str, bought: str) -> str:
+    """
+    The base movement of a conversion selling the `sold` currency for the `bought` one:
+    CONVERSION_BOUGHT of the one that isn't the base currency if bought, else its
+    CONVERSION_SOLD. One of them must be the base currency, and the base movement a
+    conversion one.
+    """
+    for currency in (sold, bought):
+        if currency not in snapshot.currencies:
+            raise ValueError(f"Unknown currency: {currency!r}")
+    base = snapshot.base_currency.name
+    if (sold == base) == (bought == base):
+        raise ValueError(f"Conversions sell or buy {base} for another currency, not {sold} for {bought}")
+    name = CONVERSION_BOUGHT.format(bought) if sold == base else CONVERSION_SOLD.format(sold)
+    if name not in snapshot.conversion_base_movements():
+        raise ValueError(f"No {name!r} base movement: add it as a transfer in the Results tab")
+    return name
 
 
 def _check_conversion(snapshot: Snapshot, row) -> tuple[Account, float, float]:

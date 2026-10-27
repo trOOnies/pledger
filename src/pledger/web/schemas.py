@@ -19,7 +19,18 @@ class MovementIn(BaseModel):
 class InvestMovementIn(MovementIn):
     investment: str = ""  # required with an INVESTMENT side
     quantity: float | None = None  # required to buy, sell and split
-    investment_type: InvestmentType | None = None  # for an investment new to its account
+
+
+class InvestmentIn(BaseModel):
+    account: str  # an investment account
+    name: str
+    type: InvestmentType
+    amount: float | None = None  # initial, 0 by default
+    quantity: float | None = None  # initial, 0 by default
+
+
+class DebtMovementIn(MovementIn):
+    who: str  # someone of its debt account, named first in its comment
 
 
 class ConversionIn(BaseModel):

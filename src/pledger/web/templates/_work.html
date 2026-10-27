@@ -13,19 +13,20 @@
     {% if deductions %}
     <div class="panel">
       <h2>From gross to net <small>{{ year }}</small></h2>
-      <table data-sortable="deductions">
-        <thead><tr><th>Deduction</th><th class="num">Amount</th><th class="num" title="Share of the gross salary">Of gross</th></tr></thead>
+      {# In order from the gross salary down to the net one, so not sortable #}
+      <table class="statement">
+        <thead><tr><th>Salary</th><th class="num">Amount</th><th class="num" title="Share of the gross salary">Of gross</th></tr></thead>
         <tbody>
+          <tr><th>Gross salary</th><th class="num money">{{ gross | money }}</th><th class="num">100.0%</th></tr>
         {% for d in deductions %}
         <tr>
           <td>{{ d.name }}</td>
-          <td class="num money loss" data-sort="{{ d.amount }}">{{ -d.amount | money }}</td>
-          <td class="num" data-sort="{{ d.share }}">{{ "%.1f" | format(d.share * 100) }}%</td>
+          <td class="num money loss">{{ -d.amount | money }}</td>
+          <td class="num">{{ "%.1f" | format(d.share * 100) }}%</td>
         </tr>
         {% endfor %}
         </tbody>
         <tfoot>
-          <tr><th>Gross salary</th><th class="num money">{{ gross | money }}</th><th class="num">100.0%</th></tr>
           <tr><th>Net salary</th><th class="num money">{{ net | money }}</th><th class="num">{{ "%.1f" | format(net / gross * 100) }}%</th></tr>
         </tfoot>
       </table>
@@ -36,7 +37,8 @@
 
     {% if gross_chart %}
     <div class="charts-grid">
-      {% for title, chart in (("Gross salary", gross_chart), ("Net salary", net_chart)) %}
+      {# The net salary in green, what is left of the gross one #}
+      {% for title, chart, slot in (("Gross salary", gross_chart, 1), ("Net salary", net_chart, 3)) %}
       <section class="panel">
         <h2>{{ title }} <small>per month, 0 without a job</small></h2>
         {% set ns = namespace(points=[]) %}
@@ -47,7 +49,7 @@
             "real_text": (p.real | money) if p.real is not none else "-",
           }] %}
         {% endfor %}
-        {{ line_chart(chart, ns.points, title ~ " per month from " ~ chart.points[0].month.month ~ " to " ~ chart.last.month.month ~ ", ending at " ~ (chart.last.value | money), change_money=False, series=loop.index) }}
+        {{ line_chart(chart, ns.points, title ~ " per month from " ~ chart.points[0].month.month ~ " to " ~ chart.last.month.month ~ ", ending at " ~ (chart.last.value | money), change_money=False, series=slot) }}
         {% if chart.real_path %}
         <p class="muted small"><strong>Real</strong>: each salary deflated by the CPI at the end of its month, at the
           prices of {{ chart.real_date }}.</p>

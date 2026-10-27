@@ -18,6 +18,7 @@ from pledger.enums import (
 )
 from pledger.ledger import Ledger
 from pledger.models import (
+    CPI_BASE,
     DEBT,
     INVESTMENT,
     SPECIAL_LABELS,
@@ -25,6 +26,7 @@ from pledger.models import (
     Currency,
     DebtAccount,
     InvestmentAccount,
+    MovementBase,
     next_month,
     rounds_to_zero,
     special_of,
@@ -41,6 +43,7 @@ from pledger.web.store import (
     Snapshot,
     Work,
     conversion_fingerprint,
+    exchange_base_movement,
     interest_fingerprint,
     is_capital,
     row_fingerprint,
@@ -157,6 +160,7 @@ def build_view(snapshot: Snapshot, month: str = "", account: str = "", initial: 
         "initial": initial,
         "accounts": list(snapshot.accounts),
         "movements": movement_rows(snapshot, filtered, ledger),
+        # Not shown in the Ledger tab, but in /api/summary
         "gains": ledger.total_gains,
         "losses": ledger.total_losses,
         "profit": ledger.total_profits,
@@ -245,6 +249,7 @@ INVESTMENT_TYPE_LABELS = {
 
 
 NO_TYPE = "No type"  # label of the investments only in the ledger, not in the investments YAML
+BROKER_FEES = "Broker fees"  # the investment base movement of the fees, shown as a share of the total result
 
 
 def is_closed(holding: dict) -> bool:
@@ -312,6 +317,14 @@ def build_investments(snapshot: Snapshot) -> dict:
     total = sum(h["amount"] for h in holdings)
     for h in holdings:
         h["share"] = round(100 * h["amount"] / total, 1) + 0.0 if total else 0.0
+    held = {
+        "amount": total,
+        "capital": sum(h["capital"] for h in holdings),
+        "results": {n: sum(h["results"].get(n, 0.0) for h in holdings) for n in result_bases},
+        "total": sum(h["total"] for h in holdings),
+    }
+    for i in [*holdings, held]:
+        i["fees_share"] = fees_share(i)
 
     # Types and accounts keep their defined order, listing only the ones with
     # investments. Investment names are only unique within an account.
@@ -338,6 +351,8 @@ def build_investments(snapshot: Snapshot) -> dict:
             for a in accounts
         ],
         "holdings": holdings,
+        "held": held,  # the totals of the holdings
+        "has_fees": BROKER_FEES in result_bases,
         "closed": closed,
         "result_bases": result_bases,
         "has_capital": bool(capital),
@@ -359,6 +374,15 @@ def build_investments(snapshot: Snapshot) -> dict:
         },
         **investment_charts(snapshot),
     }
+
+
+def fees_share(results: dict) -> float | None:
+    """
+    The broker fees of an investment (or of several) as a share of its total result,
+    or None without fees or a positive total result (it isn't a share of a loss).
+    """
+    fees = results["results"].get(BROKER_FEES, 0.0)
+    return fees / results["total"] if fees and results["total"] > 0 else None
 
 
 def interest_movements(snapshot: Snapshot) -> list:
@@ -463,8 +487,8 @@ def build_credit_cards(snapshot: Snapshot, month: str = "") -> dict:
     `month` (all the ledger by default), and what was charged to it (credits) and
     paid (debits) in that month, leaving out the initial movements. Lists the
     cards with a negative balance (we are owed): rare, so possibly an error. Charts
-    the net owed on them over equity at each month end, and what was charged to them
-    in each month, up to `month`.
+    the net owed on them at each month end, nominal, real and over equity, and what
+    was charged to them in each month, up to `month`.
     """
     cards = [a for a in snapshot.accounts.values() if isinstance(a, CreditCardAccount)]
     rows = snapshot.all_rows
@@ -489,13 +513,14 @@ def build_credit_cards(snapshot: Snapshot, month: str = "") -> dict:
         "accounts": accounts,
         "months": months_of(snapshot),
         "month": month,
+        "base_currency": snapshot.base_currency.name,
         "owed": sum(a["balance"] for a in accounts),
         "charged": sum(a["charged"] for a in accounts),
         "paid": sum(a["paid"] for a in accounts),
         "composition": composition({a["name"]: a["balance"] for a in accounts}, ordered=True),
         "negative": [a for a in accounts if a["balance"] < 0 and not rounds_to_zero(a["balance"])],
         "movements": account_movements(snapshot, [a.name for a in cards], month),
-        **owed_ratio_chart(snapshot, [a.name for a in cards], month),
+        **owed_charts(snapshot, [a.name for a in cards], month),
         **charged_chart(snapshot, [a.name for a in cards], month),
     }
 
@@ -536,13 +561,30 @@ def account_movements(snapshot: Snapshot, names: list[str], month: str = "") -> 
     return movements
 
 
-def owed_ratio_chart(snapshot: Snapshot, cards: list[str], month: str = "") -> dict:
-    """The net owed on the credit cards over equity at each month end, up to `month`."""
-    owed = ratio_series(
-        snapshot, month_end_balances(snapshot, month),
-        lambda b, _total: sum(b.get(name, 0.0) for name in cards),
+def owed_charts(snapshot: Snapshot, cards: list[str], month: str = "") -> dict:
+    """
+    The net owed on the credit cards at each month end, up to `month`: in the base
+    currency, nominal and real (deflated by the CPI at the end of each month, see
+    with_real), and over equity.
+    """
+    monthly = month_end_balances(snapshot, month)
+    owed = ratio_series(snapshot, monthly, lambda b, _total: sum(b.get(name, 0.0) for name in cards))
+    amounts = []
+    for p in owed:
+        change = p["amount"] - amounts[-1]["value"] if amounts else p["amount"]
+        amounts.append({"date": p["date"], "month": p["month"], "value": p["amount"], "change": change})
+    real_date = with_real(
+        amounts, snapshot.base_currency.customer_price_index, [month_end(p["month"]) for p in amounts]
     )
-    return {"owed_ratio": line_chart(owed, percent), "owed_series": owed}
+    owed_chart = line_chart(amounts)
+    if owed_chart:
+        owed_chart["real_date"] = real_date
+    return {
+        "owed_chart": owed_chart,
+        "owed_amounts": amounts,
+        "owed_ratio": line_chart(owed, percent),
+        "owed_series": owed,
+    }
 
 
 def build_invest_movements(snapshot: Snapshot) -> list[dict]:
@@ -600,45 +642,83 @@ def build_conversions(snapshot: Snapshot) -> list[dict]:
     return conversions
 
 
-def conversion_fields(snapshot: Snapshot, base_movement: str = "") -> dict:
+def conversion_fields(snapshot: Snapshot, sold: str = "", bought: str = "", changed: str = "") -> dict:
     """
-    The transfers to pick from for a conversion, and the account fields of the
-    selected one: by default, that of the last conversion, else the first one.
+    The currencies sold and bought of a new conversion, one of them the base one,
+    and the asset accounts it can be from (in the sold currency) and to (in the
+    bought one), or the fixed ones of its base movement (see exchange_base_movement). By
+    default, the currencies of the last conversion, else selling the base currency
+    for the first other one. When they clash (both or neither the base currency),
+    the one not `changed` ("sold" or "bought") gives way.
     """
-    bases = sorted(
-        n for n, b in snapshot.manual_base_movements().items() if b.move_type == MovementType.TRANSFER
-    )
-    if base_movement not in bases:
-        last = snapshot.conversions["base_movement"].iloc[-1] if len(snapshot.conversions) else ""
-        base_movement = last if last in bases else next(iter(bases), "")
+    names = list(snapshot.currencies)
+    base = snapshot.base_currency.name
+    others = [n for n in names if n != base]
+    if sold not in names and bought not in names and len(snapshot.conversions):
+        last = snapshot.conversions.iloc[-1]
+        debit, credit = snapshot.accounts.get(last["acc_debit"]), snapshot.accounts.get(last["acc_credit"])
+        if debit is not None and credit is not None:
+            sold, bought = credit.currency.name, debit.currency.name
+    if sold not in names:
+        sold = base if bought != base else next(iter(others), base)
+    if bought not in names:
+        bought = next(iter(others), base) if sold == base else base
+    if (sold == base) == (bought == base) and others:
+        if changed == "bought":
+            sold = base if bought != base else others[0]
+        else:
+            bought = base if sold != base else others[0]
+    try:
+        base_movement, missing = exchange_base_movement(snapshot, sold, bought), None
+    except ValueError as e:
+        base_movement, missing = "", str(e)
+    move_base = snapshot.base_movements.get(base_movement)
+
+    def options(currency: str) -> list[str]:
+        """The asset accounts in that currency, but the investment ones."""
+        return [
+            a.name for a in snapshot.accounts.values()
+            if a.acc_type == AccountType.ASSET and a.currency.name == currency and not isinstance(a, InvestmentAccount)
+        ]
+
     return {
-        "bases": bases,
+        "currencies": names,
+        "sold": sold,
+        "bought": bought,
         "base_movement": base_movement,
-        "fields": account_fields(snapshot, base_movement),
-        "other_currencies": [c.name for c in snapshot.currencies.values() if not c.is_base_currency],
+        "missing": missing,
+        "fields": {
+            "from_fixed": move_base.acc_credit.name if move_base and move_base.acc_credit else None,
+            "to_fixed": move_base.acc_debit.name if move_base and move_base.acc_debit else None,
+            "from_options": options(sold),
+            "to_options": options(bought),
+        },
     }
 
 
-def invest_fields(snapshot: Snapshot, base_movement: str = "") -> dict:
+def invest_fields(snapshot: Snapshot, base_movement: str = "", move_type: str = "") -> dict:
     """
-    The investment base movements to pick from, by movement type, and the fields
-    of the selected one (the first one by default): its accounts, whether it names
-    an investment ("required" with an INVESTMENT side, else "optional") and has a
-    quantity ("required", "optional" or None), plus the known investments and the
-    investment types, for a new investment.
+    The investment base movements to pick from for a movement type (without one,
+    that of the base movement, else a loss: see default_move_type), but the
+    conversions, and the fields of the selected one (the first one by default): its
+    accounts, whether it names an investment ("required" with an INVESTMENT side,
+    else "optional") and has a quantity ("required", "optional" or None), plus the
+    known investments to pick from.
     """
-    bases = snapshot.invest_base_movements()
-    by_type = {
-        t.value: [n for n in bases if bases[n].move_type == t]
-        for t in MovementType
-        if any(b.move_type == t for b in bases.values())
+    bases = {
+        n: b for n, b in snapshot.invest_base_movements().items() if n not in snapshot.conversion_base_names
     }
-    if base_movement not in bases:
-        base_movement = next(iter(bases), "")
+    by_type = {t: [n for n in bases if bases[n].move_type.value == t] for t in bases_by_type(bases)}
+    if move_type not in by_type:
+        move_type = bases[base_movement].move_type.value if base_movement in bases else default_move_type(by_type)
+    if base_movement not in by_type[move_type]:
+        base_movement = next(iter(by_type[move_type]), "")
     base = bases.get(base_movement)
     side = base is not None and INVESTMENT in {base.debit_special, base.credit_special}
     return {
-        "bases_by_type": by_type,
+        "move_types": list(by_type),
+        "move_type": move_type,
+        "bases": by_type[move_type],
         "base_movement": base_movement,
         "fields": account_fields(snapshot, base_movement),
         "investment": None if base_movement in INTEREST else "required" if side else "optional",
@@ -647,14 +727,25 @@ def invest_fields(snapshot: Snapshot, base_movement: str = "") -> dict:
             else "optional" if base_movement in QUANTITY_OPTIONAL
             else None
         ),
-        "investment_names": sorted({n for a in snapshot.investment_accounts() for n in a.investments}),
-        "investment_types": INVESTMENT_TYPE_LABELS if side else {},
+        # Those of the investments YAML and those only in the ledger, by account
+        "investments_by_account": {
+            a.name: sorted(a.investments) for a in snapshot.investment_accounts() if a.investments
+        },
+    }
+
+
+def new_investment_fields(snapshot: Snapshot) -> dict:
+    """The investment accounts and investment types to pick from for a new investment."""
+    return {
+        "accounts": [a.name for a in snapshot.accounts.values() if isinstance(a, InvestmentAccount)],
+        "types": INVESTMENT_TYPE_LABELS,
     }
 
 
 CREDITOR_KIND_LABELS = {
     CreditorKind.PERSON: "People", CreditorKind.SERVICE: "Services", CreditorKind.COMPANY: "Companies",
 }
+CREDITOR_KIND_EMOJIS = {CreditorKind.PERSON: "👥", CreditorKind.SERVICE: "🧾", CreditorKind.COMPANY: "🏢"}
 
 
 def build_debts(snapshot: Snapshot, month: str = "") -> dict:
@@ -692,7 +783,10 @@ def build_debts(snapshot: Snapshot, month: str = "") -> dict:
             for a in accounts
             for c in a.get_kind(kind).values()
         ]
-        kinds.append({"kind": kind.value, "title": title, "rows": rows, "net": sum(r["amount"] for r in rows)})
+        kinds.append({
+            "kind": kind.value, "title": title, "emoji": CREDITOR_KIND_EMOJIS[kind],
+            "rows": rows, "net": sum(r["amount"] for r in rows),
+        })
 
     # Each movement is about whoever its comment names, in its debt account.
     movements = account_movements(snapshot, [a.name for a in accounts], month)
@@ -771,9 +865,30 @@ def work_form(work: Work, month: str = "", values: dict | None = None) -> dict:
     return {
         "fields": {"month": month, **values},
         "deductions": work.deductions,
+        "autofill": last_month_fields(work),
         "editing": month in by_month,
         "company_names": list(work.companies),
         "position_names": sorted({p for c in work.companies.values() for p in c.positions}),
+    }
+
+
+def last_month_fields(work: Work) -> dict | None:
+    """
+    The values of the fields of the work month form for the last month, to fill it
+    in with them in the browser: all but its month and its received payment date.
+    None without months.
+    """
+    if not work.months:
+        return None
+    m = work.months[-1]
+    return {
+        "month": m.month,
+        "fields": {
+            "company": m.company or "",
+            "position": m.position or "",
+            "gross": "" if m.gross is None else f"{m.gross:,.2f}",
+            **{f"deduction:{n}": f"{m.deductions[n]:,.2f}" if n in m.deductions else "" for n in work.deductions},
+        },
     }
 
 
@@ -865,28 +980,32 @@ def account_fields(snapshot: Snapshot, base_name: str) -> dict:
     }
 
 
-def bases_by_type(snapshot: Snapshot) -> dict[str, list[str]]:
-    """Names of the base movements that can be picked, grouped by movement type."""
-    bases = snapshot.manual_base_movements()
+def bases_by_type(bases: dict[str, MovementBase]) -> dict[str, list[str]]:
+    """Names of these base movements, sorted and grouped by movement type (every type, even without any)."""
     return {
         t.value: [n for n in sorted(bases) if bases[n].move_type == t]
         for t in MovementType
     }
 
 
+def default_move_type(by_type: dict[str, list[str]]) -> str:
+    """The movement type picked by default: a loss, unless there are only base movements of other types."""
+    if by_type.get(MovementType.LOSS.value):
+        return MovementType.LOSS.value
+    return next((t for t, names in by_type.items() if names), MovementType.LOSS.value)
+
+
 def base_fields(snapshot: Snapshot, move_type: str = "", base_movement: str = "") -> dict:
     """
-    Base movements to pick from for a movement type, and the account fields of
-    the selected one. Without a type, it is taken from the base movement or
-    defaults to the first type that has base movements.
+    Base movements of the Ledger tab to pick from for a movement type, and the
+    account fields of the selected one. Without a type, it is taken from the base
+    movement or defaults to a loss (see default_move_type).
     """
-    by_type = bases_by_type(snapshot)
-    base = snapshot.manual_base_movements().get(base_movement)
+    ledger_bases = snapshot.ledger_base_movements()
+    by_type = bases_by_type(ledger_bases)
+    base = ledger_bases.get(base_movement)
     if move_type not in by_type:
-        move_type = (
-            base.move_type.value if base
-            else next((t for t, names in by_type.items() if names), MovementType.GAIN.value)
-        )
+        move_type = base.move_type.value if base else default_move_type(by_type)
     bases = by_type[move_type]
     if base_movement not in bases:
         base_movement = bases[0] if bases else ""
@@ -917,6 +1036,41 @@ def base_sides(snapshot: Snapshot, move_type: str) -> dict:
                 if not snapshot.result_types[i].internal
             ]
         ),
+    }
+
+
+def tab_base_fields(snapshot: Snapshot, bases: dict[str, MovementBase], base_movement: str = "") -> dict:
+    """These base movements to pick from, sorted, and the account fields of the selected one (the first one by default)."""
+    names = sorted(bases)
+    if base_movement not in bases:
+        base_movement = next(iter(names), "")
+    return {"bases": names, "base_movement": base_movement, "fields": account_fields(snapshot, base_movement)}
+
+
+def debt_form_fields(snapshot: Snapshot, base_movement: str = "") -> dict:
+    """
+    The debt base movements to pick from in the Debt tab (see tab_base_fields), and
+    who of the debt accounts a movement can be about, by kind: people and services,
+    but no companies, whose debt comes from the salaries of the Work tab.
+    """
+    who: dict[str, set[str]] = {label: set() for label in CREDITOR_KIND_LABELS.values()}
+    for a in snapshot.accounts.values():
+        if isinstance(a, DebtAccount):
+            for c in a.creditors.values():
+                if c.kind != CreditorKind.COMPANY:
+                    who[CREDITOR_KIND_LABELS[c.kind]].add(c.name)
+    return {
+        **tab_base_fields(snapshot, snapshot.debt_base_movements(), base_movement),
+        "who": {label: sorted(names) for label, names in who.items() if names},
+    }
+
+
+def card_payment_fields(snapshot: Snapshot, base_movement: str = "") -> dict:
+    """The card payment base movements to pick from in the Credit Cards tab (see tab_base_fields), with their card."""
+    bases = snapshot.card_payment_base_movements()
+    return {
+        **tab_base_fields(snapshot, bases, base_movement),
+        "cards": {n: b.acc_debit.name for n, b in bases.items()},
     }
 
 
@@ -1436,6 +1590,7 @@ def build_results(snapshot: Snapshot, month: str = "", initial: bool = False) ->
         "months": months_of(snapshot),
         "month": month,
         "initial": initial,
+        **equity_metrics(snapshot, month),
         "gains": by_result_type(MovementType.GAIN),
         "losses": by_result_type(MovementType.LOSS),
         "statement": statement,
@@ -1443,6 +1598,65 @@ def build_results(snapshot: Snapshot, month: str = "", initial: bool = False) ->
         "equity": equity,
         "equity_series": series,
     }
+
+
+EXPENSES_DAYS = 365  # the expenses covered by equity are the average of the losses of this many days
+
+
+def equity_metrics(snapshot: Snapshot, month: str = "") -> dict:
+    """
+    How much equity changed in `month` (all the ledger by default), nominal and real,
+    and how many months of expenses it covers at its end.
+
+    The change goes from the equity at the start of the period, plus the initial
+    amounts of the accounts starting in it (they aren't a change), to its equity at the
+    end: the end of the month (up to today), else the last date of the ledger. The real
+    change deflates both by the CPI of the base currency at their dates (None without one).
+    The expenses are the average monthly losses of the EXPENSES_DAYS up to the end of the
+    period, of the non-internal base movements but the deductions of the salary, which
+    would stop with it.
+    """
+    none = {"equity_change": None, "equity_real_change": None, "months_covered": None, "monthly_expenses": None}
+    dates = snapshot.all_rows.move_date
+    if not len(dates):
+        return none
+    today = dt.date.today().isoformat()
+    start = f"{month}-01" if month else dates.min()
+    end = max(min(month_end(month), today), start) if month else dates.max()
+    initial = snapshot.initial_base_names
+    deductions = set(snapshot.work.deductions)
+    start_equity = end_equity = expenses = 0.0
+    window = (dt.date.fromisoformat(end) - dt.timedelta(days=EXPENSES_DAYS - 1)).isoformat()
+    window = max(window, dates.min())
+    for move in snapshot.ledger().movements:
+        sign = {MovementType.GAIN: 1, MovementType.LOSS: -1}.get(move.move_type, 0)
+        if not sign or move.move_date > end:
+            continue
+        end_equity += sign * move.amount
+        if move.move_date < start or move.move_base.name in initial:
+            start_equity += sign * move.amount
+        if (
+            sign < 0 and move.move_date >= window and not move.move_base.internal
+            and move.move_base.name not in deductions
+        ):
+            expenses += move.amount
+    metrics = dict(none)
+    if start_equity:
+        metrics["equity_change"] = (end_equity - start_equity) / abs(start_equity)
+    cpi = snapshot.base_currency.customer_price_index
+    if start_equity and cpi is not None and len(cpi):
+        before = Timestamp(start) - Timedelta(days=1)
+        cpi_start = CPI_BASE if before < cpi.index[0] == Timestamp(start) else cpi.get(before)
+        cpi_end = cpi.get(Timestamp(end))
+        if cpi_start is not None and cpi_end is not None:
+            real_start, real_end = start_equity / cpi_start, end_equity / cpi_end
+            metrics["equity_real_change"] = (real_end - real_start) / abs(real_start)
+    days = (dt.date.fromisoformat(end) - dt.date.fromisoformat(window)).days + 1
+    monthly = expenses / (days / AVERAGE_MONTH_DAYS)
+    if monthly > 0:
+        metrics["monthly_expenses"] = monthly
+        metrics["months_covered"] = end_equity / monthly
+    return metrics
 
 
 def over_time_charts(snapshot: Snapshot, month: str = "") -> dict:
@@ -1561,7 +1775,8 @@ def build_currencies(snapshot: Snapshot, today: dt.date | None = None) -> dict:
     The currencies: the daily CPI of the base currency and its inflation in each month
     (projected for the months that haven't ended by `today`), and, for each other
     currency, its value in the base currency (nominal) and that value deflated by the
-    CPI (real) over time; the balances of the accounts in each currency; and the
+    CPI (real) over time; the balances of the accounts in each currency, and the share
+    of equity in the other currencies (None without them or positive equity); and the
     share of each currency in the assets at each month end.
     """
     today = today or dt.date.today()
@@ -1635,9 +1850,15 @@ def build_currencies(snapshot: Snapshot, today: dt.date | None = None) -> dict:
         for c in snapshot.currencies
         if any(a.currency.name == c for a in assets)
     }
+    base_totals = totals(base.name)
+    # The share of equity (assets minus liabilities) in the accounts in other currencies, today
+    other_equity = sum(o["assets"] - o["liabilities"] for o in others)
+    equity = base_totals["assets"] - base_totals["liabilities"] + other_equity
     return {
-        "base": {"name": base.name, "description": base.description, **totals(base.name)},
+        "base": {"name": base.name, "description": base.description, **base_totals},
         "others": others,
+        "other_equity": other_equity,
+        "other_equity_share": other_equity / equity if equity > 1e-9 and others else None,
         "last_month": known[-1] if known else None,  # the last month ended
         "last_12_monthly": (
             (1 + known[-1]["last_12"]) ** (1 / 12) - 1 if known and known[-1]["last_12"] is not None else None

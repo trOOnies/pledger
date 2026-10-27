@@ -5,21 +5,7 @@
     <input type="date" name="move_date" value="{{ values.move_date }}" required data-future-warning>
     <span class="hint warn" hidden>⚠️ This date is in the future.</span>
   </label>
-  <label>Base movement
-    <select name="base_movement" hx-get="/form/conversion-accounts" hx-target="#conversion-fields" hx-swap="innerHTML">
-      {% for name in bases %}<option {% if name == base_movement %}selected{% endif %}>{{ name }}</option>{% endfor %}
-    </select>
-  </label>
-  <div id="conversion-fields" class="stack">{% include "_account_fields.html" %}</div>
-  <label>Amount in {{ base_currency }}
-    <span class="money-input">
-      <span class="prefix">{{ currency }}</span>
-      <input name="amount_base" inputmode="decimal" min="0" value="{{ values.amount_base }}" placeholder="0.00" required autocomplete="off" data-money>
-    </span>
-  </label>
-  <label><span>Amount in {{ other_currencies | join(" or ") }} <em class="optional">(the currency of the other account)</em></span>
-    <input name="amount_other" inputmode="decimal" min="0" value="{{ values.amount_other }}" placeholder="0.0000" required autocomplete="off">
-  </label>
+  <div id="conversion-fields" class="stack">{% include "_conversion_fields.html" %}</div>
   <label><span>Comment <em class="optional">(optional)</em></span>
     <input name="comment" value="{{ values.comment }}" autocomplete="off">
   </label>

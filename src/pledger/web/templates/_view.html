@@ -1,11 +1,4 @@
 {% from "_id.html" import id_cell, id_header %}
-{% set period = ("in " ~ month) if month else "all time" %}
-<div class="cards">
-  <div class="card"><span class="label">Gains <small>{{ period }}{% if account %}, {{ account }}{% endif %}</small></span><span class="num money gain">{{ gains | money }}</span></div>
-  <div class="card"><span class="label">Losses <small>{{ period }}{% if account %}, {{ account }}{% endif %}</small></span><span class="num money loss">{{ losses | money }}</span></div>
-  <div class="card"><span class="label">Profit <small>{{ period }}{% if account %}, {{ account }}{% endif %}</small></span><span class="num money {{ 'gain' if profit >= 0 else 'loss' }}">{{ profit | money }}</span></div>
-</div>
-
 <div class="panel">
   <h2>Movements <small>{{ movements | length }}</small></h2>
   <div class="table-wrap">

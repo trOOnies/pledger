@@ -1,3 +1,4 @@
+{% from "_type_buttons.html" import type_buttons %}
 {% from "_bars.html" import bars with context %}
 {% from "_line.html" import ratio_panel with context %}
 {% set as_of = ("as of end of " ~ month) if month else "today" %}
@@ -19,11 +20,12 @@
 
 {% set upto = ("up to " ~ month) if month else "all time" %}
 <div class="charts-grid">
-  {% for key, title, what, chart, series in (
-    ("debt-ratio", "Debt over equity", "Liabilities", debt_ratio, debt_series),
-    ("liquidity-ratio", "Net liquidity over equity", "Liquid assets minus liquid liabilities", liquidity_ratio, liquidity_series),
+  {# Debt in the liability color #}
+  {% for key, title, what, chart, series, slot in (
+    ("liquidity-ratio", "Net liquidity over equity", "Liquid assets minus liquid liabilities", liquidity_ratio, liquidity_series, 1),
+    ("debt-ratio", "Debt over equity", "Liabilities", debt_ratio, debt_series, 2),
   ) %}
-  {{ ratio_panel(key, title, what, chart, series, upto) }}
+  {{ ratio_panel(key, title, what, chart, series, upto, slot) }}
   {% endfor %}
 </div>
 
@@ -33,18 +35,10 @@
     <form class="stack" hx-post="/accounts" hx-target="#accounts-view">
       {% if account_error %}<p class="msg error">{{ account_error }}</p>{% endif %}
       {% if account_success %}<p class="msg success">{{ account_success }}</p>{% endif %}
-      <div class="pair">
-        <label>Name
-          <input name="name" value="{{ values.acc_name }}" required autocomplete="off">
-        </label>
-        <label>Type
-          <select name="acc_type">
-            {% for type in account_types %}
-            <option value="{{ type }}" {% if type == values.acc_type %}selected{% endif %}>{{ type | capitalize }}</option>
-            {% endfor %}
-          </select>
-        </label>
-      </div>
+      {{ type_buttons(account_types, values.acc_type, name="acc_type", key="new-account") }}
+      <label>Name
+        <input name="name" value="{{ values.acc_name }}" required autocomplete="off">
+      </label>
       <label>Description
         <input name="description" value="{{ values.acc_description }}" required autocomplete="off">
       </label>

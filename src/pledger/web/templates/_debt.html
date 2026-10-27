@@ -46,7 +46,7 @@
   <div class="charts-grid">
   {% for k in kinds %}
   <div class="panel">
-    <h2>{{ k.title }} <small>{{ k.rows | length }}</small></h2>
+    <h2>{{ k.emoji }} {{ k.title }} <small>{{ k.rows | length }}</small></h2>
     <table data-sortable="debts-{{ k.kind }}">
       <thead><tr><th>Name</th><th>Role</th><th title="The role they should have: services are expected to be creditors and companies debtors, unless set in the creditors YAML">Expected</th>{% if multiple_accounts %}<th>Account</th>{% endif %}<th class="num">Amount</th></tr></thead>
       <tbody>
@@ -92,5 +92,5 @@
     </table>
   </div>
 
-  {{ account_movements(movements, "debt-movements", ("in " ~ month) if month else "all time", who=True, account=multiple_accounts) }}
+  {{ account_movements(movements, "debt-movements", ("in " ~ month) if month else "all time", who=True, account=multiple_accounts, added_here="the transfers of the debt accounts") }}
 </div>

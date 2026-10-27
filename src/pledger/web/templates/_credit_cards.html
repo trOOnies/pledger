@@ -1,5 +1,5 @@
 {% from "_bars.html" import bars with context %}
-{% from "_line.html" import column_chart, ratio_panel with context %}
+{% from "_line.html" import column_chart, line_chart, ratio_panel with context %}
 {% from "_account_movements.html" import account_movements with context %}
 <div class="view">
   {% if negative %}
@@ -40,7 +40,7 @@
         "change_text": c.count ~ (" charge" if c.count == 1 else " charges"),
       }] %}
     {% endfor %}
-    {{ column_chart(charged_chart, ns.points, "Charged to the credit cards per month from " ~ charged_series[0].month ~ " to " ~ charged_chart.last.month ~ ", " ~ (charged_chart.last.value | money) ~ " in the last one", series=2) }}
+    {{ column_chart(charged_chart, ns.points, "Charged to the credit cards per month from " ~ charged_series[0].month ~ " to " ~ charged_chart.last.month ~ ", " ~ (charged_chart.last.value | money) ~ " in the last one", series=8) }}
     <p class="muted small">What was charged to the credit cards (their credits) in each month, without the payments
       nor the initial amounts.</p>
     <details class="chart-table">
@@ -65,8 +65,53 @@
     {% endif %}
   </section>
 
+  <div class="charts-grid">
+  <section class="panel">
+    <h2>Net owed <small>{{ ("up to " ~ month) if month else "all time" }}, at each month end</small></h2>
+    {% if owed_chart %}
+    <p class="equity-headline">
+      <span class="num-lg money {{ 'gain' if owed_chart.last.value < 0 }}">{{ owed_chart.last.value | money }}</span>
+      <span class="muted">in {{ owed_chart.last.month }}</span>
+    </p>
+    {% set ns = namespace(points=[]) %}
+    {% for p in owed_chart.points %}
+      {% set ns.points = ns.points + [{
+        "x": p.x, "y": p.y, "label": p.month,
+        "value_text": p.value | money,
+        "change_text": ("+" if p.change >= 0 else "") ~ (p.change | money) ~ " in the month",
+        "real_text": (p.real | money) if p.get("real") is not none else "-",
+      }] %}
+    {% endfor %}
+    {{ line_chart(owed_chart, ns.points, "Net owed on the credit cards from " ~ owed_amounts[0].month ~ " to " ~ owed_chart.last.month ~ ", ending at " ~ (owed_chart.last.value | money), series=2) }}
+    <p class="muted small">What is owed on all the credit cards at the end of each month, in {{ base_currency }}{% if owed_chart.real_path %};
+      <strong>real</strong>: deflated by the CPI at the end of each month, at the prices of {{ owed_chart.real_date }}{% endif %}.</p>
+    <details class="chart-table">
+      <summary>Show table</summary>
+      <div class="table-wrap">
+        <table data-sortable="owed">
+          <thead><tr><th>Month</th><th class="num">Change</th><th class="num">Owed</th>{% if owed_chart.real_path %}<th class="num" title="At the prices of {{ owed_chart.real_date }}">Real</th>{% endif %}</tr></thead>
+          <tbody>
+          {% for p in owed_amounts | reverse %}
+          <tr>
+            <td class="nowrap">{{ p.month }}</td>
+            <td class="num money" data-sort="{{ p.change }}">{{ p.change | money }}</td>
+            <td class="num money" data-sort="{{ p.value }}">{{ p.value | money }}</td>
+            {% if owed_chart.real_path %}<td class="num money" data-sort="{{ p.real if p.real is not none else '' }}">{{ (p.real | money) if p.real is not none else "-" }}</td>{% endif %}
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+    {% else %}
+    <p class="muted">Nothing owed on the credit cards yet.</p>
+    {% endif %}
+  </section>
+
+  {# Charges in red; what is owed in the liability orange, lighter over equity #}
   {{ ratio_panel("owed-ratio", "Owed over equity", "Net owed on the credit cards", owed_ratio, owed_series,
-                 ("up to " ~ month) if month else "all time") }}
+                 ("up to " ~ month) if month else "all time", "liability-nested") }}
+  </div>
 
   <div class="panel">
     <h2>Credit cards</h2>
@@ -92,5 +137,5 @@
   <p class="muted small">Credit cards are liquid liabilities: charging them is a credit, paying them a debit.
     Charged and paid leave out the initial amounts.</p>
 
-  {{ account_movements(movements, "credit-card-movements", ("in " ~ month) if month else "all time") }}
+  {{ account_movements(movements, "credit-card-movements", ("in " ~ month) if month else "all time", added_here="the card payments") }}
 </div>

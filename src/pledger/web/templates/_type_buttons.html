@@ -1,0 +1,18 @@
+{# The type of a form as mutually exclusive buttons, colored like their badges or series
+   (gain, loss, transfer, asset, liability), for the field `name`. With a `url`, picking one
+   gets it with the type into `target`. #}
+{% macro type_buttons(types, selected, url="", target="", name="move_type", key="") %}
+{% set key = key or target[1:] %}
+<div class="field">
+  <span class="field-label" id="{{ key }}-type">Type</span>
+  <div class="segmented types" role="radiogroup" aria-labelledby="{{ key }}-type">
+    {% for type in types %}
+    <label class="{{ type }}">
+      <input type="radio" name="{{ name }}" value="{{ type }}" {% if type == selected %}checked{% endif %}
+        {% if url %}hx-get="{{ url }}" hx-target="{{ target }}" hx-swap="innerHTML"{% endif %}>
+      {{ type | capitalize }}
+    </label>
+    {% endfor %}
+  </div>
+</div>
+{% endmacro %}

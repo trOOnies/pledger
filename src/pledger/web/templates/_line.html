@@ -156,8 +156,9 @@
 </div>
 {% endmacro %}
 
-{# A panel with a ratio_series over equity at each month end: its line chart, headline and table. #}
-{% macro ratio_panel(key, title, what, chart, series, upto) %}
+{# A panel with a ratio_series over equity at each month end: its line chart, in the color of a
+   categorical `slot` (or of another --series-* color, like "liability-nested"), headline and table. #}
+{% macro ratio_panel(key, title, what, chart, series, upto, slot=1) %}
 <section class="panel">
   <h2>{{ title }} <small>{{ upto }}, at each month end</small></h2>
   {% if chart %}
@@ -173,7 +174,7 @@
       "change_text": (p.amount | money) ~ " / " ~ (p.equity | money),
     }] %}
   {% endfor %}
-  {{ line_chart(chart, ns.points, title ~ " from " ~ series[0].month ~ " to " ~ chart.last.month ~ ", ending at " ~ ("%.1f" | format(100 * chart.last.value)) ~ "%", money=False) }}
+  {{ line_chart(chart, ns.points, title ~ " from " ~ series[0].month ~ " to " ~ chart.last.month ~ ", ending at " ~ ("%.1f" | format(100 * chart.last.value)) ~ "%", money=False, series=slot) }}
   <p class="muted small">{{ what }} over equity (assets minus liabilities); months without positive equity are left out.</p>
   <details class="chart-table">
     <summary>Show table</summary>

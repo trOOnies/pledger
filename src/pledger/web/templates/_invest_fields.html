@@ -2,24 +2,24 @@
 {% include "_account_fields.html" %}
 {% if investment %}
 <label><span>Investment{% if investment == "optional" %} <em class="optional">(optional)</em>{% endif %}</span>
-  <input name="investment" value="{{ values.investment }}" list="investment-names" autocomplete="off"
-    {% if investment == "required" %}required{% endif %}>
-  <datalist id="investment-names">{% for n in investment_names %}<option value="{{ n }}">{% endfor %}</datalist>
+  {% if investments_by_account %}
+  <select name="investment" {% if investment == "required" %}required{% endif %}>
+    <option value="">{{ "Choose…" if investment == "required" else "-" }}</option>
+    {% for account, names in investments_by_account.items() %}
+    <optgroup label="{{ account }}">
+      {% for n in names %}<option {% if n == values.investment %}selected{% endif %}>{{ n }}</option>{% endfor %}
+    </optgroup>
+    {% endfor %}
+  </select>
+  {% else %}
+  <select name="investment" {% if investment == "required" %}required{% endif %} disabled><option value="">No investments yet</option></select>
+  {% endif %}
+  {% if investment == "required" %}<span class="hint">A new one? Add it in <strong>New investment</strong> first.</span>{% endif %}
 </label>
 {% endif %}
 {% if quantity %}
 <label><span>Quantity{% if quantity == "optional" %} <em class="optional">(optional)</em>{% endif %}</span>
   <input name="quantity" inputmode="decimal" value="{{ values.quantity }}" placeholder="0" autocomplete="off"
     {% if quantity == "required" %}required{% endif %}>
-</label>
-{% endif %}
-{% if investment_types %}
-<label><span>Type <em class="optional">(for a new investment)</em></span>
-  <select name="investment_type">
-    <option value="">Its current one</option>
-    {% for t, label in investment_types.items() %}
-    <option value="{{ t.value }}" {% if t.value == values.investment_type %}selected{% endif %}>{{ label }}</option>
-    {% endfor %}
-  </select>
 </label>
 {% endif %}

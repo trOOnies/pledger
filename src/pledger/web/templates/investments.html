@@ -16,6 +16,9 @@
 {% endfor %}
 {% if has_results %}{{ signed(i.total) }}{% endif %}
 {% endmacro %}
+{% macro fees_cell(i) %}
+{% if i.fees_share is none %}<td class="num muted">-</td>{% else %}<td class="num loss" data-sort="{{ i.fees_share }}">{{ "%.1f" | format(100 * i.fees_share) }}%</td>{% endif %}
+{% endmacro %}
 {% block content %}
 <div class="view">
 {% if not accounts %}
@@ -43,7 +46,7 @@
   <details class="msg warn alert" role="alert">
     <summary>⚠ {{ untyped | length }} investment{{ "s have" if untyped | length > 1 else " has" }} no type: {{ untyped | map(attribute="name") | join(", ") }}.</summary>
     <p class="small">They are only in the ledger. Add their type in <code>{{ settings.investments_path.name if settings.investments_path else "investment.yaml" }}</code>,
-      under their account (e.g. <code>{{ untyped[0].name }}: stock</code>), or pick it in a new movement below.</p>
+      under their account (e.g. <code>{{ untyped[0].name }}: stock</code>), or add them with their type in <strong>New investment</strong> below.</p>
   </details>
   {% endif %}
   <div class="cards">
@@ -64,9 +67,10 @@
 
   {% if invested_chart %}
   <div class="charts-grid">
-    {% for key, title, what, chart, series, signed, show in (
-      ("invested", "Total invested", "Invested", invested_chart, invested_series, False, True),
-      ("result", "Total result", "Total result", result_chart, result_series, True, has_results or has_interest),
+    {# The total result in green #}
+    {% for key, title, what, chart, series, signed, show, slot in (
+      ("invested", "Total invested", "Invested", invested_chart, invested_series, False, True, 1),
+      ("result", "Total result", "Total result", result_chart, result_series, True, has_results or has_interest, 3),
     ) if show %}
     <section class="panel">
       <h2>{{ title }} <small>all time, at each month end</small></h2>
@@ -83,7 +87,7 @@
           "real_text": (p.real | money) if p.get("real") is not none else "-",
         }] %}
       {% endfor %}
-      {{ line_chart(chart, ns.points, title ~ " from " ~ series[0].month ~ " to " ~ chart.last.month ~ ", ending at " ~ (chart.last.value | money), series=loop.index) }}
+      {{ line_chart(chart, ns.points, title ~ " from " ~ series[0].month ~ " to " ~ chart.last.month ~ ", ending at " ~ (chart.last.value | money), series=slot) }}
       {% if chart.real_path %}
       <p class="muted small"><strong>Real</strong>: the total invested at each month end deflated by the CPI, at the
         prices of {{ chart.real_date }}.</p>
@@ -131,7 +135,7 @@
   <div class="panel">
     <h2>Investments</h2>
     <table data-sortable="investments">
-      <thead><tr><th>Investment</th><th>Type</th><th>Account</th><th class="num">Quantity</th><th class="num" title="Amount over quantity">Price</th><th class="num">Amount</th><th class="num">Share</th>{{ result_heads() }}</tr></thead>
+      <thead><tr><th>Investment</th><th>Type</th><th>Account</th><th class="num">Quantity</th><th class="num" title="Amount over quantity">Price</th><th class="num">Amount</th><th class="num">Share</th>{{ result_heads() }}{% if has_fees %}<th class="num" title="The broker fees as a share of the total result; - without fees or a positive total result">Fees of result</th>{% endif %}</tr></thead>
       <tbody>
       {% for h in holdings %}
       <tr>
@@ -143,11 +147,23 @@
         <td class="num money {{ 'loss' if h.amount < 0 }}" data-sort="{{ h.amount }}">{{ h.amount | money }}</td>
         <td class="num muted" data-sort="{{ h.share }}">{{ '%.1f' | format(h.share) }}%</td>
         {{ result_cells(h) }}
+        {% if has_fees %}{{ fees_cell(h) }}{% endif %}
       </tr>
       {% else %}
-      <tr><td colspan="{{ 7 + result_bases | length + (1 if has_capital else 0) + (1 if has_results else 0) }}" class="muted">No investments.</td></tr>
+      <tr><td colspan="{{ 7 + result_bases | length + (1 if has_capital else 0) + (1 if has_results else 0) + (1 if has_fees else 0) }}" class="muted">No investments.</td></tr>
       {% endfor %}
       </tbody>
+      {% if holdings | length > 1 %}
+      <tfoot>
+      <tr>
+        <th colspan="5">Total</th>
+        <th class="num money {{ 'loss' if held.amount < 0 }}">{{ held.amount | money }}</th>
+        <th class="num muted">100.0%</th>
+        {{ result_cells(held) }}
+        {% if has_fees %}{{ fees_cell(held) }}{% endif %}
+      </tr>
+      </tfoot>
+      {% endif %}
     </table>
     <p class="muted small">Amounts and quantities are the initial ones of the investments file plus the investment
       movements below. The results are the totals of the movements naming each investment, whatever their
@@ -251,16 +267,24 @@
   </div>
 {% endif %}
 
-{% if invest_form %}
 <div class="layout">
-  <aside class="panel">
-    <h2>New investment movement</h2>
-    {{ invest_form | safe }}
+  <aside class="column">
+    <section class="panel">
+      <h2>New investment</h2>
+      {{ new_investment_form | safe }}
+    </section>
+    {% if invest_form %}
+    <section class="panel">
+      <h2>New investment movement</h2>
+      {{ invest_form | safe }}
+    </section>
+    {% endif %}
   </aside>
+  {% if invest_form %}
   <section id="invest-movements" hx-get="/investments/movements" hx-trigger="investments-changed from:body">
     {% include "_invest_movements.html" %}
   </section>
+  {% endif %}
 </div>
-{% endif %}
 </div>
 {% endblock %}

@@ -18,6 +18,14 @@
   </label>
 </form>
 
-<div id="credit-cards-view">{% include "_credit_cards.html" %}</div>
+<div class="layout">
+  <aside class="panel">
+    <h2>New card payment</h2>
+    {{ card_payment_form | safe }}
+  </aside>
+  <section id="credit-cards-view" hx-get="/credit-cards" hx-include="#filters" hx-trigger="credit-cards-changed from:body">
+    {% include "_credit_cards.html" %}
+  </section>
+</div>
 {% endif %}
 {% endblock %}

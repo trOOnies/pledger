@@ -15,8 +15,11 @@ from pledger.web.store import Snapshot
 from pledger.web.views import (
     MOVEMENT_SOURCES,
     base_fields,
+    card_payment_fields,
     conversion_fields,
+    debt_form_fields,
     invest_fields,
+    new_investment_fields,
     row_anchor,
 )
 
@@ -121,8 +124,9 @@ def render_form(request: Request, snapshot: Snapshot, values: dict, **extra):
 def render_invest_form(request: Request, snapshot: Snapshot, values: dict, **extra):
     """The new movement form of the Investments tab, for the INVEST base movements."""
     values.setdefault("move_date", dt.date.today().isoformat())
-    invest = invest_fields(snapshot, values.get("base_movement", ""))
+    invest = invest_fields(snapshot, values.get("base_movement", ""), values.get("move_type", ""))
     values["base_movement"] = invest["base_movement"]
+    values["move_type"] = invest["move_type"]
     return templates.TemplateResponse(
         request,
         "_invest_form.html",
@@ -135,11 +139,27 @@ def render_invest_form(request: Request, snapshot: Snapshot, values: dict, **ext
     )
 
 
+def render_new_investment_form(request: Request, snapshot: Snapshot, values: dict, **extra):
+    """The new investment form of the Investments tab, for the investments YAML."""
+    settings = request.app.state.store.settings
+    return templates.TemplateResponse(
+        request,
+        "_new_investment_form.html",
+        {
+            "currency": settings.currency,
+            "path": settings.investments_path.name if settings.investments_path else "investment.yaml",
+            "values": values,
+            **new_investment_fields(snapshot),
+            **extra,
+        },
+    )
+
+
 def render_conversion_form(request: Request, snapshot: Snapshot, values: dict, **extra):
     """The new conversion form of the Currencies tab, for the conversions CSV."""
     values.setdefault("move_date", dt.date.today().isoformat())
-    fields = conversion_fields(snapshot, values.get("base_movement", ""))
-    values["base_movement"] = fields["base_movement"]
+    fields = conversion_fields(snapshot, values.get("sold", ""), values.get("bought", ""))
+    values["sold"], values["bought"] = fields["sold"], fields["bought"]
     return templates.TemplateResponse(
         request,
         "_conversion_form.html",
@@ -150,4 +170,28 @@ def render_conversion_form(request: Request, snapshot: Snapshot, values: dict, *
             **fields,
             **extra,
         },
+    )
+
+
+def render_debt_form(request: Request, snapshot: Snapshot, values: dict, **extra):
+    """The new debt movement form of the Debt tab, for the debt base movements."""
+    values.setdefault("move_date", dt.date.today().isoformat())
+    fields = debt_form_fields(snapshot, values.get("base_movement", ""))
+    values["base_movement"] = fields["base_movement"]
+    return templates.TemplateResponse(
+        request,
+        "_debt_form.html",
+        {"currency": request.app.state.store.settings.currency, "values": values, **fields, **extra},
+    )
+
+
+def render_card_payment_form(request: Request, snapshot: Snapshot, values: dict, **extra):
+    """The new card payment form of the Credit Cards tab, for the card payment base movements."""
+    values.setdefault("move_date", dt.date.today().isoformat())
+    fields = card_payment_fields(snapshot, values.get("base_movement", ""))
+    values["base_movement"] = fields["base_movement"]
+    return templates.TemplateResponse(
+        request,
+        "_card_payment_form.html",
+        {"currency": request.app.state.store.settings.currency, "values": values, **fields, **extra},
     )

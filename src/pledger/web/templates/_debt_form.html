@@ -1,0 +1,41 @@
+<form id="debt-form" class="stack" hx-post="/debt/movements" hx-swap="outerHTML">
+  {% if error %}<p class="msg error">{{ error }}</p>{% endif %}
+  {% if success %}<p class="msg success">{{ success }}</p>{% endif %}
+  {% if bases %}
+  <label>Date
+    <input type="date" name="move_date" value="{{ values.move_date }}" required data-future-warning>
+    <span class="hint warn" hidden>⚠️ This date is in the future.</span>
+  </label>
+  <label>Base movement
+    <select name="base_movement" hx-get="/form/accounts" hx-target="#debt-account-fields" hx-swap="innerHTML">
+      {% for name in bases %}<option {% if name == base_movement %}selected{% endif %}>{{ name }}</option>{% endfor %}
+    </select>
+  </label>
+  <div id="debt-account-fields">{% include "_account_fields.html" %}</div>
+  <label>Who
+    <select name="who" required>
+      <option value="">Choose…</option>
+      {% for kind, names in who.items() %}
+      <optgroup label="{{ kind }}">
+        {% for name in names %}<option {% if name == values.who %}selected{% endif %}>{{ name }}</option>{% endfor %}
+      </optgroup>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Amount
+    <span class="money-input">
+      <span class="prefix">{{ currency }}</span>
+      <input name="amount" inputmode="decimal" min="0" value="{{ values.amount }}" placeholder="0.00" required autocomplete="off" data-money>
+    </span>
+  </label>
+  <label><span>Comment <em class="optional">(optional)</em></span>
+    <input name="comment" value="{{ values.comment }}" autocomplete="off">
+  </label>
+  <p class="muted small">The comment names who it is about first, so their debt adds it. The debt with companies
+    comes from the salaries of the <a href="/work">Work</a> tab.</p>
+  <button type="submit">Add debt movement</button>
+  {% else %}
+  <p class="muted">No debt base movements yet: add a transfer with a debt side (any debt account or a fixed one) in the
+    <a href="/results">Results</a> tab.</p>
+  {% endif %}
+</form>

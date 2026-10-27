@@ -7,11 +7,25 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query
 
 from pledger.web.dependencies import StoreDep
-from pledger.web.schemas import InvestMovementIn
+from pledger.web.schemas import InvestmentIn, InvestMovementIn
 from pledger.web.store import StaleRowError
 from pledger.web.views import build_invest_movements
 
 router = APIRouter(prefix="/api/investments", tags=["investments"])
+
+
+@router.post("", status_code=201)
+def create_investment(store: StoreDep, investment: InvestmentIn):
+    """A new investment of an investment account, with its type, added to the investments YAML."""
+    try:
+        store.add_investment(
+            investment.account, investment.name, investment.type.value,
+            "" if investment.amount is None else investment.amount,
+            "" if investment.quantity is None else investment.quantity,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
+    return {"ok": True}
 
 
 @router.get("/movements")
@@ -24,7 +38,6 @@ def list_investment_movements(store: StoreDep):
 def create_investment_movement(store: StoreDep, movement: InvestMovementIn):
     fields = movement.model_dump()
     fields["quantity"] = "" if movement.quantity is None else movement.quantity
-    fields["investment_type"] = movement.investment_type.value if movement.investment_type else ""
     try:
         store.add(**fields, invest=True)
     except ValueError as e:

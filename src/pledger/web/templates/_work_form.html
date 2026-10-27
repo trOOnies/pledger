@@ -3,6 +3,11 @@
   <h2>{% if form.editing %}Edit {{ v.month }}{% else %}New month{% endif %}</h2>
   {% if form.error %}<p class="msg error">{{ form.error }}</p>{% endif %}
   {% if form.success %}<p class="msg success">{{ form.success }}</p>{% endif %}
+  {% if form.autofill and not form.editing %}
+  <button type="button" class="secondary" data-autofill='{{ form.autofill.fields | tojson }}'
+    title="Fill in the company, position and salaries of {{ form.autofill.month }}; the month and the received payment date are left as they are">
+    Fill in from {{ form.autofill.month }}</button>
+  {% endif %}
   <label>Month
     <input type="month" name="month" value="{{ v.month }}" placeholder="YYYY-MM" required
       hx-get="/work/form" hx-trigger="change" hx-target="#work-form" hx-swap="outerHTML">

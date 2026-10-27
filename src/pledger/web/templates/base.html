@@ -229,6 +229,17 @@
         input.value = value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       }
     });
+
+    // Autofill buttons (data-autofill): fill in the fields of their form with these
+    // values by name, in the browser only; nothing is saved until the form is sent.
+    document.addEventListener("click", (e) => {
+      const button = e.target.closest("button[data-autofill]");
+      if (!button) return;
+      for (const [name, value] of Object.entries(JSON.parse(button.dataset.autofill))) {
+        const field = button.form.elements.namedItem(name);
+        if (field) field.value = value;
+      }
+    });
   </script>
 </body>
 </html>

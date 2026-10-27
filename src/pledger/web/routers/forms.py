@@ -13,9 +13,12 @@ from pledger.web.store import LedgerStore, StaleRowError
 from pledger.web.templating import (
     money,
     remembered_month,
+    render_card_payment_form,
     render_conversion_form,
+    render_debt_form,
     render_form,
     render_invest_form,
+    render_new_investment_form,
     templates,
 )
 from pledger.web.views import (
@@ -108,6 +111,13 @@ def delete_movement(store: StoreDep, index: int, fingerprint: Annotated[str, For
     return Response(status_code=200, headers={"HX-Trigger": "ledger-changed"})
 
 
+@router.get("/form/invest-bases")
+def form_invest_bases(request: Request, store: StoreDep, move_type: str = ""):
+    return templates.TemplateResponse(
+        request, "_invest_bases.html", {**invest_fields(store.load(), move_type=move_type), "values": {}}
+    )
+
+
 @router.get("/form/invest-fields")
 def form_invest_fields(request: Request, store: StoreDep, base_movement: str = ""):
     return templates.TemplateResponse(
@@ -129,28 +139,28 @@ def create_investment_movement(
     move_date: Annotated[str, Form()],
     base_movement: Annotated[str, Form()],
     amount: Annotated[str, Form()],
+    move_type: Annotated[str, Form()] = "",
     acc_debit: Annotated[str, Form()] = "",
     acc_credit: Annotated[str, Form()] = "",
     comment: Annotated[str, Form()] = "",
     investment: Annotated[str, Form()] = "",
     quantity: Annotated[str, Form()] = "",
-    investment_type: Annotated[str, Form()] = "",
 ):
     values = {
-        "move_date": move_date, "base_movement": base_movement,
+        "move_date": move_date, "move_type": move_type, "base_movement": base_movement,
         "acc_debit": acc_debit, "acc_credit": acc_credit,
         "amount": amount, "comment": comment,
-        "investment": investment, "quantity": quantity, "investment_type": investment_type,
+        "investment": investment, "quantity": quantity,
     }
     try:
         store.add(
             move_date, base_movement, acc_debit, acc_credit, amount, comment,
-            invest=True, investment=investment, quantity=quantity, investment_type=investment_type,
+            invest=True, investment=investment, quantity=quantity,
         )
     except ValueError as e:
         return render_invest_form(request, store.load(), values, error=str(e))
-    # Keep date and base movement to speed up entering similar movements.
-    keep = {"move_date": move_date, "base_movement": base_movement}
+    # Keep date, type and base movement to speed up entering similar movements.
+    keep = {"move_date": move_date, "move_type": move_type, "base_movement": base_movement}
     value = float(amount.replace(",", ""))
     of = f" of {investment.strip()}" if investment.strip() else ""
     response = render_invest_form(
@@ -159,6 +169,30 @@ def create_investment_movement(
         + (" (dated in the future)" if move_date > dt.date.today().isoformat() else ""),
     )
     response.headers["HX-Trigger"] = "investments-changed"
+    return response
+
+
+@router.post("/investments/new")
+def create_investment(
+    request: Request,
+    store: StoreDep,
+    account: Annotated[str, Form()],
+    name: Annotated[str, Form()],
+    investment_type: Annotated[str, Form()],
+    amount: Annotated[str, Form()] = "",
+    quantity: Annotated[str, Form()] = "",
+):
+    values = {"account": account, "name": name, "investment_type": investment_type, "amount": amount, "quantity": quantity}
+    try:
+        store.add_investment(account, name, investment_type, amount, quantity)
+    except ValueError as e:
+        return render_new_investment_form(request, store.load(), values, error=str(e))
+    # Keep the account and type to speed up adding similar investments.
+    response = render_new_investment_form(
+        request, store.load(), {"account": account, "investment_type": investment_type},
+        success=f"Added {name.strip()} to {account}",
+    )
+    response.headers["HX-Trigger"] = "investment-added"
     return response
 
 
@@ -184,12 +218,22 @@ def delete_interest_movement(store: StoreDep, index: int, fingerprint: Annotated
     return Response(status_code=200, headers={"HX-Trigger": "investments-changed"})
 
 
-@router.get("/form/conversion-accounts")
-def form_conversion_accounts(request: Request, store: StoreDep, base_movement: str = ""):
+@router.get("/form/conversion-fields")
+def form_conversion_fields(
+    request: Request, store: StoreDep, sold: str = "", bought: str = "", changed: str = "",
+    acc_from: str = "", acc_to: str = "", amount_sold: str = "", amount_bought: str = "",
+):
+    snapshot = store.load()
+    values = {"acc_from": acc_from, "acc_to": acc_to, "amount_sold": amount_sold, "amount_bought": amount_bought}
     return templates.TemplateResponse(
         request,
-        "_account_fields.html",
-        {"fields": conversion_fields(store.load(), base_movement)["fields"], "values": {}},
+        "_conversion_fields.html",
+        {
+            **conversion_fields(snapshot, sold, bought, changed),
+            "currency": store.settings.currency,
+            "base_currency": snapshot.base_currency.name,
+            "values": values,
+        },
     )
 
 
@@ -205,28 +249,30 @@ def create_conversion(
     request: Request,
     store: StoreDep,
     move_date: Annotated[str, Form()],
-    base_movement: Annotated[str, Form()],
-    amount_base: Annotated[str, Form()],
-    amount_other: Annotated[str, Form()],
-    acc_debit: Annotated[str, Form()] = "",
-    acc_credit: Annotated[str, Form()] = "",
+    sold: Annotated[str, Form()],
+    bought: Annotated[str, Form()],
+    amount_sold: Annotated[str, Form()],
+    amount_bought: Annotated[str, Form()],
+    acc_from: Annotated[str, Form()] = "",
+    acc_to: Annotated[str, Form()] = "",
     comment: Annotated[str, Form()] = "",
 ):
     values = {
-        "move_date": move_date, "base_movement": base_movement,
-        "acc_debit": acc_debit, "acc_credit": acc_credit,
-        "amount_base": amount_base, "amount_other": amount_other, "comment": comment,
+        "move_date": move_date, "sold": sold, "bought": bought, "acc_from": acc_from, "acc_to": acc_to,
+        "amount_sold": amount_sold, "amount_bought": amount_bought, "comment": comment,
     }
     try:
-        store.add_conversion(move_date, base_movement, acc_debit, acc_credit, amount_base, amount_other, comment)
+        base_movement = store.add_exchange(
+            move_date, sold, bought, acc_from, acc_to, amount_sold, amount_bought, comment
+        )
     except ValueError as e:
         return render_conversion_form(request, store.load(), values, error=str(e))
-    # Keep date and base movement to speed up entering similar conversions.
-    keep = {"move_date": move_date, "base_movement": base_movement}
-    value = float(amount_base.replace(",", ""))
+    # Keep date, currencies and accounts to speed up entering similar conversions.
+    keep = {"move_date": move_date, "sold": sold, "bought": bought, "acc_from": acc_from, "acc_to": acc_to}
+    value = float(amount_sold.replace(",", ""))
     response = render_conversion_form(
         request, store.load(), keep,
-        success=f"Added {base_movement}: {money(value, store.settings.currency)}"
+        success=f"Added {base_movement}: {value:,.2f} {sold} sold for {float(amount_bought.replace(',', '')):,.2f} {bought}"
         + (" (dated in the future)" if move_date > dt.date.today().isoformat() else ""),
     )
     response.headers["HX-Trigger"] = "conversions-changed"
@@ -242,6 +288,67 @@ def delete_conversion(store: StoreDep, index: int, fingerprint: Annotated[str, F
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from None
     return Response(status_code=200, headers={"HX-Trigger": "conversions-changed"})
+
+
+@router.post("/debt/movements")
+def create_debt_movement(
+    request: Request,
+    store: StoreDep,
+    move_date: Annotated[str, Form()],
+    base_movement: Annotated[str, Form()],
+    amount: Annotated[str, Form()],
+    who: Annotated[str, Form()] = "",
+    acc_debit: Annotated[str, Form()] = "",
+    acc_credit: Annotated[str, Form()] = "",
+    comment: Annotated[str, Form()] = "",
+):
+    values = {
+        "move_date": move_date, "base_movement": base_movement, "acc_debit": acc_debit,
+        "acc_credit": acc_credit, "amount": amount, "who": who, "comment": comment,
+    }
+    try:
+        store.add_debt_movement(move_date, base_movement, acc_debit, acc_credit, amount, who, comment)
+    except ValueError as e:
+        return render_debt_form(request, store.load(), values, error=str(e))
+    # Keep date and base movement to speed up entering similar movements.
+    keep = {"move_date": move_date, "base_movement": base_movement}
+    response = render_debt_form(
+        request, store.load(), keep,
+        success=f"Added {base_movement} ({who.strip()}): {money(float(amount.replace(',', '')), store.settings.currency)}"
+        + (" (dated in the future)" if move_date > dt.date.today().isoformat() else ""),
+    )
+    response.headers["HX-Trigger"] = "debt-changed"
+    return response
+
+
+@router.post("/credit-cards/payments")
+def create_card_payment(
+    request: Request,
+    store: StoreDep,
+    move_date: Annotated[str, Form()],
+    base_movement: Annotated[str, Form()],
+    amount: Annotated[str, Form()],
+    acc_debit: Annotated[str, Form()] = "",
+    acc_credit: Annotated[str, Form()] = "",
+    comment: Annotated[str, Form()] = "",
+):
+    values = {
+        "move_date": move_date, "base_movement": base_movement, "acc_debit": acc_debit,
+        "acc_credit": acc_credit, "amount": amount, "comment": comment,
+    }
+    try:
+        store.add(move_date, base_movement, acc_debit, acc_credit, amount, comment, card_payment=True)
+    except ValueError as e:
+        return render_card_payment_form(request, store.load(), values, error=str(e))
+    # Keep date and base movement to speed up entering similar payments.
+    keep = {"move_date": move_date, "base_movement": base_movement}
+    response = render_card_payment_form(
+        request, store.load(), keep,
+        success=f"Paid {acc_debit}: {money(float(amount.replace(',', '')), store.settings.currency)}"
+        + (" (dated in the future)" if move_date > dt.date.today().isoformat() else ""),
+    )
+    response.headers["HX-Trigger"] = "credit-cards-changed"
+    return response
 
 
 def render_setup(request: Request, store: LedgerStore, values: dict, **extra):

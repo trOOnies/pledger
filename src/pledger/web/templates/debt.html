@@ -19,6 +19,14 @@
   </label>
 </form>
 
-<div id="debt-view">{% include "_debt.html" %}</div>
+<div class="layout">
+  <aside class="panel">
+    <h2>New debt movement</h2>
+    {{ debt_form | safe }}
+  </aside>
+  <section id="debt-view" hx-get="/debt" hx-include="#filters" hx-trigger="debt-changed from:body">
+    {% include "_debt.html" %}
+  </section>
+</div>
 {% endif %}
 {% endblock %}

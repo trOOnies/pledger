@@ -1,5 +1,21 @@
 {% from "_bars.html" import bars with context %}
 {% from "_line.html" import line_chart, waterfall_chart with context %}
+{% set period = ("in " ~ month) if month else "all time" %}
+<div class="cards">
+  <div class="card" title="How much equity changed {{ period }}, from its value at the start (with the initial amounts of the accounts starting then) to its value at the end">
+    <span class="label">Equity change <small>nominal, {{ period }}</small></span>
+    <span class="num {{ 'gain' if equity_change and equity_change > 0 else 'loss' if equity_change and equity_change < 0 }}">{{ equity_change | signed_percent }}</span>
+  </div>
+  <div class="card" title="The same change, with both values deflated by the CPI of the base currency at their dates{% if equity_real_change is none %}: there is no CPI for them{% endif %}">
+    <span class="label">Equity change <small>real, {{ period }}</small></span>
+    <span class="num {{ 'gain' if equity_real_change and equity_real_change > 0 else 'loss' if equity_real_change and equity_real_change < 0 }}">{{ equity_real_change | signed_percent }}</span>
+  </div>
+  <div class="card" title="{% if monthly_expenses %}Equity at the end of the period over the average monthly expenses of the year up to then ({{ monthly_expenses | money }}): the losses of the non-internal base movements, but the deductions of the salary{% else %}No expenses in the year up to the end of the period{% endif %}">
+    <span class="label">Equity in months of expenses <small>{{ ("end of " ~ month) if month else "now" }}</small></span>
+    <span class="num {{ 'loss' if months_covered is not none and months_covered < 0 }}">{% if months_covered is none %}-{% else %}{{ "%.1f" | format(months_covered) }} months{% endif %}</span>
+  </div>
+</div>
+
 <section class="panel">
   <h2>Gains &amp; losses by result type <small>{{ ("in " ~ month) if month else "all time" }}</small></h2>
   <div class="composition-pair">

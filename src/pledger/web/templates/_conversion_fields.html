@@ -1,0 +1,50 @@
+{# The fields of a conversion that depend on its currencies: see views.conversion_fields. #}
+{% macro currency_select(name, label, selected) %}
+<label>{{ label }}
+  <select name="{{ name }}" hx-get="/form/conversion-fields" hx-target="#conversion-fields" hx-swap="innerHTML"
+    hx-include="closest form" hx-vals='{"changed": "{{ name }}"}'>
+    {% for c in currencies %}<option {% if c == selected %}selected{% endif %}>{{ c }}</option>{% endfor %}
+  </select>
+</label>
+{% endmacro %}
+{% macro account(name, label, fixed, options) %}
+<label>{{ label }}
+  {% if fixed %}
+  <input value="{{ fixed }}" readonly tabindex="-1" class="fixed">
+  <input type="hidden" name="{{ name }}" value="{{ fixed }}">
+  {% elif options %}
+  <select name="{{ name }}" required>
+    {% if options | length > 1 %}<option value="">Choose…</option>{% endif %}
+    {% for acc in options %}<option {% if acc == values[name] %}selected{% endif %}>{{ acc }}</option>{% endfor %}
+  </select>
+  {% else %}
+  <select name="{{ name }}" required disabled><option value="">No accounts in this currency</option></select>
+  {% endif %}
+</label>
+{% endmacro %}
+{% macro amount(name, label, code) %}
+<label>{{ label }}
+  {% if code == base_currency %}
+  <span class="money-input">
+    <span class="prefix">{{ currency }}</span>
+    <input name="{{ name }}" inputmode="decimal" min="0" value="{{ values[name] }}" placeholder="0.00" required autocomplete="off" data-money>
+  </span>
+  {% else %}
+  <input name="{{ name }}" inputmode="decimal" min="0" value="{{ values[name] }}" placeholder="0.0000" required autocomplete="off">
+  {% endif %}
+</label>
+{% endmacro %}
+<div class="pair">
+  {{ currency_select("sold", "Sold currency", sold) }}
+  {{ currency_select("bought", "Bought currency", bought) }}
+</div>
+{% if missing %}<p class="msg warn">{{ missing }}</p>{% endif %}
+<div class="pair">
+  {{ account("acc_from", "From (" ~ sold ~ ")", fields.from_fixed, fields.from_options) }}
+  {{ account("acc_to", "To (" ~ bought ~ ")", fields.to_fixed, fields.to_options) }}
+</div>
+<div class="pair">
+  {{ amount("amount_sold", "Amount sold in " ~ sold, sold) }}
+  {{ amount("amount_bought", "Amount bought in " ~ bought, bought) }}
+</div>
+{% if base_movement %}<p class="muted small">Saved as a <strong>{{ base_movement }}</strong> conversion.</p>{% endif %}

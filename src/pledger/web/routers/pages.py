@@ -10,9 +10,12 @@ from pledger.web.templating import (
     is_partial,
     remember_month,
     remembered_month,
+    render_card_payment_form,
     render_conversion_form,
+    render_debt_form,
     render_form,
     render_invest_form,
+    render_new_investment_form,
     templates,
 )
 from pledger.web.views import (
@@ -69,6 +72,7 @@ def investments(request: Request, store: StoreDep):
             render_invest_form(request, snapshot, {}).body.decode()
             if snapshot.invest_base_movements() else None
         ),
+        "new_investment_form": render_new_investment_form(request, snapshot, {}).body.decode(),
     }
     return templates.TemplateResponse(request, "investments.html", context)
 
@@ -78,8 +82,10 @@ def debt(request: Request, store: StoreDep, month: str | None = None):
     snapshot = store.load()
     month = remembered_month(request, month, months_of(snapshot))
     context = {**build_debts(snapshot, month), "settings": store.settings}
-    template = "_debt.html" if is_partial(request) else "debt.html"
-    return remember_month(templates.TemplateResponse(request, template, context), month)
+    if is_partial(request):
+        return remember_month(templates.TemplateResponse(request, "_debt.html", context), month)
+    context["debt_form"] = render_debt_form(request, snapshot, {}).body.decode()
+    return remember_month(templates.TemplateResponse(request, "debt.html", context), month)
 
 
 @router.get("/credit-cards")
@@ -87,8 +93,10 @@ def credit_cards(request: Request, store: StoreDep, month: str | None = None):
     snapshot = store.load()
     month = remembered_month(request, month, months_of(snapshot))
     context = {**build_credit_cards(snapshot, month), "settings": store.settings}
-    template = "_credit_cards.html" if is_partial(request) else "credit_cards.html"
-    return remember_month(templates.TemplateResponse(request, template, context), month)
+    if is_partial(request):
+        return remember_month(templates.TemplateResponse(request, "_credit_cards.html", context), month)
+    context["card_payment_form"] = render_card_payment_form(request, snapshot, {}).body.decode()
+    return remember_month(templates.TemplateResponse(request, "credit_cards.html", context), month)
 
 
 @router.get("/work")
