@@ -20,7 +20,6 @@ from pledger.web.templating import (
 )
 from pledger.web.views import (
     build_accounts,
-    build_conversions,
     build_credit_cards,
     build_currencies,
     build_debts,
@@ -29,6 +28,7 @@ from pledger.web.views import (
     build_results,
     build_view,
     build_work,
+    conversion_filter,
     invest_filter,
     months_of,
     setup_context,
@@ -40,11 +40,11 @@ router = APIRouter(tags=["pages"], default_response_class=HTMLResponse)
 @router.get("/")
 def index(
     request: Request, store: StoreDep, month: str | None = None, account: str = "",
-    initial: bool = False,
+    initial: bool = False, base: str = "",
 ):
     snapshot = store.load()
     month = remembered_month(request, month, months_of(snapshot))
-    view = build_view(snapshot, month, account, initial)
+    view = build_view(snapshot, month, account, initial, base)
     if is_partial(request):
         return remember_month(templates.TemplateResponse(request, "_view.html", view), month)
     form = render_form(request, snapshot, {}).body.decode()
@@ -63,12 +63,12 @@ def accounts(request: Request, store: StoreDep, month: str | None = None):
 
 
 @router.get("/investments")
-def investments(request: Request, store: StoreDep, investment: str = ""):
+def investments(request: Request, store: StoreDep, account: str = "", investment: str = "", base: str = ""):
     snapshot = store.load()
     context = {
         **build_investments(snapshot),
         "settings": store.settings,
-        **invest_filter(build_invest_movements(snapshot), investment),
+        **invest_filter(build_invest_movements(snapshot), account, investment, base),
         "invest_form": (
             render_invest_form(request, snapshot, {}).body.decode()
             if snapshot.invest_base_movements() else None
@@ -109,12 +109,12 @@ def work(request: Request, store: StoreDep):
 
 
 @router.get("/currencies")
-def currencies(request: Request, store: StoreDep):
+def currencies(request: Request, store: StoreDep, currency: str = "", account: str = ""):
     snapshot = store.load()
     context = {
         **build_currencies(snapshot),
         "settings": store.settings,
-        "conversions": build_conversions(snapshot),
+        **conversion_filter(snapshot, currency, account),
         "conversion_form": (
             render_conversion_form(request, snapshot, {}).body.decode() if len(snapshot.currencies) > 1 else None
         ),

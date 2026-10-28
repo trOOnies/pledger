@@ -1,0 +1,24 @@
+{# The filter of the investment movements: an investment account and an investment, the ones
+   of the account picked (see views.invest_filter). Swapped out of band with `oob`, so the
+   investments to pick from follow the account. #}
+<form id="invest-filter" class="filters" hx-get="/investments/movements" hx-target="#invest-movements" hx-trigger="change"
+  {% if oob %}hx-swap-oob="true"{% endif %}>
+  <label>Investment account
+    <select name="account" title="The investment movements of the investments of one account">
+      <option value="">All accounts</option>
+      {% for a in invest_accounts %}<option {% if a == invest_account %}selected{% endif %}>{{ a }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Investment
+    <select name="investment" title="The investment movements of one investment, whatever their debit and credit accounts">
+      <option value="">All investments</option>
+      {% for name in invest_names %}<option {% if name == investment %}selected{% endif %}>{{ name }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Base movement
+    <select name="base">
+      <option value="">All base movements</option>
+      {% for b in invest_bases %}<option {% if b == invest_base %}selected{% endif %}>{{ b }}</option>{% endfor %}
+    </select>
+  </label>
+</form>

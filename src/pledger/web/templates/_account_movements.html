@@ -1,16 +1,18 @@
 {# The movements of some accounts (views.account_movements). With `who`, the movements say who
    their comment names, and with `account`, which of the accounts they are of. With `edit` and
    `delete` URLs (with the row index as %d), the editable ones (the movements added in the tab)
-   get their ✎ button, filling the form `form_id`, and their × one. #}
+   get their ✎ button, filling the form `form_id`, and their × one. With `running`, a (header, tooltip,
+   key) triple, a column shows that key of each movement: a running total, green if negative (owed to
+   us), "-" if None. #}
 {% from "_id.html" import id_cell, id_header %}
 {% from "_edit.html" import edit_button %}
-{% macro account_movements(movements, key, period, who=False, account=False, added_here=False, edit=none, delete=none, form_id="") %}
+{% macro account_movements(movements, key, period, who=False, account=False, added_here=False, edit=none, delete=none, form_id="", running=none) %}
 <div class="panel">
   <h2>Movements <small>{{ movements | length }}, {{ period }}</small></h2>
   <div class="table-wrap">
     <table class="movements" data-sortable="{{ key }}">
       <thead>
-        <tr>{{ id_header() }}<th>Date</th><th>Base movement</th>{% if who %}<th title="Who the comment names">Who</th>{% endif %}{% if account %}<th>Account</th>{% endif %}<th>Debit</th><th class="num">Amount</th><th>Credit</th><th>Comment</th>{% if edit %}<th></th>{% endif %}</tr>
+        <tr>{{ id_header() }}<th>Date</th><th>Base movement</th>{% if who %}<th title="Who the comment names">Who</th>{% endif %}{% if account %}<th>Account</th>{% endif %}<th>Debit</th><th class="num">Amount</th><th>Credit</th>{% if running %}<th class="num" title="{{ running[1] }}">{{ running[0] }}</th>{% endif %}<th>Comment</th>{% if edit %}<th></th>{% endif %}</tr>
       </thead>
       <tbody>
         {% for m in movements %}
@@ -23,6 +25,11 @@
           <td>{{ m.debit }}</td>
           <td class="num money" data-sort="{{ m.amount }}">{{ m.amount | money }}</td>
           <td>{{ m.credit }}</td>
+          {% if running %}
+          {% set value = m[running[2]] %}
+          {% if value is none %}<td class="num muted balance">-</td>{% else %}
+          <td class="num money balance {{ 'gain' if value < -0.005 }}" data-sort="{{ value }}">{{ value | money }}</td>{% endif %}
+          {% endif %}
           <td class="muted">{{ m.comment }}</td>
           {% if edit %}
           <td class="nowrap">
@@ -39,7 +46,7 @@
           {% endif %}
         </tr>
         {% else %}
-        <tr><td colspan="{{ 7 + (1 if who else 0) + (1 if account else 0) + (1 if edit else 0) }}" class="muted">No movements.</td></tr>
+        <tr><td colspan="{{ 7 + (1 if running else 0) + (1 if who else 0) + (1 if account else 0) + (1 if edit else 0) }}" class="muted">No movements.</td></tr>
         {% endfor %}
       </tbody>
     </table>

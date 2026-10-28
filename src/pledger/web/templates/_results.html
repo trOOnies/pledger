@@ -16,16 +16,25 @@
   </div>
 </div>
 
-<section class="panel">
+<section class="panel cumulative-view">
   <div class="panel-head">
     <h2>Gains &amp; losses by result type <small>{{ ("in " ~ month) if month else "all time" }}</small></h2>
-    {{ expand_all("results") }}
+    <div class="panel-tools">
+      <label class="check toggle" title="Each result type summed to the ones before it, in result type order">
+        <input type="checkbox" name="results-cumulative"> Cumulative
+      </label>
+      {{ expand_all("results") }}
+    </div>
   </div>
-  <div class="composition-pair">
-    {{ bars("Gains", gains, "gain", "No result types yet.") }}
-    {{ bars("Losses", losses, "loss", "No result types yet.") }}
+  {% for cumulative, (g, l, p) in ((false, (gains, losses, profits)), (true, cumulative_results)) %}
+  <div class="composition-pair" data-cumulative="{{ cumulative | lower }}">
+    {{ bars("Gains", g, "gain", "No result types yet.", total=g[-1].value if cumulative and g else none) }}
+    {{ bars("Losses", l, "loss", "No result types yet.", total=l[-1].value if cumulative and l else none) }}
+    {{ bars("Profit", p, "profit", "No result types yet.", total=p[-1].value if cumulative and p else none) }}
   </div>
-  <p class="muted small">Click a result type to see its base movements.</p>
+  {% endfor %}
+  <p class="muted small">Click a result type to see its base movements. Its profit is its gains minus its losses;
+    cumulative, each result type is summed to the ones before it.</p>
 </section>
 
 {# The result by type, in amounts or, with `pct`, over the gains of a result type. #}

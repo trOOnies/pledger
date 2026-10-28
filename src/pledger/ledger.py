@@ -108,6 +108,19 @@ class Ledger:
                 balances[acc.name] = balances.get(acc.name, 0.0) + value
         return balances
 
+    def running_balances(self) -> list[tuple[float, float]]:
+        """
+        The balances (signed like in balances) of the debit and credit accounts of
+        each movement, right after it, in the order of the movements.
+        """
+        balances: dict[str, float] = {}
+        after = []
+        for move in self.movements:
+            for acc, value in _signed_amounts(move):
+                balances[acc.name] = balances.get(acc.name, 0.0) + value
+            after.append((balances[move.acc_debit.name], balances[move.acc_credit.name]))
+        return after
+
     def check_accounts(self) -> None:
         """
         Raise if an account breaks one of its checks with its balance (signed like

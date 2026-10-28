@@ -9,22 +9,20 @@
     <input type="date" name="move_date" value="{{ values.move_date }}" required data-future-warning>
     <span class="hint warn" hidden>⚠️ This date is in the future.</span>
   </label>
-  {# The debt base movements (see views.DEBT_PAIRS), as one radio group of two pairs of buttons #}
-  <div class="field" role="radiogroup" aria-label="Base movement">
-    {% for pair in pairs %}
-    <span class="field-label">{{ pair.title }}</span>
-    <div class="segmented types">
-      {% for name, label in pair.buttons.items() %}
-      <label class="{{ pair.color }}" title="{{ name }}">
-        <input type="radio" name="base_movement" value="{{ name }}" {% if name == base_movement %}checked{% endif %}
-          hx-get="/form/accounts" hx-target="#debt-account-fields" hx-swap="innerHTML">
-        {{ label }}
+  {# The debt base movements (see views.DEBT_PAIRS): first their kind, then one of that kind #}
+  <div class="field">
+    <span class="field-label" id="debt-kind">Kind</span>
+    <div class="segmented types" role="radiogroup" aria-labelledby="debt-kind">
+      {% for k in kinds %}
+      <label class="{{ k.color }}">
+        <input type="radio" name="debt_kind" value="{{ k.title }}" {% if k.title == kind %}checked{% endif %}
+          hx-get="/form/debt-bases" hx-target="#debt-bases" hx-swap="innerHTML">
+        {{ k.title }}
       </label>
       {% endfor %}
     </div>
-    {% endfor %}
   </div>
-  <div id="debt-account-fields">{% include "_account_fields.html" %}</div>
+  <div id="debt-bases" class="stack">{% include "_debt_bases.html" %}</div>
   <label>Who
     <select name="who" required>
       <option value="">Choose…</option>

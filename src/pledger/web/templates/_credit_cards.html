@@ -16,9 +16,9 @@
   </details>
   {% endif %}
   <div class="cards">
-    <div class="card" title="What we owe on the credit cards{% if month %} at the end of {{ month }}{% endif %}"><span class="label">Owed</span><span class="num money {{ 'gain' if owed < 0 }}">{{ owed | money }}</span></div>
     <div class="card" title="Charged to the credit cards (credits){% if month %} in {{ month }}{% endif %}"><span class="label">Charged</span><span class="num money">{{ charged | money }}</span></div>
     <div class="card" title="Paid off the credit cards (debits){% if month %} in {{ month }}{% endif %}"><span class="label">Paid</span><span class="num money">{{ paid | money }}</span></div>
+    <div class="card" title="What we owe on the credit cards{% if month %} at the end of {{ month }}{% endif %}"><span class="label">Owed</span><span class="num money {{ 'gain' if owed < 0 }}">{{ owed | money }}</span></div>
   </div>
 
   <section class="panel">
@@ -145,5 +145,5 @@
       </select>
     </label>
   </form>
-  {{ account_movements(movements, "credit-card-movements", ("in " ~ month) if month else "all time", added_here="the card payments", edit="/credit-cards/payments/%d/edit", delete="/credit-cards/payments/%d/delete", form_id="card-payment-form") }}
+  {{ account_movements(movements, "credit-card-movements", ("in " ~ month) if month else "all time", added_here="the card payments", edit="/credit-cards/payments/%d/edit", delete="/credit-cards/payments/%d/delete", form_id="card-payment-form", running=("Owed", "What we owe on its credit card right after it", "balance")) }}
 </div>

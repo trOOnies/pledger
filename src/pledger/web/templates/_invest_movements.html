@@ -5,7 +5,11 @@
   <div class="table-wrap">
     <table class="movements" data-sortable="invest-movements">
       <thead>
-        <tr>{{ id_header() }}<th>Date</th><th>Base movement</th><th>Investment</th><th class="num">Quantity</th><th>Debit</th><th class="num">Amount</th><th>Credit</th><th>Comment</th><th></th></tr>
+        <tr>{{ id_header() }}<th>Date</th><th>Base movement</th><th>Investment</th><th class="num">Quantity</th><th>Debit</th><th class="num">Amount</th><th>Credit</th>
+          <th class="num" title="The total amount of the investment account right after this movement">Account total</th>
+          <th class="num" title="The amount of the investment right after this movement">Investment amount</th>
+          <th class="num" title="The quantity of the investment right after this movement">Investment quantity</th>
+          <th>Comment</th><th></th></tr>
       </thead>
       <tbody>
         {% for m in movements %}
@@ -18,6 +22,10 @@
           <td>{{ m.debit }}</td>
           <td class="num money" data-sort="{{ m.amount }}">{{ m.amount | money }}</td>
           <td>{{ m.credit }}</td>
+          {% for value in (m.account_total, m.investment_amount) %}
+          {% if value is none %}<td class="num muted balance">-</td>{% else %}<td class="num money balance {{ 'loss' if value < -0.005 }}" data-sort="{{ value }}">{{ value | money }}</td>{% endif %}
+          {% endfor %}
+          {% if m.investment_quantity is none %}<td class="num muted balance">-</td>{% else %}<td class="num balance" data-sort="{{ m.investment_quantity }}">{{ m.investment_quantity | quantity }}</td>{% endif %}
           <td class="muted">{{ m.comment }}</td>
           <td class="nowrap">
             {{ edit_button("/investments/%s/%d/edit" % ("interest" if m.source == "interest" else "movements", m.index), m.fingerprint, "invest-form") }}
@@ -30,9 +38,10 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="10" class="muted">No investment movements.</td></tr>
+        <tr><td colspan="13" class="muted">No investment movements.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
+{% if oob %}{% include "_invest_filter.html" %}{% endif %}

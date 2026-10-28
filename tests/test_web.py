@@ -28,15 +28,20 @@ from pledger.web.store import (
 )
 from pledger.web.templating import money, quantity
 from pledger.web.views import (
+    account_movements,
     build_accounts,
+    build_conversions,
     build_credit_cards,
     build_currencies,
     build_debts,
+    build_invest_movements,
     build_investments,
     build_results,
     build_view,
     column_chart,
     composition,
+    conversion_filter,
+    debt_form_fields,
     equity_series,
     investment_charts,
     nice_ticks,
@@ -497,7 +502,8 @@ class TestPages:
     def test_accounts_form_adds_an_account_with_a_check(self, client, settings):
         form = {"name": "Fi", "acc_type": "asset", "description": "Fictitious", "initial_amount": "0", "check": "net_zero"}
         r = client.post("/accounts", data=form, headers=HTMX)
-        assert "Added account Fi" in r.text
+        assert "Added account Fi" in r.text and r.headers["HX-Trigger"] == "accounts-changed"
+        r = client.get("/accounts", headers=HTMX)  # the rest of the tab reloads
         fi_row = r.text.split("<strong>Fi</strong>")[1].split("</tr>")[0]
         assert "<td >Net zero</td>" in fi_row
         assert '<td class="muted">-</td>' in r.text.split("<strong>Ca</strong>")[1].split("</tr>")[0]
@@ -709,8 +715,8 @@ class TestPages:
             data={"name": "Sv", "acc_type": "asset", "description": "Savings", "initial_amount": "0.00"},
             headers=HTMX,
         )
-        assert "Added account Sv" in r.text
-        assert "<strong>Sv</strong>" in r.text
+        assert "Added account Sv" in r.text and r.text.lstrip().startswith('<form id="account-form"')  # the form alone
+        assert "<strong>Sv</strong>" in client.get("/accounts", headers=HTMX).text
         assert "Sv" in LedgerStore(settings).load().accounts
 
         data = {"name": "Sv", "acc_type": "asset", "description": "x", "initial_amount": "0"}
@@ -1191,6 +1197,27 @@ class TestConversions:
         ids = LedgerStore(conv).load().ids
         assert {ids[ix] for ix in snapshot.conversion_rows.index} == {"C-1"} and len(set(ids.values())) == len(ids)
 
+    def test_filter_by_currency(self, conv, conv_client):
+        r = conv_client.get("/currencies")
+        assert '<form id="conversion-filter"' in r.text and "<option >USD</option>" in r.text
+        assert 'hx-include="#conversion-filter"' in r.text
+        assert "<h2>Conversions <small>1</small></h2>" in conv_client.get("/conversions", params={"currency": "USD"}).text
+        assert "<h2>Conversions <small>1</small></h2>" in conv_client.get("/conversions", params={"currency": "Nope"}).text
+        snapshot = LedgerStore(conv).load()
+        assert build_conversions(snapshot, "EUR") == [] and len(build_conversions(snapshot, "USD")) == 1
+        assert conversion_filter(snapshot, "ARS")["conversion_currency"] == ""  # the base one isn't picked
+
+    def test_account_filter_and_balance_in_the_other_currency(self, conv, conv_client):
+        snapshot = LedgerStore(conv).load()
+        (c,) = build_conversions(snapshot)
+        # Bk: 0.901 USD before buying 1 more
+        assert c["account"] == "Bk" and c["other_balance"] == pytest.approx(1.901)
+        assert conversion_filter(snapshot, "USD")["conversion_accounts"] == ["Bk"]
+        assert conversion_filter(snapshot, "USD", "Ca")["conversion_account"] == ""  # not in USD
+        r = conv_client.get("/conversions", params={"currency": "USD", "account": "Bk"})
+        assert "<h2>Conversions <small>1</small></h2>" in r.text and "<option selected>Bk</option>" in r.text
+        assert 'hx-swap-oob="true"' in r.text and "USD 1.9010</td>" in r.text
+
     def test_conversions_table_shows_their_ids(self, conv, conv_client):
         LedgerStore(conv).freeze_ids()
         currencies = conv_client.get("/currencies").text
@@ -1494,7 +1521,7 @@ class TestInternalResultTypes:
     def test_are_hidden_by_default(self, client):
         assert all(m["base"] != "Initial (G)" for m in client.get("/api/movements").json())
         r = client.get("/")
-        assert "Initial (G)" not in r.text and 'name="initial" value="true" >' in r.text
+        assert "Initial (G)" not in r.text.split('id="view"')[1] and 'name="initial" value="true" >' in r.text
         assert "Initial (G)" not in client.get("/results", headers=HTMX).text  # the charts
 
     def test_can_be_shown_but_not_deleted(self, client):
@@ -1655,14 +1682,38 @@ class TestDebtSides:
         assert "Acme" not in form and '<optgroup label="Companies">' not in form and "Dad" in form
         assert "<strong>Acme</strong>" in r.text  # still listed with its debt
 
+    def test_running_debt(self, settings, client):
+        store = LedgerStore(settings)
+        store.add_debt_movement("2026-02-01", "Debt - Incurred", "Ca", "De", "20", "Dad", "")
+        store.add_debt_movement("2026-02-02", "Debt - Paid", "De", "Ca", "25", "Dad", "")
+        with settings.ledger_path.open("a") as f:  # naming no one: unassigned
+            f.write("2026-02-03;Debt - Incurred;Ca;7;De;Who knows\n")
+        moves = build_debts(store.load())["movements"]
+        assert [m["debt"] for m in moves if not m["initial"]] == [pytest.approx(7), pytest.approx(-5), pytest.approx(20)]
+        table = client.get("/debt", params={"month": ""}).text.split('data-sortable="debt-movements"')[1]
+        assert "Debt</th>" in table and '<td class="num money balance gain" data-sort="-5.0">-$5.00</td>' in table
+
+    def test_paid_and_collected_are_lighter(self, client):
+        form = client.get("/debt").text
+        assert '<label class="liability" title="Debt - Incurred">' in form
+        assert '<label class="liability-light" title="Debt - Paid">' in form
+        assert '<label class="asset-light" title="Loan - Collected">' in client.get("/form/debt-bases", params={"debt_kind": "Loan"}).text
+
     def test_debt_tab_form(self, settings, client):
         r = client.get("/debt")
         form = r.text.split('id="debt-form"')[1].split("</form>")[0]
-        # The four debt base movements, as two pairs of buttons
-        assert '<span class="field-label">Debt</span>' in form and '<span class="field-label">Loan</span>' in form
-        assert 'value="Debt - Incurred" checked' in form and form.count('name="base_movement"') == 4
-        for label in ("Incurred", "Paid", "Given", "Collected"):
-            assert f"{label}\n      </label>" in form
+        # The four debt base movements: first Debt or Loan, then the two of the kind picked
+        assert 'name="debt_kind" value="Debt" checked' in form and 'name="debt_kind" value="Loan"' in form
+        assert 'value="Debt - Incurred" checked' in form and form.count('name="base_movement"') == 2
+        for label in ("Incurred", "Paid"):
+            assert f"{label}\n    </label>" in form
+        assert "Given" not in form and 'hx-get="/form/debt-bases"' in form
+        loan = client.get("/form/debt-bases", params={"debt_kind": "Loan"}).text
+        assert 'value="Loan - Given" checked' in loan and 'value="Loan - Collected"' in loan and "Incurred" not in loan
+        assert '<label class="asset"' in loan and 'name="acc_debit"' in loan  # with the account fields
+        # A loan base movement, e.g. of one edited, picks its kind
+        fields = debt_form_fields(LedgerStore(settings).load(), "Loan - Collected", kind="Debt")
+        assert fields["kind"] == "Loan" and fields["base_movement"] == "Loan - Collected"
         assert '<optgroup label="People">' in form
         assert 'hx-trigger="debt-changed from:body"' in r.text
         r = client.post("/debt/movements", data={
@@ -1734,7 +1785,9 @@ class TestDebtSides:
         path.write_text(path.read_text().replace("    Loan - Collected:\n      description: d\n      credit: DEBT\n", ""))
         form = client.get("/debt").text.split('id="debt-form"')[1].split("</form>")[0]
         assert "The Debt tab needs these base movements" in form and "&#39;Loan - Collected&#39;" in form
-        assert form.count('name="base_movement"') == 3
+        assert form.count('name="base_movement"') == 2  # those of Debt, picked first
+        loan = client.get("/form/debt-bases", params={"debt_kind": "Loan"}).text
+        assert loan.count('name="base_movement"') == 1 and 'value="Loan - Given" checked' in loan
 
     def test_internal_ones_link_to_their_row_in_the_debt_tab(self, settings, client):
         with settings.ledger_path.open("a") as f:
@@ -2135,7 +2188,7 @@ class TestWork:
         r = client.get("/work")
         assert r.status_code == 200
         assert 'href="/work" aria-current="page"' in r.text
-        assert card_labels(r.text) == ["Current job", "Gross", "Deductions", "Net"]
+        assert card_labels(r.text) == ["Current job", "Gross", "Net"]
         assert "<strong>Globex</strong> <span class=\"badge gain\">Current</span>" in r.text
         salaries = r.text.split('data-sortable="salaries"')[1]
         assert re.findall(r"<strong>(\d{4}-\d{2})</strong>", salaries) == ["2026-01", "2025-12", "2025-11", "2025-10"]
@@ -2601,15 +2654,51 @@ class TestInvestMovements:
         settings.investments_path.write_text(settings.investments_path.read_text() + "  U:\n    type: etf\n    amount: 50\n    quantity: 1\n")
         self.append(settings, "2026-01-06;Capital gains;Br;3;Eq;;U;\n")
         r = client.get("/investments")
-        assert '<form id="invest-filter"' in r.text and '<optgroup label="Br">' in r.text
-        assert """<option value='["Br", "U"]' >U</option>""" in r.text
-        r = client.get("/investments/movements", params={"investment": '["Br", "U"]'})
+        assert '<form id="invest-filter"' in r.text and 'name="account"' in r.text
+        assert "<option >Br</option>" in r.text and "<option >U</option>" in r.text
+        r = client.get("/investments/movements", params={"investment": "U"})
         assert "<h2>Investment movements <small>1</small></h2>" in r.text and "$3.00" in r.text
-        for bad in ("", "nope", '["Br"]', '["Ca", "U"]'):
-            n = 0 if bad == '["Ca", "U"]' else 2
-            assert f"<h2>Investment movements <small>{n}</small></h2>" in client.get("/investments/movements", params={"investment": bad}).text
+        assert "<option selected>U</option>" in r.text and 'hx-swap-oob="true"' in r.text  # the filter, out of band
+        for params, n in (({"account": "Br"}, 2), ({"account": "Nope"}, 2), ({"investment": "Nope"}, 2), ({}, 2)):
+            assert f"<h2>Investment movements <small>{n}</small></h2>" in client.get("/investments/movements", params=params).text
         # The movements reload with the investment picked
         assert 'hx-include="#invest-filter"' in client.get("/investments").text
+
+    def test_investment_filter_keeps_the_movements_off_the_investment_account(self, settings, client):
+        # Broker fees of T, out of Ca: still a movement of T, and of Br, the account holding it
+        self.append(settings, "2026-01-06;Broker fees;Eq;1;Ca;;T;\n")
+        moves = [m for m in build_invest_movements(LedgerStore(settings).load()) if m["investment"] == "T"]
+        assert {m["account"] for m in moves} == {"Br"} and "Broker fees" in {m["base"] for m in moves}
+        for params in ({"investment": "T"}, {"account": "Br"}, {"account": "Br", "investment": "T"}):
+            r = client.get("/investments/movements", params=params)
+            assert f"<h2>Investment movements <small>{len(moves)}</small></h2>" in r.text and "Broker fees" in r.text
+        # An investment of another account is dropped
+        r = client.get("/investments/movements", params={"account": "Br", "investment": "Nope"})
+        assert f"<h2>Investment movements <small>{len(moves)}</small></h2>" in r.text and "<option selected>Br</option>" in r.text and "<option >T</option>" in r.text
+
+    def test_running_totals(self, settings, client):
+        self.append(settings, "2026-01-06;Investment - Bought;Br;30;Ca;1;T;\n2026-01-07;Broker fees;Eq;1;Ca;;T;\n")
+        moves = build_invest_movements(LedgerStore(settings).load())
+        # T: 100 and 10 initially, 5 of capital gains, then 30 more for 1 more
+        assert [(m["base"], m["account_total"], m["investment_amount"], m["investment_quantity"]) for m in moves] == [
+            ("Broker fees", pytest.approx(135), pytest.approx(135), pytest.approx(11)),
+            ("Investment - Bought", pytest.approx(135), pytest.approx(135), pytest.approx(11)),
+            ("Capital gains", pytest.approx(105), pytest.approx(105), pytest.approx(10)),
+        ]
+        table = client.get("/investments/movements").text
+        assert "Account total</th>" in table and "Investment quantity</th>" in table and ">11</td>" in table
+
+    def test_base_movement_filter(self, settings, client):
+        self.append(settings, "2026-01-07;Broker fees;Eq;1;Ca;;T;\n")
+        r = client.get("/investments/movements", params={"base": "Broker fees"})
+        assert "<h2>Investment movements <small>1</small></h2>" in r.text and "<option selected>Broker fees</option>" in r.text
+        r = client.get("/investments/movements", params={"base": "Nope"})
+        assert "<h2>Investment movements <small>2</small></h2>" in r.text
+
+    def test_form_narrows_the_investments_by_account(self, client):
+        f = client.get("/form/invest-fields", params={"base_movement": "Capital gains"}).text
+        assert 'name="investment_account" data-narrows="investment"' in f and "<option >Br</option>" in f
+        assert '<optgroup label="Br">' in f
 
     def test_broker_fees_over_amount_and_totals_row(self, settings, client):
         settings.investments_path.write_text(settings.investments_path.read_text() + "  U:\n    type: etf\n    amount: 50\n    quantity: 1\n")
@@ -3042,7 +3131,7 @@ class TestCreditCards:
         r = client.get("/credit-cards", params={"month": ""})
         assert r.status_code == 200
         assert 'href="/credit-cards" aria-current="page"' in r.text
-        assert card_labels(r.text) == ["Owed", "Charged", "Paid"]
+        assert card_labels(r.text) == ["Charged", "Paid", "Owed"]
         cards = r.text.split('<div class="cards">')[1].split("</div>\n  </div>")[0]
         # Owed 80 + 20; charged 30 + 20 and paid 50, without the initial 100
         assert "$100.00" in cards and "$50.00" in cards
@@ -3281,6 +3370,9 @@ class TestSaveAndQuit:
 
     def test_button_in_every_page(self, client):
         assert 'id="quit"' in client.get("/").text and 'id="quit"' in client.get("/help").text
+        # An open door icon, like the eye of the visibility toggle
+        button = client.get("/").text.split('id="quit"')[1].split("</button>")[0]
+        assert 'aria-label="Save &amp; Quit"' in button and "<svg" in button and "Save &amp; Quit</button>" not in button
 
 
 class TestToggles:
@@ -3302,6 +3394,235 @@ class TestToggles:
         r = client.get("/results")
         assert 'name="results-relative"' in r.text and "% of Operative gains" in r.text
         assert '<div data-relative="true">' in r.text and "100.0%" in r.text
+
+
+class TestLedgerBalances:
+    def test_balances_after_each_movement(self, settings):
+        moves = build_view(LedgerStore(settings).load())["movements"]
+        # Newest first: the gift, the food, the withdrawal and the salary, after Bk's initial 100.5
+        assert [(m["base"], m["debit_balance"], m["credit_balance"]) for m in moves] == [
+            ("Gift", pytest.approx(159.75), pytest.approx(1060.75)),
+            ("Food", pytest.approx(1050.75), pytest.approx(149.75)),
+            ("Withdraw", pytest.approx(200), pytest.approx(901)),
+            ("Salary", pytest.approx(1101), pytest.approx(1101)),
+        ]
+
+    def test_are_of_the_whole_ledger_whatever_the_filters(self, settings):
+        moves = build_view(LedgerStore(settings).load(), "2026-01", "Bk")["movements"]
+        assert [(m["base"], m["credit_balance"]) for m in moves] == [("Withdraw", pytest.approx(901)), ("Salary", pytest.approx(1101))]
+
+    def test_columns(self, client):
+        table = client.get("/").text.split('data-sortable="movements"')[1].split("</table>")[0]
+        assert "Debit balance</th>" in table and "Credit balance</th>" in table
+        assert '<td class="num money balance " data-sort="159.75">$159.75</td>' in table
+
+
+class TestResultProfits:
+    def test_profit_by_result_type(self, settings):
+        profits = build_results(LedgerStore(settings).load())["profits"]
+        (op, gifts) = profits
+        assert op["name"] == "Operative" and op["value"] == pytest.approx(1000.5 - 50.25) and op["share"] is None
+        assert {c["name"]: c["value"] for c in op["children"]} == {
+            "Salary": pytest.approx(1000.5), "Food": pytest.approx(-50.25), "Card fee": 0.0,
+        }
+        assert gifts["value"] == pytest.approx(10)
+        # On the largest absolute value: the salary
+        assert op["children"][0]["width"] == pytest.approx(100) and op["children"][1]["width"] == pytest.approx(50.25 / 10.005)
+
+    def test_third_column(self, client):
+        panel = client.get("/results").text.split("Gains &amp; losses by result type")[1].split("</section>")[0]
+        assert "<h3>Gains " in panel and "<h3>Losses " in panel and "<h3>Profit " in panel
+        assert '<span class="bar loss"' in panel.split("<h3>Profit ")[1]  # the food, a negative profit
+
+
+class TestEditAccounts:
+    def test_pencil_on_assets_and_liabilities_only(self, client):
+        r = client.get("/accounts")
+        assert 'aria-label="Edit account Ca"' in r.text and 'aria-label="Edit account Cc"' in r.text
+        assert 'aria-label="Edit account Eq"' not in r.text
+        assert client.get("/accounts/edit", params={"name": "Eq"}).status_code == 404
+        assert client.get("/accounts/edit", params={"name": "Nope"}).status_code == 404
+
+    def test_form_filled_with_the_account(self, client):
+        r = client.get("/accounts/edit", params={"name": "Bk"}, headers=HTMX)
+        form = r.text.split('id="account-form"')[1].split("</form>")[0]
+        assert 'hx-post="/accounts/edit"' in form and "Edit account" in form and ">Cancel</button>" in form
+        assert 'name="name" value="Bk" readonly' in form and 'name="acc_type"' not in form
+        assert 'name="initial_amount" inputmode="decimal" value="100.50"' in form
+        assert 'name="initial_date" value="2025-12-31"' in form and 'name="currency"' not in form  # the currency stays
+        assert '<input value="USD" readonly' in form
+
+    def test_edit_keeps_the_rest_of_the_file(self, settings, client):
+        path = settings.accounts_path
+        path.write_text("# mine\n" + path.read_text().replace("    initial_date: 2025-12-31\n", "    initial_date: 2025-12-31\n    color: blue\n"))
+        r = client.post("/accounts/edit", data={
+            "name": "Bk", "description": "My bank", "initial_amount": "200", "currency": "USD", "is_liquid": "true",
+            "initial_date": "", "check": "net_positive",
+        }, headers=HTMX)
+        assert "Updated account Bk" in r.text and "New account" in r.text
+        data = yaml.safe_load(path.read_text())
+        assert data["asset"]["Bk"] == {
+            "description": "My bank", "currency": "USD", "is_liquid": True, "initial_amount": 200.0,
+            "color": "blue", "checks": ["net_positive"],
+        }
+        assert path.read_text().startswith("# mine\nasset:\n  Ca:\n") and "liability:\n  Cc:\n" in path.read_text()
+        assert LedgerStore(settings).load().accounts["Bk"].initial_amount == 200
+
+    def test_invalid_edits_roll_back(self, settings, client):
+        before = settings.accounts_path.read_text()
+        r = client.post("/accounts/edit", data={"name": "Ca", "description": "Cash", "initial_amount": "x"}, headers=HTMX)
+        assert 'class="msg error"' in r.text and "Edit account" in r.text
+        # Food takes 50.25 out of Ca: it can't be never negative with less than that
+        with pytest.raises(ValueError, match="Could not edit 'Ca'"):
+            LedgerStore(settings).edit_account("Ca", "Cash", "-0", checks=["net_zero"])
+        assert settings.accounts_path.read_text() == before
+        with pytest.raises(ValueError, match="Only asset and liability accounts"):
+            LedgerStore(settings).edit_account("Eq", "Equity")
+
+
+class TestLedgerBaseFilter:
+    def test_filter_by_base_movement(self, settings, client):
+        moves = build_view(LedgerStore(settings).load(), base="Food")["movements"]
+        assert [m["base"] for m in moves] == ["Food"]
+        r = client.get("/", params={"base": "Food"})
+        assert '<option value="Food" selected>Food</option>' in r.text
+        assert "<h2>Movements <small>1</small></h2>" in r.text
+
+
+class TestAccountFormSwaps:
+    def test_edit_and_cancel_swap_only_the_form(self, client):
+        r = client.get("/accounts/edit", params={"name": "Ca"}, headers=HTMX)
+        assert r.text.lstrip().startswith('<form id="account-form"') and "Balances" not in r.text
+        r = client.get("/form/account", headers=HTMX)
+        assert "New account" in r.text and "Balances" not in r.text
+        page = client.get("/accounts").text
+        assert 'hx-trigger="accounts-changed from:body"' in page and '<div id="account-form-slot" hx-preserve="true">' in page
+
+    def test_the_currency_stays(self, settings, client):
+        r = client.post("/accounts/edit", data={"name": "Bk", "description": "Bank", "initial_amount": "100.5",
+                                                "currency": "ARS", "is_liquid": "true"}, headers=HTMX)
+        assert "Updated account Bk" in r.text
+        assert LedgerStore(settings).load().accounts["Bk"].currency.name == "USD"
+
+
+CORRECTION_YAML = INVEST_YAML.replace("        Dividends: d\n", "        Dividends: d\n        Correction (G): c\n").replace(
+    "        Broker fees: d\n", "        Broker fees: d\n        Correction (L): c\n"
+)
+
+
+class TestBalanceCorrections:
+    @pytest.fixture
+    def settings(self, settings, tmp_path):
+        text = settings.accounts_path.read_text(encoding="utf-8")
+        settings.accounts_path.write_text(
+            text.replace("liability:\n", "  Br:\n    description: Broker\nliability:\n"), encoding="utf-8"
+        )
+        path = settings.base_movements_path
+        path.write_text(path.read_text().replace("internal:\n", "internal:\n" + CORRECTION_YAML, 1))
+        investments = tmp_path / "investment.yaml"
+        investments.write_text("Br:\n  T: stock\n", encoding="utf-8")
+        return replace(
+            settings, investments_path=investments, investment_movements_path=tmp_path / "investment.csv",
+            interest_path=tmp_path / "interest.csv",
+        )
+
+    @pytest.fixture
+    def client(self, settings):
+        return TestClient(create_app(settings))
+
+    @staticmethod
+    def last(settings) -> list:
+        return rows(settings).iloc[-1][["move_date", "base_movement", "acc_debit", "amount", "acc_credit"]].tolist()
+
+    def test_corrects_to_the_checked_balance(self, settings):
+        store = LedgerStore(settings)
+        # Ca: 159.75 at the end of 2026-01-04
+        assert store.correct_balance("Ca", "160", "2026-01-04") == ("Correction (G)", pytest.approx(0.25))
+        assert self.last(settings) == ["2026-01-04", "Correction (G)", "Ca", "0.25", "Eq"]
+        assert store.correct_balance("Ca", "160", "2026-01-04") is None  # already right
+        today = dt.date.today().isoformat()
+        assert store.correct_balance("Ca", "150") == ("Correction (L)", pytest.approx(10))
+        assert self.last(settings) == [today, "Correction (L)", "Eq", "10.00", "Ca"]
+        assert rows(settings).iloc[-1]["comment"] == "Checked balance: 150.00 ARS"
+        # A liability: owing more is a loss
+        assert store.correct_balance("Cc", "30") == ("Correction (L)", pytest.approx(30))
+        assert self.last(settings)[2:] == ["Eq", "30.00", "Cc"]
+        assert store.load().ledger().balances()["Cc"] == pytest.approx(30)
+
+    def test_in_another_currency(self, settings):
+        # Bk: 0.1005 + 1.0005 - 0.2 = 0.901 USD, at 1,000 ARS
+        assert LedgerStore(settings).correct_balance("Bk", "1", "2026-01-05") == ("Correction (G)", pytest.approx(99))
+        assert LedgerStore(settings).load().own_balance("Bk", "2026-01-05") == pytest.approx(1)
+
+    def test_invalid(self, settings):
+        store = LedgerStore(settings)
+        for name, balance, date, error in (
+            ("Br", "1", "", "comes from its investments"),
+            ("Eq", "1", "", "Only the balances of asset and liability accounts"),
+            ("Ca", "", "", "The checked balance is required"),
+            ("Ca", "x", "", "Invalid checked balance"),
+            ("Ca", "1", "2026-13-01", "Invalid check date"),
+        ):
+            with pytest.raises(ValueError, match=error):
+                store.correct_balance(name, balance, date)
+
+    def test_form(self, settings, client):
+        page = client.get("/accounts").text
+        assert 'aria-label="Correct the balance of Ca"' in page and 'aria-label="Correct the balance of Br"' not in page
+        assert client.get("/accounts/correct", params={"name": "Br"}).status_code == 404
+        r = client.get("/accounts/correct", params={"name": "Ca"}, headers=HTMX)
+        assert "Correct balance" in r.text and 'hx-post="/accounts/correct"' in r.text and "ARS 159.75" in r.text
+        r = client.post("/accounts/correct", data={"name": "Ca", "balance": "x"}, headers=HTMX)
+        assert 'class="msg error"' in r.text and 'name="balance"' in r.text and 'value="x"' in r.text
+        r = client.post("/accounts/correct", data={"name": "Ca", "balance": "200", "check_date": "2026-01-04"}, headers=HTMX)
+        assert "Corrected Ca: Correction (G) of $40.25" in r.text and r.headers["HX-Trigger"] == "accounts-changed"
+        r = client.post("/accounts/correct", data={"name": "Ca", "balance": "200", "check_date": "2026-01-04"}, headers=HTMX)
+        assert "already right" in r.text and "HX-Trigger" not in r.headers
+
+    def test_are_in_the_ledger_csv_and_deleted_from_the_ledger_tab(self, settings, client):
+        # Like those added by hand before they were internal
+        with settings.ledger_path.open("a") as f:
+            f.write("2026-01-05;Correction (L);Eq;5;Ca;\n")
+        LedgerStore(settings).freeze_ids()
+        snapshot = LedgerStore(settings).load()
+        assert "Correction (L)" not in snapshot.invest_base_movements()
+        assert "Correction (L)" not in client.get("/form/bases", params={"move_type": "loss"}).text  # not picked by hand
+        with pytest.raises(ValueError, match="added from the Accounts tab"):
+            LedgerStore(settings).add("2026-01-05", "Correction (L)", "Eq", "Ca", "1")
+        row = client.get("/").text.split('id="movement-L-5"')[1].split("</tr>")[0]
+        assert 'href="/accounts#account-Ca"' in row and 'hx-post="/movements/4/delete"' in row and "&#9998;" not in row
+        fp = row_fingerprint(rows(settings).iloc[4])
+        assert client.post("/movements/4/delete", data={"fingerprint": fp}).status_code == 200
+        assert len(rows(settings)) == 4
+
+    def test_needs_the_correction_base_movements(self, settings):
+        path = settings.base_movements_path
+        path.write_text(path.read_text().replace("        Correction (G): c\n", ""))
+        with pytest.raises(ValueError, match="Correcting balances needs 'Correction \\(G\\)'"):
+            LedgerStore(settings).correct_balance("Ca", "200")
+
+
+class TestRunningTotals:
+    def test_credit_card_balance(self, settings):
+        with settings.ledger_path.open("a") as f:
+            f.write("2026-01-05;Card fee;Eq;5;Cc;\n")
+        moves = account_movements(LedgerStore(settings).load(), ["Cc"])
+        assert [(m["base"], m["balance"]) for m in moves if not m["initial"]] == [("Card fee", pytest.approx(5))]
+
+    def test_cumulative_results(self, settings):
+        gains, _, profits = build_results(LedgerStore(settings).load())["cumulative_results"]
+        assert [g["value"] for g in gains] == [pytest.approx(1000.5), pytest.approx(1010.5)]
+        assert [g["share"] for g in gains] == [pytest.approx(99.0), pytest.approx(100.0)]
+        assert [p["value"] for p in profits] == [pytest.approx(950.25), pytest.approx(960.25)]
+        # On the scale of the salary, the largest one
+        assert profits[1]["share"] is None and profits[1]["width"] == pytest.approx(100 * 960.25 / 1000.5)
+        assert [c["value"] for c in profits[0]["children"]][:2] == [pytest.approx(1000.5), pytest.approx(-50.25)]
+
+    def test_cumulative_toggle(self, client):
+        r = client.get("/results")
+        assert 'name="results-cumulative"' in r.text
+        assert '<div class="composition-pair" data-cumulative="true">' in r.text
+        assert '<div class="composition-pair" data-cumulative="false">' in r.text
 
 
 class TestLanguage:

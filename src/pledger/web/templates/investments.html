@@ -271,18 +271,7 @@
 {% endif %}
 
 {% if invest_form %}
-<form id="invest-filter" class="filters" hx-get="/investments/movements" hx-target="#invest-movements" hx-trigger="change">
-  <label>Investment
-    <select name="investment" title="The investment movements of one investment">
-      <option value="">All investments</option>
-      {% for account, names in investments_by_account.items() %}
-      <optgroup label="{{ account if account != '-' else 'Other accounts' }}">
-        {% for name in names %}{% set value = [account, name] | tojson %}<option value='{{ value }}' {% if value == investment %}selected{% endif %}>{{ name }}</option>{% endfor %}
-      </optgroup>
-      {% endfor %}
-    </select>
-  </label>
-</form>
+{% include "_invest_filter.html" %}
 {% endif %}
 <div class="layout">
   <aside class="column">

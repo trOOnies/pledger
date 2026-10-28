@@ -5,7 +5,10 @@
   <div class="table-wrap">
     <table class="movements" data-sortable="movements">
       <thead>
-        <tr>{{ id_header() }}<th>Date</th><th>Base movement</th><th>Debit</th><th class="num">Amount</th><th>Credit</th><th>Comment</th><th></th></tr>
+        <tr>{{ id_header() }}<th>Date</th><th>Base movement</th><th>Debit</th><th class="num">Amount</th><th>Credit</th>
+          <th class="num" title="The balance of the debit account right after this movement">Debit balance</th>
+          <th class="num" title="The balance of the credit account right after this movement">Credit balance</th>
+          <th>Comment</th><th></th></tr>
       </thead>
       <tbody>
         {% for m in movements %}
@@ -16,14 +19,17 @@
           <td>{{ m.debit }}</td>
           <td class="num money" data-sort="{{ m.amount }}">{{ m.amount | money }}</td>
           <td>{{ m.credit }}</td>
+          {% for balance in (m.debit_balance, m.credit_balance) %}
+          <td class="num money balance {{ 'loss' if balance < -0.005 }}" data-sort="{{ balance }}">{{ balance | money }}</td>
+          {% endfor %}
           <td class="muted">{{ m.comment }}</td>
           <td class="nowrap">
             {% if m.source %}
             {% set emoji, title = movement_sources[m.source] %}
             <a class="source" href="{{ m.link }}" title="{{ title }}" aria-label="{{ title }}">{{ emoji }}</a>
-            {% elif m.internal %}
-            <span class="source" title="Added by pledger itself; it cannot be deleted by hand" aria-label="Added by pledger itself">⚪</span>
-            {% else %}
+            {% endif %}
+            {# The balance corrections are added from the Accounts tab, but deleted here #}
+            {% if m.correction or not (m.source or m.internal) %}
             {% if m.editable %}
             {{ edit_button("/movements/%d/edit" % m.index, m.fingerprint, "movement-form") }}
             {% endif %}
@@ -33,11 +39,13 @@
               hx-confirm="Delete {{ m.date }} {{ m.base }} ({{ m.amount | money }})?"
               data-confirm-money="{{ m.amount | money }}"
               hx-swap="none">&times;</button>
+            {% elif m.internal and not m.source %}
+            <span class="source" title="Added by pledger itself; it cannot be deleted by hand" aria-label="Added by pledger itself">⚪</span>
             {% endif %}
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="8" class="muted">No movements.</td></tr>
+        <tr><td colspan="10" class="muted">No movements.</td></tr>
         {% endfor %}
       </tbody>
     </table>

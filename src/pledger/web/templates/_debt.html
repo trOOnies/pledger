@@ -108,5 +108,5 @@
       </select>
     </label>
   </form>
-  {{ account_movements(movements, "debt-movements", ("in " ~ month) if month else "all time", who=True, account=multiple_accounts, added_here="the debt movements", edit="/debt/movements/%d/edit", delete="/debt/movements/%d/delete", form_id="debt-form") }}
+  {{ account_movements(movements, "debt-movements", ("in " ~ month) if month else "all time", who=True, account=multiple_accounts, added_here="the debt movements", edit="/debt/movements/%d/edit", delete="/debt/movements/%d/delete", form_id="debt-form", running=("Debt", "What we owe whoever it is about right after it (negative and green: what they owe us), or the unassigned debt of its account if it names no one", "debt")) }}
 </div>

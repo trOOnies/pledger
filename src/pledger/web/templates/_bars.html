@@ -1,10 +1,13 @@
-{# Horizontal bar compositions, shared by several pages. #}
+{# Horizontal bar compositions, shared by several pages. A "profit" `kind` has signed values
+   (see views.signed_composition): its bars are gains or losses by their sign. #}
 {% macro bar_row(item, kind, tag="div") %}
-<{{ tag }} class="bar-row" title="{{ item.name }} ({{ '%.1f' | format(item.share) }}%)">
+{% set signed = kind == "profit" %}
+{% set share = ('%.1f%%' | format(item.share)) if item.share is not none else "" %}
+<{{ tag }} class="bar-row" title="{{ item.name }}{% if share %} ({{ share }}){% endif %}">
   <span class="bar-name">{{ item.name }}</span>
-  <span class="num money {{ 'loss' if item.value < 0 }}">{{ item.value | money }}</span>
-  <span class="num muted share">{{ '%.1f' | format(item.share) }}%</span>
-  <span class="bar-track">{% if item.value > 0 %}<span class="bar {{ kind }}" style="width: {{ '%.2f' | format(item.width) }}%"></span>{% endif %}</span>
+  <span class="num money {{ 'loss' if item.value < 0 else 'gain' if signed and item.value > 0 }}">{{ item.value | money }}</span>
+  <span class="num muted share">{{ share }}</span>
+  <span class="bar-track">{% if item.value > 0 or (signed and item.value < 0) %}<span class="bar {{ ('gain' if item.value > 0 else 'loss') if signed else kind }}" style="width: {{ '%.2f' | format(item.width) }}%"></span>{% endif %}</span>
 </{{ tag }}>
 {% endmacro %}
 
@@ -27,10 +30,10 @@
 <button type="button" class="secondary compact" data-expand-all="{{ key }}" aria-expanded="{{ 'true' if open else 'false' }}">{{ "Collapse all" if open else "Expand all" }}</button>
 {% endmacro %}
 
-{# With `open`, expandable rows start expanded. #}
-{% macro bars(title, items, kind, empty, open=False) %}
+{# With `open`, expandable rows start expanded. The `total` is the sum of the items by default. #}
+{% macro bars(title, items, kind, empty, open=False, total=none) %}
 <div class="composition">
-  <h3>{{ title }} <span class="total money">{{ items | sum(attribute='value') | money }}</span></h3>
+  <h3>{{ title }} <span class="total money">{{ (total if total is not none else items | sum(attribute='value')) | money }}</span></h3>
   {% for item in items %}
   {{ bar_item(item, kind, open) }}
   {% else %}

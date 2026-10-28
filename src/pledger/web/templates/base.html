@@ -35,7 +35,9 @@
       <svg class="eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
       <svg class="eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
     </button>
-    <button type="button" id="quit" class="quit" title="Save what is left to save and stop pledger">Save &amp; Quit</button>
+    <button type="button" id="quit" class="quit" aria-label="Save &amp; Quit" title="Save &amp; Quit: save what is left to save and stop pledger">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 4h3a2 2 0 0 1 2 2v14"/><path d="M2 20h3"/><path d="M13 20h9"/><path d="M10 12v.01"/><path d="M13 4.562v16.157a1 1 0 0 1-1.242.97L5 20V5.562a2 2 0 0 1 1.515-1.94l4-1A2 2 0 0 1 13 4.561Z"/></svg>
+    </button>
   </header>
   <div id="flash" class="flash" role="alert" hidden></div>
   <main>{% block content %}{% endblock %}</main>
@@ -299,6 +301,43 @@
         '<p class="muted">Everything is saved. You can close this tab; run <code>make serve</code> to start pledger again.</p></div>';
       document.querySelector(".topbar nav").remove();
       document.getElementById("quit").remove();
+    });
+
+    // Narrowing selects (data-narrows="<name>"), e.g. an investment account: picking an option
+    // leaves only the option group of that label in the select <name> of their form (all of
+    // them without one), dropping a picked option of another group. Picking an option of a group
+    // there picks its label back. The account also follows a side of the form listing it (an
+    // INVESTMENT side), and the other way around.
+    const hasOption = (select, value) => value !== "" && [...select.options].some((o) => o.value === value);
+
+    function narrow(select) {
+      const target = select.form.elements.namedItem(select.dataset.narrows);
+      if (!target) return;
+      target.querySelectorAll("optgroup").forEach((group) => {
+        group.hidden = group.disabled = select.value !== "" && group.label !== select.value;
+      });
+      if (target.selectedOptions[0]?.parentElement.disabled) target.value = "";
+      for (const name of ["acc_debit", "acc_credit"]) {
+        const side = select.form.elements.namedItem(name);
+        if (side?.tagName === "SELECT" && hasOption(side, select.value)) side.value = select.value;
+      }
+    }
+    document.addEventListener("change", (e) => {
+      const el = e.target;
+      if (!el.form) return;
+      if (el.matches("select[data-narrows]")) {
+        narrow(el);
+        return;
+      }
+      const narrowing = [...el.form.querySelectorAll("select[data-narrows]")];
+      const picked = narrowing.find((s) => s.dataset.narrows === el.name);
+      const group = el.selectedOptions?.[0]?.parentElement;
+      if (picked && group?.tagName === "OPTGROUP" && hasOption(picked, group.label)) {
+        picked.value = group.label;
+        narrow(picked);
+      } else if (el.matches("select[name=acc_debit], select[name=acc_credit]")) {
+        narrowing.filter((s) => hasOption(s, el.value)).forEach((s) => { s.value = el.value; narrow(s); });
+      }
     });
 
     // Autofill buttons (data-autofill): fill in the fields of their form with these

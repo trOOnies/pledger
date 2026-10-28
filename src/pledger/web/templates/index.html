@@ -13,6 +13,12 @@
       {% for a in accounts %}<option value="{{ a }}" {% if a == account %}selected{% endif %}>{{ a }}</option>{% endfor %}
     </select>
   </label>
+  <label>Base movement
+    <select name="base">
+      <option value="">All base movements</option>
+      {% for b in bases %}<option value="{{ b }}" {% if b == base %}selected{% endif %}>{{ b }}</option>{% endfor %}
+    </select>
+  </label>
   <label class="check" title="Movements that set the initial amounts of the accounts; they are left out of results by default">
     <input type="checkbox" name="initial" value="true" {% if initial %}checked{% endif %}> Initial movements
   </label>

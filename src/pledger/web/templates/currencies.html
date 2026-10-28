@@ -230,13 +230,14 @@
   </section>
 
   {% if conversion_form %}
+  {% include "_conversion_filter.html" %}
   <div class="layout">
     <aside class="panel">
       {{ conversion_form | safe }}
       <p class="muted small">Saved in <code>{{ settings.conversions_path.name if settings.conversions_path else "conversion.csv" }}</code>,
         with the amount in each currency. The ledger gets it in {{ base.name }}.</p>
     </aside>
-    <section id="conversions" hx-get="/conversions" hx-trigger="conversions-changed from:body">
+    <section id="conversions" hx-get="/conversions" hx-include="#conversion-filter" hx-trigger="conversions-changed from:body">
       {% include "_conversions.html" %}
     </section>
   </div>

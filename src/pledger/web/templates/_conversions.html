@@ -8,6 +8,7 @@
         <tr>{{ id_header() }}<th>Date</th><th>Base movement</th><th>Debit</th><th class="num">Amount</th><th>Credit</th>
           <th class="num" title="In the currency of the account not in the base one">Other amount</th>
           <th class="num" title="The value of the other currency in the base one: the amount over the other amount">Rate</th>
+          <th class="num" title="The balance of the account in the other currency right after this conversion, in that currency">Balance</th>
           <th>Comment</th><th></th></tr>
       </thead>
       <tbody>
@@ -21,6 +22,8 @@
           <td>{{ c.credit }}</td>
           <td class="num money" data-sort="{{ c.other_amount }}">{{ c.currency }} {{ "{:,.4f}".format(c.other_amount) }}</td>
           <td class="num {{ 'muted' if c.rate is none }}" data-sort="{{ c.rate if c.rate is not none else '' }}">{{ (c.rate | number) if c.rate is not none else "-" }}</td>
+          {% if c.other_balance is none %}<td class="num muted">-</td>{% else %}
+          <td class="num money balance {{ 'loss' if c.other_balance < -0.00005 }}" data-sort="{{ c.other_balance }}" title="{{ c.account }}">{{ c.currency }} {{ "{:,.4f}".format(c.other_balance) }}</td>{% endif %}
           <td class="muted">{{ c.comment }}</td>
           <td class="nowrap">
             {{ edit_button("/conversions/%d/edit" % c.index, c.fingerprint, "conversion-form") }}
@@ -33,9 +36,10 @@
           </td>
         </tr>
         {% else %}
-        <tr><td colspan="10" class="muted">No conversions.</td></tr>
+        <tr><td colspan="11" class="muted">No conversions.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 </div>
+{% if oob %}{% include "_conversion_filter.html" %}{% endif %}

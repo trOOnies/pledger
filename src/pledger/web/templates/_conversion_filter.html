@@ -1,0 +1,17 @@
+{# The filter of the conversions: a currency and an account, the ones in the currency picked (see
+   views.conversion_filter). Swapped out of band with `oob`, so the accounts follow the currency. #}
+<form id="conversion-filter" class="filters" hx-get="/conversions" hx-target="#conversions" hx-trigger="change"
+  {% if oob %}hx-swap-oob="true"{% endif %}>
+  <label>Currency
+    <select name="currency" title="The conversions from or to one currency">
+      <option value="">All currencies</option>
+      {% for c in conversion_currencies %}<option {% if c == conversion_currency %}selected{% endif %}>{{ c }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Account
+    <select name="account" title="The conversions of one account in another currency">
+      <option value="">All accounts</option>
+      {% for a in conversion_accounts %}<option {% if a == conversion_account %}selected{% endif %}>{{ a }}</option>{% endfor %}
+    </select>
+  </label>
+</form>

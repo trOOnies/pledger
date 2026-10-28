@@ -1,21 +1,32 @@
 {# The fields that depend on the investment base movement picked: see views.invest_fields. #}
 {% include "_account_fields.html" %}
 {% if investment %}
-<label><span>Investment{% if investment == "optional" %} <em class="optional">(optional)</em>{% endif %}</span>
-  {% if investments_by_account %}
-  <select name="investment" {% if investment == "required" %}required{% endif %}>
-    <option value="">{{ "Choose…" if investment == "required" else "-" }}</option>
-    {% for account, names in investments_by_account.items() %}
-    <optgroup label="{{ account }}">
-      {% for n in names %}<option {% if n == values.investment %}selected{% endif %}>{{ n }}</option>{% endfor %}
-    </optgroup>
-    {% endfor %}
-  </select>
-  {% else %}
-  <select name="investment" {% if investment == "required" %}required{% endif %} disabled><option value="">No investments yet</option></select>
-  {% endif %}
-  {% if investment == "required" %}<span class="hint">A new one? Add it in <strong>New investment</strong> first.</span>{% endif %}
-</label>
+{# The investment account only narrows down the investments to pick from (see data-narrows in
+   base.html); with an INVESTMENT side, it is that side's account. #}
+<div class="pair">
+  <label>Investment account
+    <select name="investment_account" data-narrows="investment" {% if not investments_by_account %}disabled{% endif %}>
+      <option value="">All accounts</option>
+      {% for account in investments_by_account %}<option {% if account == values.investment_account %}selected{% endif %}>{{ account }}</option>{% endfor %}
+    </select>
+  </label>
+  <label><span>Investment{% if investment == "optional" %} <em class="optional">(optional)</em>{% endif %}</span>
+    {% if investments_by_account %}
+    <select name="investment" {% if investment == "required" %}required{% endif %}>
+      <option value="">{{ "Choose…" if investment == "required" else "-" }}</option>
+      {% for account, names in investments_by_account.items() %}
+      {% set other = values.investment_account and account != values.investment_account %}
+      <optgroup label="{{ account }}"{% if other %} hidden disabled{% endif %}>
+        {% for n in names %}<option {% if n == values.investment and not other %}selected{% endif %}>{{ n }}</option>{% endfor %}
+      </optgroup>
+      {% endfor %}
+    </select>
+    {% else %}
+    <select name="investment" {% if investment == "required" %}required{% endif %} disabled><option value="">No investments yet</option></select>
+    {% endif %}
+  </label>
+</div>
+{% if investment == "required" %}<span class="hint">A new one? Add it in <strong>New investment</strong> first.</span>{% endif %}
 {% endif %}
 {% if quantity %}
 <label><span>Quantity{% if quantity == "optional" %} <em class="optional">(optional)</em>{% endif %}</span>

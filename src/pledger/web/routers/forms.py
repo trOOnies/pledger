@@ -8,12 +8,11 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 
-from pledger.models import DebtAccount
+from pledger.models import DebtAccount, InvestmentAccount
 from pledger.web.dependencies import StoreDep
 from pledger.web.store import LedgerStore, Snapshot, StaleRowError
 from pledger.web.templating import (
     money,
-    remembered_month,
     render_card_payment_form,
     render_conversion_form,
     render_debt_form,
@@ -23,17 +22,22 @@ from pledger.web.templating import (
     templates,
 )
 from pledger.web.views import (
+    EDITABLE_ACCOUNT_TYPES,
+    account_correcting,
+    account_editing,
     account_fields,
+    account_form,
+    account_values,
     base_fields,
     base_sides,
-    build_accounts,
     build_conversions,
     build_invest_movements,
     build_work,
     conversion_fields,
+    conversion_filter,
+    debt_form_fields,
     invest_fields,
     invest_filter,
-    months_of,
     setup_context,
     work_form,
 )
@@ -182,8 +186,12 @@ def edit_movement(
 
 @router.post("/movements/{index}/delete", response_class=Response)
 def delete_movement(store: StoreDep, index: int, fingerprint: Annotated[str, Form()]):
+    """Delete a movement of the Ledger tab, or a balance correction (see LedgerStore.correct_balance)."""
+    snapshot = store.load()
+    rows = snapshot.rows
+    correction = 0 <= index < len(rows) and rows.iloc[index]["base_movement"] in snapshot.correction_base_movements()
     try:
-        store.delete(index, fingerprint)
+        store.delete(index, fingerprint, correction=correction)
     except StaleRowError as e:
         raise HTTPException(status_code=409, detail=str(e)) from None
     except ValueError as e:
@@ -206,10 +214,14 @@ def form_invest_fields(request: Request, store: StoreDep, base_movement: str = "
 
 
 @router.get("/investments/movements")
-def investment_movements(request: Request, store: StoreDep, investment: str = ""):
-    """The investment movements, of the investment picked in the filter if any (see views.invest_filter)."""
+def investment_movements(request: Request, store: StoreDep, account: str = "", investment: str = "", base: str = ""):
+    """
+    The investment movements, of the investment account and investment picked in the filter
+    if any (see views.invest_filter), with the filter itself, out of band.
+    """
     return templates.TemplateResponse(
-        request, "_invest_movements.html", invest_filter(build_invest_movements(store.load()), investment)
+        request, "_invest_movements.html",
+        {**invest_filter(build_invest_movements(store.load()), account, investment, base), "oob": True},
     )
 
 
@@ -226,12 +238,13 @@ def create_investment_movement(
     comment: Annotated[str, Form()] = "",
     investment: Annotated[str, Form()] = "",
     quantity: Annotated[str, Form()] = "",
+    investment_account: Annotated[str, Form()] = "",  # only narrows down the investments of the form
 ):
     values = {
         "move_date": move_date, "move_type": move_type, "base_movement": base_movement,
         "acc_debit": acc_debit, "acc_credit": acc_credit,
         "amount": amount, "comment": comment,
-        "investment": investment, "quantity": quantity,
+        "investment": investment, "quantity": quantity, "investment_account": investment_account,
     }
     try:
         store.add(
@@ -319,9 +332,13 @@ def form_conversion_fields(
 
 
 @router.get("/conversions")
-def conversions(request: Request, store: StoreDep):
+def conversions(request: Request, store: StoreDep, currency: str = "", account: str = ""):
+    """
+    The conversions, of the currency and account picked in the filter if any (see
+    views.conversion_filter), with the filter itself, out of band.
+    """
     return templates.TemplateResponse(
-        request, "_conversions.html", {"conversions": build_conversions(store.load())}
+        request, "_conversions.html", {**conversion_filter(store.load(), currency, account), "oob": True}
     )
 
 
@@ -440,12 +457,26 @@ def render_setup(request: Request, store: LedgerStore, values: dict, **extra):
     )
 
 
-def render_accounts(request: Request, store: LedgerStore, values: dict, **extra):
-    snapshot = store.load()
-    month = remembered_month(request, None, months_of(snapshot))
-    return templates.TemplateResponse(
-        request, "_accounts.html", {**build_accounts(snapshot, month, values), **extra}
+def render_account_form(
+    request: Request, store: LedgerStore, values: dict, editing: dict | None = None,
+    correcting: dict | None = None, changed: bool = False, **extra,
+):
+    """
+    The account form alone (see views.account_form); `changed` tells the rest of the
+    Accounts tab to reload.
+    """
+    response = templates.TemplateResponse(
+        request, "_account_form.html", {**account_form(store.load(), values, editing, correcting), **extra}
     )
+    if changed:
+        response.headers["HX-Trigger"] = "accounts-changed"
+    return response
+
+
+@router.get("/form/account")
+def new_account_form(request: Request, store: StoreDep):
+    """A new account form, e.g. to cancel editing an account."""
+    return render_account_form(request, store, {})
 
 
 @router.post("/accounts")
@@ -474,10 +505,90 @@ def create_account(
             "acc_initial_amount": initial_amount, "acc_initial_date": initial_date,
             "acc_check": check,
         }
-        return render_accounts(request, store, values, account_error=str(e))
-    return render_accounts(
+        return render_account_form(request, store, values, account_error=str(e))
+    return render_account_form(
         request, store, {"acc_type": acc_type, "acc_currency": currency},
-        account_success=f"Added account {name.strip()}",
+        changed=True, account_success=f"Added account {name.strip()}",
+    )
+
+
+def editable_account(store: LedgerStore, name: str):
+    """An account that can be edited in the Accounts tab (see views.EDITABLE_ACCOUNT_TYPES)."""
+    account = store.load().accounts.get(name)
+    if account is None or account.acc_type not in EDITABLE_ACCOUNT_TYPES:
+        raise HTTPException(status_code=404, detail=f"No asset or liability account {name!r}")
+    return account
+
+
+@router.get("/accounts/edit")
+def edit_account_form(request: Request, store: StoreDep, name: str):
+    """The account form filled with an account, to edit it."""
+    account = editable_account(store, name)
+    return render_account_form(request, store, account_values(account), editing=account_editing(account))
+
+
+@router.post("/accounts/edit")
+def edit_account(
+    request: Request,
+    store: StoreDep,
+    name: Annotated[str, Form()],
+    description: Annotated[str, Form()] = "",
+    initial_amount: Annotated[str, Form()] = "",
+    is_liquid: Annotated[bool, Form()] = False,
+    initial_date: Annotated[str, Form()] = "",
+    check: Annotated[str, Form()] = "",  # one AccountCheck value, or none
+):
+    account = editable_account(store, name)
+    try:
+        store.edit_account(name, description, initial_amount, is_liquid, initial_date, [check] if check else [])
+    except ValueError as e:
+        values = {
+            "acc_type": account.acc_type.value, "acc_name": name, "acc_description": description,
+            "acc_currency": account.currency.name, "acc_is_liquid": is_liquid,
+            "acc_initial_amount": initial_amount, "acc_initial_date": initial_date,
+            "acc_check": check,
+        }
+        return render_account_form(request, store, values, editing=account_editing(account), account_error=str(e))
+    return render_account_form(request, store, {}, changed=True, account_success=f"Updated account {name}")
+
+
+def correctable_account(store: LedgerStore, name: str):
+    """An account whose balance can be corrected in the Accounts tab: not an investment one."""
+    account = editable_account(store, name)
+    if isinstance(account, InvestmentAccount):
+        raise HTTPException(status_code=404, detail=f"{name!r} is an investment account")
+    return account
+
+
+@router.get("/accounts/correct")
+def correct_balance_form(request: Request, store: StoreDep, name: str):
+    """The account form to correct the balance of an account (see LedgerStore.correct_balance)."""
+    account = correctable_account(store, name)
+    return render_account_form(request, store, {}, correcting=account_correcting(store.load(), account))
+
+
+@router.post("/accounts/correct")
+def correct_balance(
+    request: Request,
+    store: StoreDep,
+    name: Annotated[str, Form()],
+    balance: Annotated[str, Form()] = "",  # required, but checked by the store
+    check_date: Annotated[str, Form()] = "",
+):
+    account = correctable_account(store, name)
+    try:
+        corrected = store.correct_balance(name, balance, check_date)
+    except ValueError as e:
+        return render_account_form(
+            request, store, {"balance": balance, "check_date": check_date},
+            correcting=account_correcting(store.load(), account), account_error=str(e),
+        )
+    if corrected is None:
+        return render_account_form(request, store, {}, account_success=f"The balance of {name} was already right")
+    base_movement, amount = corrected
+    return render_account_form(
+        request, store, {}, changed=True,
+        account_success=f"Corrected {name}: {base_movement} of {money(amount, store.settings.currency)}",
     )
 
 
@@ -605,6 +716,7 @@ def edit_investment_movement_form(
         "move_date": m["date"], "move_type": m["type"], "base_movement": m["base"],
         "acc_debit": m["debit"], "acc_credit": m["credit"], "amount": f"{m['amount']:,.2f}",
         "comment": m["comment"], "investment": m["investment"], "quantity": m["quantity"],
+        "investment_account": m["account"] or "",
     }
     return render_invest_form(request, snapshot, values, editing=editing)
 
@@ -625,12 +737,13 @@ def edit_investment_movement(
     comment: Annotated[str, Form()] = "",
     investment: Annotated[str, Form()] = "",
     quantity: Annotated[str, Form()] = "",
+    investment_account: Annotated[str, Form()] = "",  # only narrows down the investments of the form
 ):
     values = {
         "move_date": move_date, "move_type": move_type, "base_movement": base_movement,
         "acc_debit": acc_debit, "acc_credit": acc_credit,
         "amount": amount, "comment": comment,
-        "investment": investment, "quantity": quantity,
+        "investment": investment, "quantity": quantity, "investment_account": investment_account,
     }
     field = INVEST_SOURCES[source]
     editing, _ = editing_of(store, field, index, fingerprint, f"/investments/{source}/{index}/edit")
@@ -711,6 +824,14 @@ def edit_conversion(
     response = render_conversion_form(request, store.load(), {}, success=updated(editing, what, move_date))
     response.headers["HX-Trigger"] = "conversions-changed"
     return response
+
+
+@router.get("/form/debt-bases")
+def form_debt_bases(request: Request, store: StoreDep, debt_kind: str = ""):
+    """The debt base movements of a kind of the Debt tab (see views.debt_form_fields)."""
+    return templates.TemplateResponse(
+        request, "_debt_bases.html", {**debt_form_fields(store.load(), kind=debt_kind), "values": {}}
+    )
 
 
 @router.get("/form/debt-movement")

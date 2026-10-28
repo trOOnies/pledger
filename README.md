@@ -63,14 +63,14 @@ A FastAPI + HTMX UI, one tab per area:
 
 | Tab | What it shows |
 | --- | --- |
-| 📋 **Ledger** | Lists, adds, edits and deletes movements. Conversions, debt movements and card payments are added in their own tabs instead. |
-| 🏦 **Accounts** | Balances, total assets, liabilities and equity, a form to add accounts, the composition of assets and liabilities (by currency or by liquidity) and, at each month end, debt over equity and net liquidity (liquid assets minus liquid liabilities) over equity. |
-| 💱 **Currencies** | Balances per currency, the balance of each account in other currencies in its own currency, the daily CPI of the base currency, its monthly inflation, the nominal and real value of each other currency, and the share of each currency in the assets at each month end. The conversions are added (picking the currency sold and the one bought), edited and deleted here. |
-| 📊 **Results** | The nominal and real change of equity in the period and the months of expenses it covers, gains and losses by result type, a waterfall of the result by type (with its result statement as a table, both also as a share of the gains of the first result type, e.g. *Operative*) and equity over time. Result types and base movements are listed and added here. |
+| 📋 **Ledger** | Lists, adds, edits and deletes movements, with the balances of their accounts right after each one, filtered by month, account and base movement. Conversions, debt movements and card payments are added in their own tabs instead. |
+| 🏦 **Accounts** | Balances, total assets, liabilities and equity, a form to add accounts, edit the asset and liability ones (✎) and correct their balance (⚖), the composition of assets and liabilities (by currency or by liquidity) and, at each month end, debt over equity and net liquidity (liquid assets minus liquid liabilities) over equity. |
+| 💱 **Currencies** | Balances per currency, the balance of each account in other currencies in its own currency, the daily CPI of the base currency, its monthly inflation, the nominal and real value of each other currency, and the share of each currency in the assets at each month end. The conversions are added (picking the currency sold and the one bought), edited and deleted here, filtered by currency and account, each with the account's balance in its own currency after it. |
+| 📊 **Results** | The nominal and real change of equity in the period and the months of expenses it covers, gains, losses and profit by result type (also cumulative), a waterfall of the result by type (with its result statement as a table, both also as a share of the gains of the first result type, e.g. *Operative*) and equity over time. Result types and base movements are listed and added here. |
 | 💼 **Work** | The company, job position and salary of each month, from gross to net through its deductions (taxes, contributions...), with a chart of both salaries (0 for the months without a job). |
-| 📈 **Investments** | The investments of the investment accounts with their price (amount over quantity), their composition by type or by account, the results of each one, the interest on money of regular accounts, and charts of the total invested and the total result. The broker fees of each investment are shown over its amount. The **Investment** filter shows only the movements of one investment. The internal `Invest` movements are added, edited and deleted here. |
-| 🤝 **Debt** | Who we owe and who owes us in the debt accounts (people, services and companies), with alerts and the movements of the month. The debt movements are added and edited here. |
-| 💳 **Credit Cards** | What we owe on each card, what was charged and paid in the month, a chart of the monthly charges, the net owed over equity, and the movements of the month. The card payments are added and edited here. |
+| 📈 **Investments** | The investments of the investment accounts with their price (amount over quantity), their composition by type or by account, the results of each one, the interest on money of regular accounts, and charts of the total invested and the total result. The broker fees of each investment are shown over its amount. The **Investment account**, **Investment** and **Base movement** filters narrow the movements down (an investment shows all its movements, whatever their accounts), each with the total of its account and the amount and quantity of its investment after it. The internal `Invest` movements are added, edited and deleted here. |
+| 🤝 **Debt** | Who we owe and who owes us in the debt accounts (people, services and companies), with alerts and the movements of the month, each with what we owe whoever it names after it. The debt movements are added and edited here. |
+| 💳 **Credit Cards** | What we owe on each card, what was charged and paid in the month, a chart of the monthly charges, the net owed over equity, and the movements of the month, each with what we owe on its card after it. The card payments are added and edited here. |
 | ❓ **Help** | The concepts, explained for everyday users. |
 
 A few things are shared across tabs:
@@ -176,7 +176,23 @@ asset:
     - net_zero
 ```
 
-The Accounts tab groups their balances by currency or by liquidity.
+The Accounts tab groups their balances by currency or by liquidity. Its ✎ edits an asset or
+liability account in its YAML (all but its name, type and currency), and its ⚖ corrects the
+balance of one (but an investment account) to the one checked by hand at the end of a date, today
+by default, in its currency. The difference is a movement of one of these internal base movements,
+on that date, in the ledger CSV:
+
+```yaml
+internal:
+  Invest:   # or any other internal result type
+    base_movements:
+      gain:
+        Correction (G): Money correction in favour of oneself
+      loss:
+        Correction (L): Money correction against oneself
+```
+
+The Ledger tab shows them with a 🟣 linking to their account, and can delete them.
 
 ### Base movements and internal movements
 
@@ -410,7 +426,7 @@ internal:
 ```
 
 They are added, edited and deleted from the Debt tab only (or `/api/debt/movements`), picking one
-of them in its two pairs of buttons (Debt: Incurred or Paid; Loan: Given or Collected). Its form
+of them in two steps (Debt, then Incurred or Paid; Loan, then Given or Collected). Its form
 asks who the movement is about, and names them first in the comment: people and services, never
 a company, whose debt comes from the salaries of the Work tab (it is still listed as usual). The
 Ledger tab shows them with a 🟡 linking there.

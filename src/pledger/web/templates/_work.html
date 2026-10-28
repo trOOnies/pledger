@@ -6,7 +6,6 @@
     <div class="cards">
       <div class="card" title="The job of the last month, if any"><span class="label">Current job</span><span class="num">{{ current.company if current else "-" }}</span>{% if current %}<span class="muted small">{{ current.position }}</span>{% endif %}</div>
       <div class="card" title="Gross salaries of the months of this year"><span class="label">Gross <small>{{ year }}</small></span><span class="num money">{{ gross | money }}</span></div>
-      <div class="card" title="Deductions of the gross salaries of the months of this year: taxes, contributions..."><span class="label">Deductions <small>{{ year }}</small></span><span class="num money">{{ deducted | money }}</span>{% if gross %}<span class="muted small">{{ "%.1f" | format(deducted / gross * 100) }}% of gross</span>{% endif %}</div>
       <div class="card" title="Net salaries of the months of this year: gross minus deductions"><span class="label">Net <small>{{ year }}</small></span><span class="num money">{{ net | money }}</span></div>
     </div>
 

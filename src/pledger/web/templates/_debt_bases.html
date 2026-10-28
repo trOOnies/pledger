@@ -1,0 +1,14 @@
+{# The debt base movements of the kind picked (see views.debt_form_fields), and the account fields of the selected one. #}
+<div class="field">
+  <span class="field-label" id="debt-base">{{ kind }}</span>
+  <div class="segmented types" role="radiogroup" aria-labelledby="debt-base">
+    {% for name, (label, color) in buttons.items() %}
+    <label class="{{ color }}" title="{{ name }}">
+      <input type="radio" name="base_movement" value="{{ name }}" {% if name == base_movement %}checked{% endif %}
+        hx-get="/form/accounts" hx-target="#debt-account-fields" hx-swap="innerHTML">
+      {{ label }}
+    </label>
+    {% endfor %}
+  </div>
+</div>
+<div id="debt-account-fields">{% include "_account_fields.html" %}</div>

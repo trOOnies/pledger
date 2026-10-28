@@ -20,14 +20,17 @@
 <div id="setup">{% include "_setup.html" %}</div>
 
 <script>
-  // Keep the result by type over the gains of a result type when the results re-render.
-  let resultsRelative = false;
+  // Keep the result by type over the gains of a result type, and the cumulative gains and
+  // losses, when the results re-render.
+  const resultsToggles = { "results-relative": false, "results-cumulative": false };
   document.addEventListener("change", (e) => {
-    if (e.target.name === "results-relative") resultsRelative = e.target.checked;
+    if (e.target.name in resultsToggles) resultsToggles[e.target.name] = e.target.checked;
   });
   document.addEventListener("htmx:afterSwap", () => {
-    const box = document.querySelector('input[name="results-relative"]');
-    if (box && !box.disabled) box.checked = resultsRelative;
+    for (const [name, checked] of Object.entries(resultsToggles)) {
+      const box = document.querySelector(`input[name="${name}"]`);
+      if (box && !box.disabled) box.checked = checked;
+    }
   });
 </script>
 {% endblock %}

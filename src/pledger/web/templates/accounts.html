@@ -10,7 +10,7 @@
   </label>
 </form>
 
-<div id="accounts-view">{% include "_accounts.html" %}</div>
+<div id="accounts-view" hx-get="/accounts" hx-include="#filters" hx-trigger="accounts-changed from:body">{% include "_accounts.html" %}</div>
 
 <script>
   // Keep the grouping picked for the Assets & liabilities bars when the accounts re-render.

@@ -35,6 +35,7 @@ from pledger.models import (
     SPECIAL_SIDES,
     Account,
     Company,
+    CreditCardAccount,
     Currency,
     DebtAccount,
     Investment,
@@ -109,6 +110,12 @@ INVEST = "Invest"
 INTEREST_GAIN = "Interest on Money (G)"
 INTEREST_LOSS = "Interest on Money (L)"
 INTEREST = {INTEREST_GAIN, INTEREST_LOSS}
+# The internal gain and loss of the corrections of the balance of an account to the one
+# checked by hand, in favour of oneself or against, in the ledger CSV: added from the
+# Accounts tab and deleted from the Ledger one (see LedgerStore.correct_balance)
+CORRECTION_GAIN = "Correction (G)"
+CORRECTION_LOSS = "Correction (L)"
+CORRECTIONS = {CORRECTION_GAIN: MovementType.GAIN, CORRECTION_LOSS: MovementType.LOSS}
 
 # Columns of the investments CSV, of the movements of the investment base movements
 # but the interest on money: those of the ledger CSV, plus the investment (its name
@@ -234,8 +241,10 @@ class Snapshot:
     conversion_rows: DataFrame = field(init=False)
     salary_rows: DataFrame = field(init=False)
     result_rows: DataFrame = field(init=False)
-    # The balance of each account in another currency in that currency (see _result_rows)
+    # The balance of each account in another currency in that currency, and its movements
+    # (see _result_rows)
     other_balances: dict[str, float] = field(init=False)
+    currency_moves: dict[str, list[tuple]] = field(init=False)
     # The id of each movement by its index in all_rows: None for a CSV row without a
     # valid one yet (see stored_ids), until the ids are frozen again.
     ids: dict[int, str | None] = field(init=False)
@@ -257,7 +266,7 @@ class Snapshot:
         ):
             setattr(self, name, generate(self, start))
             start -= len(getattr(self, name))
-        self.result_rows, self.other_balances = _result_rows(self, start)
+        self.result_rows, self.other_balances, self.currency_moves = _result_rows(self, start)
         self.ids = {}
         for generated, stored, prefix in (
             (self.rows, self.rows, LEDGER_ID),
@@ -293,6 +302,31 @@ class Snapshot:
         """
         rows = _concat([self.initial_rows, self.booked_rows, self.result_rows], self.rows.columns)
         return rows.assign(**{ID_COLUMN: [self.ids[ix] for ix in rows.index]}).sort_values("move_date", kind="stable")
+
+    def own_balance(self, name: str, date: str) -> float:
+        """
+        The balance of an account in another currency, in its currency, at the end of
+        `date` (see _result_rows).
+        """
+        values = self.accounts[name].currency.base_currency_mapping
+        return float(sum(_in_currency(m, values) for m in self.currency_moves.get(name, []) if m[0] <= date))
+
+    def conversion_balances(self) -> dict[int, float]:
+        """
+        The balance in its currency of the account in another currency of each conversion,
+        by its row in the conversions CSV, right after it (see _result_rows).
+        """
+        after = {}
+        for name, moves in self.currency_moves.items():
+            values = self.accounts[name].currency.base_currency_mapping
+            if not len(values):
+                continue
+            total = 0.0
+            for move in sorted(moves, key=lambda m: m[0]):  # stable: in their order on each date
+                total += _in_currency(move, values)
+                if move[3] is not None:
+                    after[move[3]] = total
+        return after
 
     def ledger(self, rows: DataFrame | None = None) -> Ledger:
         """Build a Ledger from these rows (all rows, initial ones included, by default)."""
@@ -422,6 +456,13 @@ class Snapshot:
                 wrong.append(f"{name!r} (an internal transfer with {side.value}: {special})")
         return found, wrong
 
+    def correction_base_movements(self) -> dict[str, MovementBase]:
+        """The base movements of the balance corrections (CORRECTIONS) that are internal ones of their type."""
+        return {
+            n: b for n, t in CORRECTIONS.items()
+            if (b := self.base_movements.get(n)) is not None and b.internal and b.move_type == t
+        }
+
     def ledger_base_movements(self) -> dict[str, MovementBase]:
         """The base movements that can be picked in the Ledger tab: the manual ones but those of other tabs."""
         other_tabs = (
@@ -432,13 +473,13 @@ class Snapshot:
     def invest_base_movements(self) -> dict[str, MovementBase]:
         """
         The internal base movements handled in the Investments tab: those of the
-        INVEST result type and the transfers with an INVESTMENT side. The movements of
+        INVEST result type (but the CORRECTIONS) and the transfers with an INVESTMENT side. The movements of
         the INTEREST ones are in the interest CSV, and those of the others in the
         investments CSV.
         """
         return {
             n: b for n, b in self.base_movements.items()
-            if b.internal and (
+            if b.internal and n not in CORRECTIONS and (
                 b.result_type.name == INVEST if b.result_type is not None
                 else INVESTMENT in {b.debit_special, b.credit_special}
             )
@@ -619,6 +660,7 @@ class LedgerStore:
         quantity: str | float = "",
         debt: bool = False,
         card_payment: bool = False,
+        correction: bool = False,
     ) -> None:
         """
         Validate a new movement and append it to its CSV. With `invest` (from the
@@ -629,13 +671,13 @@ class LedgerStore:
         (see _check_known_investment). Without it, it must be of a non-internal base
         movement whose movements aren't generated, and goes to the ledger CSV: one of a
         debt base movement with `debt` (from the Debt tab), one of a card payment base
-        movement with `card_payment` (from the Credit Cards tab), else one of the Ledger
-        tab (see _check_tab). It gets the next id of its CSV (see _appended).
+        movement with `card_payment` (from the Credit Cards tab), a balance correction with
+        `correction` (from the Accounts tab), else one of the Ledger tab (see _check_tab). It gets the next id of its CSV (see _appended).
         """
         snapshot = self.load()
         field, new_row = _movement_row(
             snapshot, move_date, base_movement, acc_debit, acc_credit, amount, comment,
-            invest, investment, quantity, debt, card_payment,
+            invest, investment, quantity, debt, card_payment, correction,
         )
         path, what, prefix = {
             "rows": (self.settings.ledger_path, "ledger", LEDGER_ID),
@@ -719,33 +761,112 @@ class LedgerStore:
             raise ValueError(f"Invalid account type: {acc_type!r}") from None
         if acc_type == AccountType.EQUITY:
             raise ValueError("New equity accounts are not supported")
-        description = _check_description(description, "account")
-        currency = currency.strip() or snapshot.base_currency.name
-        if currency not in snapshot.currencies:
-            raise ValueError(f"Unknown currency: {currency!r}")
-        if not str(initial_amount).strip():
-            raise ValueError("The initial amount is required")
-        amount = _parse_amount(initial_amount, "initial amount")
-        fields = {
-            "description": description,
-            "currency": currency,
-            "is_liquid": bool(is_liquid),
-            "initial_amount": amount,
-        }
-        if initial_date.strip():
-            try:
-                fields["initial_date"] = dt.date.fromisoformat(initial_date.strip())
-            except ValueError:
-                raise ValueError(f"Invalid initial date: {initial_date!r}") from None
-        try:
-            checks = [AccountCheck(c) for c in checks]
-        except ValueError:
-            raise ValueError(f"Invalid checks: {list(checks)}") from None
-        if len(set(checks)) != len(checks):
-            raise ValueError(f"Repeated checks: {[c.value for c in checks]}")
-        if checks:
-            fields["checks"] = [c.value for c in checks]
+        fields = _account_fields(snapshot, description, initial_amount, currency, is_liquid, initial_date, checks)
         self._add_yaml_entry(self.settings.accounts_path, (acc_type.value,), name, fields)
+
+    def edit_account(
+        self,
+        name: str,
+        description: str,
+        initial_amount: str | float = "",
+        is_liquid: bool = False,
+        initial_date: str = "",
+        checks: Sequence[str] = (),
+    ) -> None:
+        """
+        Validate the new fields of an asset or liability account, like add_account, and
+        write them over its entry in the accounts YAML, or in the credit cards YAML for a
+        credit card account; its name, type and currency stay, and so do the other keys of
+        the entry.
+        Investment and debt accounts have no initial amount (theirs is that of their
+        investments or creditors), and credit card accounts are always liquid. Rolls back
+        if the files no longer load.
+        """
+        snapshot = self.load()
+        account = snapshot.accounts.get(name)
+        if account is None:
+            raise ValueError(f"Unknown account: {name!r}")
+        if account.acc_type not in {AccountType.ASSET, AccountType.LIABILITY}:
+            raise ValueError(f"Only asset and liability accounts can be edited, not {name!r}")
+        fixed_amount = isinstance(account, (InvestmentAccount, DebtAccount))
+        fields = _account_fields(
+            snapshot, description, 0 if fixed_amount else initial_amount, account.currency.name, is_liquid,
+            initial_date, checks,
+        )
+        if fixed_amount:
+            del fields["initial_amount"]
+        if isinstance(account, CreditCardAccount):
+            del fields["is_liquid"]
+            path, section = self.settings.credit_cards_path, ()
+        else:
+            path, section = self.settings.accounts_path, (account.acc_type.value,)
+
+        def update(entry: dict) -> dict:
+            entry = {k: v for k, v in entry.items() if k not in {"initial_date", "checks"}}
+            return {**entry, **fields}
+
+        before = path.read_bytes().decode("utf-8")
+        _atomic_write(path, _replace_yaml_entry(before, (*section, name), update))
+        try:
+            self.load()
+        except LedgerDataError as e:
+            _atomic_write(path, before)
+            raise ValueError(f"Could not edit {name!r}: {e}") from None
+
+    def correct_balance(self, name: str, balance: str | float, check_date: str = "") -> tuple[str, float] | None:
+        """
+        Correct the balance of an asset or liability account (but an investment one) to
+        `balance`, checked by hand at the end of `check_date` (today by default), in its
+        currency: a CORRECTION_GAIN or CORRECTION_LOSS movement on that date of the
+        difference with its balance then, out of or into equity, in the ledger CSV. The difference in another currency is at
+        the value of that currency on that date. Returns the base movement and the amount
+        in the base currency, or None if the balance was already right.
+        """
+        snapshot = self.load()
+        account = snapshot.accounts.get(name)
+        if account is None or account.acc_type not in {AccountType.ASSET, AccountType.LIABILITY}:
+            raise ValueError(f"Only the balances of asset and liability accounts are corrected, not {name!r}")
+        if isinstance(account, InvestmentAccount):
+            raise ValueError(f"The balance of the investment account {name!r} comes from its investments")  # noqa: TRY004 (a bad pick)
+        if not str(balance).strip():
+            raise ValueError("The checked balance is required")
+        try:
+            checked = float(str(balance).replace(",", "").strip())
+        except ValueError:
+            raise ValueError(f"Invalid checked balance: {balance!r}") from None
+        if not math.isfinite(checked):
+            raise ValueError(f"Invalid checked balance: {balance!r}")
+        check_date = check_date.strip() or dt.date.today().isoformat()
+        try:
+            dt.date.fromisoformat(check_date)
+        except ValueError:
+            raise ValueError(f"Invalid check date: {check_date!r}") from None
+
+        if account.currency.is_base_currency:
+            rows = snapshot.all_rows
+            difference = checked - snapshot.ledger(rows[rows.move_date <= check_date]).balances().get(name, 0.0)
+        else:
+            values = account.currency.base_currency_mapping
+            if not len(values):
+                raise ValueError(f"There are no values of {account.currency.name} to correct {name!r} with")
+            up_to = values[values.index <= Timestamp(check_date)]
+            value = up_to.iloc[-1] if len(up_to) else values.iloc[0]
+            difference = (checked - snapshot.own_balance(name, check_date)) * float(value)
+        amount = round(abs(difference), 2)
+        if amount < 0.005:
+            return None
+        gain = (difference > 0) == (account.acc_type == AccountType.ASSET)
+        base_name = CORRECTION_GAIN if gain else CORRECTION_LOSS
+        if base_name not in snapshot.correction_base_movements():
+            raise ValueError(
+                f"Correcting balances needs {base_name!r}, an internal {'gain' if gain else 'loss'} of the "
+                "base movements YAML"
+            )
+        base = snapshot.base_movements[base_name]
+        debit, credit = (name, base.acc_credit.name) if gain else (base.acc_debit.name, name)
+        comment = f"Checked balance: {checked:,.2f} {account.currency.name}"
+        self.add(check_date, base_name, debit, credit, amount, comment, correction=True)
+        return base_name, amount
 
     def add_result_type(self, name: str, long_name: str, description: str) -> None:
         """Validate a new result type and add it, with the next id, to the base movements YAML."""
@@ -983,15 +1104,17 @@ class LedgerStore:
         self._write_file(csv_file)
 
     def delete(
-        self, index: int, fingerprint: str | None = None, debt: bool = False, card_payment: bool = False
+        self, index: int, fingerprint: str | None = None, debt: bool = False, card_payment: bool = False,
+        correction: bool = False,
     ) -> None:
         """
         Delete a row of the ledger CSV by position, optionally checking it is the
         expected one. Never of an internal base movement, but a debt movement with
-        `debt` (from the Debt tab) or a card payment with `card_payment` (from the
-        Credit Cards tab), which are only deleted from there (see _check_tab).
+        `debt` (from the Debt tab), a card payment with `card_payment` (from the
+        Credit Cards tab) or a balance correction with `correction`, which are only
+        deleted that way (see _check_tab).
         """
-        self._delete_row("rows", index, fingerprint, debt, card_payment)
+        self._delete_row("rows", index, fingerprint, debt, card_payment, correction)
 
     def edit(
         self,
@@ -1111,7 +1234,8 @@ class LedgerStore:
         self._delete_row("interest", index, fingerprint)
 
     def _delete_row(
-        self, field: str, index: int, fingerprint: str | None, debt: bool = False, card_payment: bool = False
+        self, field: str, index: int, fingerprint: str | None, debt: bool = False, card_payment: bool = False,
+        correction: bool = False,
     ) -> None:
         """
         Delete a row by position from the CSV of a Snapshot `field` ("rows",
@@ -1123,7 +1247,7 @@ class LedgerStore:
         self.current_row(snapshot, field, index, fingerprint)
         if field == "rows":
             _check_invest(snapshot, rows.iloc[index]["base_movement"], False, "deleted")
-            _check_tab(snapshot, rows.iloc[index]["base_movement"], False, debt, card_payment, "deleted")
+            _check_tab(snapshot, rows.iloc[index]["base_movement"], False, debt, card_payment, "deleted", correction)
         changed = replace(snapshot, **{field: rows.drop(index=rows.index[index])})
         changed.ledger().check_accounts()
         changed.investment_accounts()  # e.g. not deleting a purchase of something sold later
@@ -1458,6 +1582,7 @@ def _movement_row(
     quantity: str | float,
     debt: bool,
     card_payment: bool,
+    correction: bool = False,
 ) -> tuple[str, dict]:
     """
     Validate a movement (see LedgerStore.add) and give the Snapshot field of the CSV
@@ -1470,7 +1595,7 @@ def _movement_row(
     if base_movement not in snapshot.base_movements:
         raise ValueError(f"Unknown base movement: {base_movement!r}")
     _check_invest(snapshot, base_movement, invest, "added")
-    _check_tab(snapshot, base_movement, invest, debt, card_payment)
+    _check_tab(snapshot, base_movement, invest, debt, card_payment, correction=correction)
     has_details = str(investment).strip() or str(quantity).strip()
     if has_details and (not invest or base_movement in INTEREST):
         raise ValueError("Only movements of the investments have an investment and a quantity")
@@ -1537,7 +1662,10 @@ def _check_invest(snapshot: Snapshot, base_name: str, invest: bool, action: str)
         raise ValueError(f"Base movement {base_name!r} is not an investment base movement")
     if is_invest and not invest:
         raise ValueError(f"Movements of the base movement {base_name!r} are {action} from the Investments tab")
-    tab_bases = snapshot.debt_base_movements().keys() | snapshot.card_payment_base_movements().keys()
+    tab_bases = (
+        snapshot.debt_base_movements().keys() | snapshot.card_payment_base_movements().keys()
+        | snapshot.correction_base_movements().keys()
+    )
     if snapshot.base_movements[base_name].internal and not is_invest and base_name not in tab_bases:
         raise ValueError(f"Base movement {base_name!r} is internal and its movements cannot be {action} by hand")
     if base_name in GENERATED:
@@ -1560,19 +1688,23 @@ def _check_known_investment(snapshot: Snapshot, acc_debit: str, acc_credit: str,
 
 
 def _check_tab(
-    snapshot: Snapshot, base_name: str, invest: bool, debt: bool, card_payment: bool, action: str = "added"
+    snapshot: Snapshot, base_name: str, invest: bool, debt: bool, card_payment: bool, action: str = "added",
+    correction: bool = False,
 ) -> None:
     """
     Each tab adds (or edits, or deletes: the `action`) the movements of its own base
     movements: the conversions are only added from the Currencies tab, the debt
-    movements from the Debt tab, the card payments from the Credit Cards tab, and all
-    the others from the Ledger tab (or the Investments tab, see _check_invest).
+    movements from the Debt tab, the card payments from the Credit Cards tab, the
+    balance corrections from the Accounts tab (`correction`; the Ledger tab deletes
+    them with it too), and all the others from the Ledger tab (or the Investments tab,
+    see _check_invest).
     """
     if base_name in snapshot.conversion_base_names:
         raise ValueError(f"The conversions ({base_name!r}) are added from the Currencies tab")
     for wanted, bases, what, tab in (
         (debt, snapshot.debt_base_movements(), "debt", "Debt"),
         (card_payment, snapshot.card_payment_base_movements(), "card payment", "Credit Cards"),
+        (correction, snapshot.correction_base_movements(), "balance correction", "Accounts"),
     ):
         if wanted and base_name not in bases:
             raise ValueError(f"Base movement {base_name!r} is not a {what} base movement")
@@ -1875,10 +2007,12 @@ def _check_conversion(snapshot: Snapshot, row) -> tuple[Account, float, float]:
     return others[0], *amounts
 
 
-def _result_rows(snapshot: Snapshot, start: int) -> tuple[DataFrame, dict[str, float]]:
+def _result_rows(snapshot: Snapshot, start: int) -> tuple[DataFrame, dict[str, float], dict[str, list[tuple]]]:
     """
     The results of the accounts in other currencies, as CSV rows indexed from `start`
-    down, and their balances in their currency. Investment accounts are left out:
+    down, their balances in their currency and their movements: (date, amount in the
+    base currency, in their own or None, and the row of the conversions CSV of a
+    conversion or None). Investment accounts are left out:
     their value changes with their capital gains and losses.
 
     The balance of each one in its currency follows its movements: the conversions
@@ -1894,14 +2028,15 @@ def _result_rows(snapshot: Snapshot, start: int) -> tuple[DataFrame, dict[str, f
         if not a.currency.is_base_currency and a.acc_type != AccountType.EQUITY
         and not isinstance(a, InvestmentAccount)
     }
-    # Account name to its movements: (date, amount in the base currency, in its own or None).
-    moves: dict[str, list[tuple[str, float, float | None]]] = {n: [] for n in accounts}
+    # Account name to its movements: (date, amount in the base currency, in its own or None,
+    # row of the conversions CSV or None).
+    moves: dict[str, list[tuple[str, float, float | None, int | None]]] = {n: [] for n in accounts}
 
-    def add(date: str, debit: str, credit: str, amount: float, other: float | None) -> None:
+    def add(date: str, debit: str, credit: str, amount: float, other: float | None, row: int | None = None) -> None:
         for name, sign in ((debit, 1), (credit, -1)):
             if name in accounts:
                 sign = sign if accounts[name].acc_type == AccountType.ASSET else -sign
-                moves[name].append((date, sign * amount, None if other is None else sign * other))
+                moves[name].append((date, sign * amount, None if other is None else sign * other, row))
 
     rows = _concat(
         [snapshot.initial_rows, snapshot.rows, snapshot.investment_rows, snapshot.interest_rows, snapshot.salary_rows],
@@ -1909,9 +2044,9 @@ def _result_rows(snapshot: Snapshot, start: int) -> tuple[DataFrame, dict[str, f
     )
     for date, debit, credit, amount in zip(rows["move_date"], rows["acc_debit"], rows["acc_credit"], rows["amount"]):
         add(date, debit, credit, float(amount.replace(",", "").replace(" ", "") or 0), None)
-    for _, row in snapshot.conversions.iterrows():
+    for i, (_, row) in enumerate(snapshot.conversions.iterrows()):
         _, amount, other = _check_conversion(snapshot, row)
-        add(row["move_date"], row["acc_debit"], row["acc_credit"], amount, other)
+        add(row["move_date"], row["acc_debit"], row["acc_credit"], amount, other, i)
 
     new_rows, balances = [], {}
     for name, acc in accounts.items():
@@ -1949,12 +2084,12 @@ def _result_rows(snapshot: Snapshot, start: int) -> tuple[DataFrame, dict[str, f
             other += _in_currency(move, values)
             move = next(pending, None)
         balances[name] = float(other)
-    return _generated_rows(new_rows, snapshot.rows.columns, start), balances
+    return _generated_rows(new_rows, snapshot.rows.columns, start), balances, moves
 
 
-def _in_currency(move: tuple[str, float, float | None], values) -> float:
+def _in_currency(move: tuple, values) -> float:
     """The amount of a movement in the currency of these values (see _result_rows)."""
-    date, amount, other = move
+    date, amount, other = move[:3]
     if other is not None:
         return other
     up_to = values[values.index <= Timestamp(date)]
@@ -2145,6 +2280,93 @@ def _check_description(description: str, what: str) -> str:
     if not description:
         raise ValueError(f"The {what} description is required")
     return description
+
+
+def _account_fields(
+    snapshot: Snapshot,
+    description: str,
+    initial_amount: str | float,
+    currency: str,
+    is_liquid: bool,
+    initial_date: str,
+    checks: Sequence[str],
+) -> dict:
+    """
+    The fields of an account in the accounts YAML, validated: without a currency, it is
+    in the base currency; without an initial date, it has none. Its `checks` are
+    AccountCheck values.
+    """
+    description = _check_description(description, "account")
+    currency = currency.strip() or snapshot.base_currency.name
+    if currency not in snapshot.currencies:
+        raise ValueError(f"Unknown currency: {currency!r}")
+    if not str(initial_amount).strip():
+        raise ValueError("The initial amount is required")
+    amount = _parse_amount(initial_amount, "initial amount")
+    fields = {
+        "description": description,
+        "currency": currency,
+        "is_liquid": bool(is_liquid),
+        "initial_amount": amount,
+    }
+    if initial_date.strip():
+        try:
+            fields["initial_date"] = dt.date.fromisoformat(initial_date.strip())
+        except ValueError:
+            raise ValueError(f"Invalid initial date: {initial_date!r}") from None
+    try:
+        checks = [AccountCheck(c) for c in checks]
+    except ValueError:
+        raise ValueError(f"Invalid checks: {list(checks)}") from None
+    if len(set(checks)) != len(checks):
+        raise ValueError(f"Repeated checks: {[c.value for c in checks]}")
+    if checks:
+        fields["checks"] = [c.value for c in checks]
+    return fields
+
+
+def _replace_yaml_entry(text: str, path: tuple[str, ...], update: Callable[[dict], dict]) -> str:
+    """
+    Return `text` with the mapping at `path`, a path of keys from the top level (e.g.
+    `("asset", "Bank")`), replaced by `update` of it, as text, so the rest of the file
+    is left as is. The comments within the entry are lost.
+    """
+    newline = "\r\n" if "\r\n" in text else "\n"
+    lines = text.split(newline)
+
+    def is_content(line: str) -> bool:
+        return bool(line.strip()) and not line.lstrip().startswith("#")
+
+    def indent_of(line: str) -> int:
+        return len(line) - len(line.lstrip())
+
+    def key_of(line: str):
+        try:
+            parsed = yaml.safe_load(line.strip())
+        except yaml.YAMLError:
+            return None
+        return next(iter(parsed)) if isinstance(parsed, dict) and len(parsed) == 1 else None
+
+    head, indent, lo, hi = None, 0, 0, len(lines)
+    for key in path:
+        children = [i for i in range(lo, hi) if is_content(lines[i])]
+        if not children:
+            raise ValueError(f"{key!r} not found; edit the file by hand")
+        indent = indent_of(lines[children[0]])
+        head = next((i for i in children if indent_of(lines[i]) == indent and key_of(lines[i]) == key), None)
+        if head is None:
+            raise ValueError(f"{key!r} not found; edit the file by hand")
+        lo = head + 1
+        hi = next((i for i in range(lo, hi) if is_content(lines[i]) and indent_of(lines[i]) <= indent), hi)
+
+    body = [i for i in range(head, hi) if is_content(lines[i])]
+    end = body[-1] + 1
+    entry = yaml.safe_load("\n".join(line[indent:] for line in lines[head:end]))[path[-1]]
+    if not isinstance(entry, dict):
+        raise ValueError(f"{path[-1]!r} is not a mapping; edit the file by hand")  # noqa: TRY004 (a bad config value)
+    step = indent_of(lines[body[1]]) - indent if len(body) > 1 else 2
+    lines[head:end] = _yaml_entry(path[-1], update(entry), indent, step)
+    return newline.join(lines)
 
 
 def _insert_yaml_entry(text: str, section: tuple[str, ...], name: str, fields: dict) -> str:
