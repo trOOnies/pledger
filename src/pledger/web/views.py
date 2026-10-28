@@ -20,7 +20,8 @@ from pledger.ledger import Ledger
 from pledger.models import (
     CPI_BASE,
     CREDIT_CARD,
-    DEBT,
+    DEBT_ACCOUNT,
+    INTERMEDIARY,
     INVESTMENT,
     SPECIAL_LABELS,
     CreditCardAccount,
@@ -36,6 +37,9 @@ from pledger.web.store import (
     BASE_AMOUNT,
     CARD_PAYMENT,
     CARD_PAYMENT_BASES,
+    CARD_SURPLUS,
+    CONVERSION_BOUGHT,
+    CONVERSION_SOLD,
     DEBT_BASES,
     DEBT_INCURRED,
     DEBT_PAID,
@@ -51,9 +55,11 @@ from pledger.web.store import (
     Snapshot,
     Work,
     conversion_fingerprint,
+    conversion_pairs,
     exchange_base_movement,
     interest_fingerprint,
     is_capital,
+    is_cross,
     row_fingerprint,
     work_fingerprint,
 )
@@ -274,7 +280,8 @@ def account_values(account) -> dict:
         "acc_description": account.description,
         "acc_currency": account.currency.name,
         "acc_is_liquid": account.is_liquid,
-        "acc_initial_amount": f"{account.initial_amount:,.2f}",
+        # In its currency: with the decimals of the amounts in other currencies (see the conversions)
+        "acc_initial_amount": f"{account.initial_amount:,.{2 if account.currency.is_base_currency else 4}f}",
         "acc_initial_date": account.initial_date.isoformat() if account.initial_date else "",
         "acc_check": account.checks[0].value if account.checks else "",
     }
@@ -322,7 +329,10 @@ def build_accounts(snapshot: Snapshot, month: str = "", values: dict | None = No
                 "description": a.description,
                 "currency": a.currency.name,
                 "is_liquid": a.is_liquid,
-                "special": "Credit card" if isinstance(a, CreditCardAccount) else SPECIAL_LABELS.get(special_of(a), "-"),
+                "special": (
+                    "Debt" if isinstance(a, DebtAccount) else "Credit card" if isinstance(a, CreditCardAccount)
+                    else SPECIAL_LABELS.get(special_of(a), "-")
+                ),
                 "checks": [CHECK_LABELS[c] for c in a.checks],
                 "balance": balances.get(a.name, 0.0),
                 "editable": a.acc_type in EDITABLE_ACCOUNT_TYPES,
@@ -841,9 +851,11 @@ def build_conversions(snapshot: Snapshot, currency: str = "", account: str = "")
     The rows of the conversions CSV, newest first, with the amount in each currency,
     the value of the other currency in the base one they imply and the balance of the
     account in the other currency right after it, in that currency; with a `currency`,
-    only those from or to it, and with an `account`, only those of that account.
+    only those from or to it, and with an `account`, only those of that account. Each
+    row of a cross conversion (see conversion_pairs) has the `pair` of the other one.
     """
     after = snapshot.conversion_balances()
+    pairs = conversion_pairs(snapshot)
     conversions = []
     ids = [snapshot.ids[ix] for ix in snapshot.conversion_rows.index]  # in the order of the CSV
     for i, (ix, row) in enumerate(snapshot.conversions.iterrows()):
@@ -867,6 +879,9 @@ def build_conversions(snapshot: Snapshot, currency: str = "", account: str = "")
             "bought": other is debit,  # the other currency comes in, else goes out
             "rate": base_amount / other_amount if other_amount else None,
             "comment": row.get("comment", ""),
+            "pair": pairs.get(i),
+            "pair_id": ids[pairs[i]] if i in pairs else None,
+            "through": (credit if other is debit else debit).name,
         })
     conversions.sort(key=lambda c: c["date"])  # stable: in their order on each date
     conversions.reverse()
@@ -900,12 +915,13 @@ def conversion_filter(snapshot: Snapshot, currency: str = "", account: str = "")
 
 def conversion_fields(snapshot: Snapshot, sold: str = "", bought: str = "", changed: str = "") -> dict:
     """
-    The currencies sold and bought of a new conversion, one of them the base one,
-    and the asset accounts it can be from (in the sold currency) and to (in the
-    bought one), or the fixed ones of its base movement (see exchange_base_movement). By
-    default, the currencies of the last conversion, else selling the base currency
-    for the first other one. When they clash (both or neither the base currency),
-    the one not `changed` ("sold" or "bought") gives way.
+    The currencies sold and bought of a new conversion, and the asset accounts it can be
+    from (in the sold currency) and to (in the bought one), or the fixed ones of its base
+    movement (see exchange_base_movement). Between two other currencies, it is a cross
+    one (see store.is_cross), through the INTERMEDIARY account. By default, the
+    currencies of the last conversion, else
+    selling the base currency for the first other one. When they clash (the same
+    currency), the one not `changed` ("sold" or "bought") gives way.
     """
     names = list(snapshot.currencies)
     base = snapshot.base_currency.name
@@ -919,13 +935,20 @@ def conversion_fields(snapshot: Snapshot, sold: str = "", bought: str = "", chan
         sold = base if bought != base else next(iter(others), base)
     if bought not in names:
         bought = next(iter(others), base) if sold == base else base
-    if (sold == base) == (bought == base) and others:
+    if sold == bought and others:
         if changed == "bought":
             sold = base if bought != base else others[0]
         else:
             bought = base if sold != base else others[0]
+    cross = is_cross(snapshot, sold, bought)
     try:
-        base_movement, missing = exchange_base_movement(snapshot, sold, bought), None
+        if cross:
+            missing = [n for n in (CONVERSION_SOLD, CONVERSION_BOUGHT) if n not in snapshot.conversion_base_movements()]
+            if missing:
+                raise ValueError(f"No {missing[0]!r} base movement: add it as an internal transfer of the base movements YAML")
+            base_movement, missing = "", None
+        else:
+            base_movement, missing = exchange_base_movement(snapshot, sold, bought), None
     except ValueError as e:
         base_movement, missing = "", str(e)
     move_base = snapshot.base_movements.get(base_movement)
@@ -943,6 +966,8 @@ def conversion_fields(snapshot: Snapshot, sold: str = "", bought: str = "", chan
         "bought": bought,
         "base_movement": base_movement,
         "missing": missing,
+        "cross": cross,
+        "through": INTERMEDIARY,
         "fields": {
             "from_fixed": move_base.acc_credit.name if move_base and move_base.acc_credit else None,
             "to_fixed": move_base.acc_debit.name if move_base and move_base.acc_debit else None,
@@ -1258,8 +1283,8 @@ def salary_charts(work: Work, cpi: Series | None = None) -> dict:
 def account_fields(snapshot: Snapshot, base_name: str) -> dict:
     """
     Which debit/credit accounts are fixed or selectable for a base movement: any
-    non-equity account, or only investment or debt accounts on an INVESTMENT or
-    DEBT side (with that side's label, e.g. "Investment").
+    non-equity account, or only the accounts of a special side (see SPECIAL_SIDES, with
+    that side's label, e.g. "Investment").
     """
     base = snapshot.base_movements.get(base_name)
     free = [a.name for a in snapshot.free_accounts()]
@@ -1355,7 +1380,7 @@ def debt_form_fields(snapshot: Snapshot, base_movement: str = "", kind: str = ""
     accounts a movement can be about, by kind: people and services, but no companies, whose
     debt comes from the salaries of the Work tab.
     """
-    bases, missing = snapshot.tab_base_movements(DEBT_BASES, DEBT)
+    bases, missing = snapshot.tab_base_movements(DEBT_BASES, DEBT_ACCOUNT)
     kinds = [
         {
             "title": title, "color": color,
@@ -1394,16 +1419,26 @@ def debt_form_fields(snapshot: Snapshot, base_movement: str = "", kind: str = ""
     }
 
 
-def card_payment_fields(snapshot: Snapshot) -> dict:
+# The buttons of the base movements of the Credit Cards tab: their label and color (orange
+# for a payment, blue for a surplus), the payment first, picked by default.
+CARD_BUTTONS = {CARD_PAYMENT: ("Payment", "liability"), CARD_SURPLUS: ("Surplus", "asset")}
+
+
+def card_payment_fields(snapshot: Snapshot, base_movement: str = "") -> dict:
     """
-    The card payment base movement of the Credit Cards tab (CARD_PAYMENT) with its account
-    fields, or what it should be if it isn't as expected.
+    The base movements of the Credit Cards tab (CARD_PAYMENT_BASES) to pick from, as buttons
+    (see CARD_BUTTONS), with the account fields of the selected one (the payment by
+    default), and what the others should be if they aren't as expected.
     """
     bases, missing = snapshot.tab_base_movements(CARD_PAYMENT_BASES, CREDIT_CARD)
+    buttons = {n: b for n, b in CARD_BUTTONS.items() if n in bases}
+    if base_movement not in buttons:
+        base_movement = next(iter(buttons), "")
     return {
-        "base_movement": CARD_PAYMENT if bases else "",
+        "buttons": buttons,
+        "base_movement": base_movement,
         "missing": missing,
-        "fields": account_fields(snapshot, CARD_PAYMENT),
+        "fields": account_fields(snapshot, base_movement),
     }
 
 

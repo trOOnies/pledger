@@ -44,7 +44,8 @@
         it was, the two accounts involved and the amount. <strong>Everything else in Pledger is
         calculated from those movements.</strong></p>
       <p class="note">💱 All amounts are in your <strong>base currency ({{ settings.currency }})</strong>.
-        If you hold other currencies, enter their value converted to the base currency.</p>
+        If you hold other currencies, enter their value converted to the base currency (but the
+        initial amounts of the accounts, which are in their own currency).</p>
       <p class="note">👁️ Showing Pledger to someone? The <strong>eye button</strong> at the top
         right replaces every amount with <code>******</code> until you click it again.</p>
       <p class="note">⏻ Done for now? <strong>Save &amp; Quit</strong>, at the top right, saves
@@ -92,9 +93,10 @@
           currency grew less than prices). It also shows the balances of the accounts in each currency, what the
           accounts in other currencies hold <strong>in their own currency</strong>, and how your
           assets are split <strong>by currency</strong> at each month end. Buying or selling another currency is a
-          <strong>conversion</strong>: add it here, picking the currency sold and the one bought, with the amount in each one; the <em>Currency</em> and <em>Account</em> filters
+          <strong>conversion</strong>: add it here, picking the currency sold and the one bought, with the amount in each one
+          (between two other currencies, it goes through the intermediary account Fi); the <em>Currency</em> and <em>Account</em> filters
           narrow them down, and each one shows the account's balance in its own currency right after it. Every time the
-          currency's value changes, its accounts get a <strong>USD - Result</strong> gain or loss, so their
+          currency's value changes, its accounts get a <strong>Foreign currency (G)</strong> or <strong>(L)</strong> gain or loss, so their
           balance always matches what they hold at that value.</dd>
         <dt>📊 Results</dt>
         <dd>How much your <strong>equity changed</strong> in the period, nominal and real (taking
@@ -138,14 +140,14 @@
           included), and each movement shows the total of its account and the amount and quantity of
           its investment right after it.</dd>
         <dt>🤝 Debt</dt>
-        <dd>Who is in your <strong>debt accounts</strong>, split into <strong>people</strong>,
+        <dd>Who is in your <strong>debt account (De)</strong>, split into <strong>people</strong>,
           <strong>services</strong> and <strong>companies</strong>: <strong>what you owe</strong>
           each of them, <strong>what they owe you</strong>, and your net debt. A movement of a debt
           account counts for whoever is named in its <strong>comment</strong>; the companies you
           worked for (from the Work tab) are listed automatically. A warning shows up when a
           movement names no one, or when someone owes the other way around from what is
           <strong>expected</strong> (by default, you owe services and companies owe you). The
-          <strong>movements</strong> of the debt accounts are listed too, with who each one names.
+          <strong>movements</strong> of De are listed too, with who each one names.
           Borrowing (<em>Debt</em>, then Incurred or Paid) and lending (<em>Loan</em>, then Given or Collected) are <strong>added,
           edited and deleted here</strong>, picking who they are about; the <em>Who</em> filter shows the movements of one of them,
           and each movement shows what you owe whoever it is about right after it (negative and green: what they owe you).</dd>

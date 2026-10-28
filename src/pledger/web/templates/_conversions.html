@@ -16,7 +16,8 @@
         <tr{% if c.id %} id="{{ row_anchor('movement', c.id) }}"{% endif %}>
           {{ id_cell(c.id, ledger_link(c.id, c.date) if c.id) }}
           <td class="nowrap">{{ c.date }}</td>
-          <td><span class="badge transfer" title="{{ c.currency }} {{ 'bought' if c.bought else 'sold' }}">T</span> {{ c.base }}</td>
+          <td><span class="badge transfer" title="{{ c.currency }} {{ 'bought' if c.bought else 'sold' }}">T</span> {{ c.base }}
+            {% if c.pair is not none %}<small class="muted" title="A conversion between two other currencies through {{ c.through }}, with {{ c.pair_id or 'the other row' }}: edited and deleted together">⇄ {{ c.pair_id or "" }}</small>{% endif %}</td>
           <td>{{ c.debit }}</td>
           <td class="num money" data-sort="{{ c.amount }}">{{ c.amount | money }}</td>
           <td>{{ c.credit }}</td>
@@ -30,7 +31,7 @@
             <button class="icon" title="Delete" aria-label="Delete conversion"
               hx-post="/conversions/{{ c.index }}/delete"
               hx-vals='{{ {"fingerprint": c.fingerprint} | tojson }}'
-              hx-confirm="Delete {{ c.date }} {{ c.base }} ({{ c.amount | money }})?"
+              hx-confirm="Delete {{ c.date }} {{ c.base }} ({{ c.amount | money }}){{ ' and ' ~ (c.pair_id or 'its other row') ~ ', its other half' if c.pair is not none }}?"
               data-confirm-money="{{ c.amount | money }}"
               hx-swap="none">&times;</button>
           </td>

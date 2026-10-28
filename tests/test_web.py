@@ -9,18 +9,21 @@ from pathlib import Path
 
 import pytest
 import yaml
+from conftest import INTERNAL_ACCOUNTS_YAML
 from fastapi.testclient import TestClient
 
 from pledger.enums import AccountCheck, InvestmentType
-from pledger.models import DEBT, INVESTMENT, CreditCardAccount
+from pledger.models import CREDIT_CARD, INVESTMENT, CreditCardAccount
 from pledger.web.app import create_app
 from pledger.web.store import (
+    CROSS_CONVERSION,
     LedgerDataError,
     LedgerStore,
     Settings,
     StaleRowError,
     _insert_yaml_entry,
     conversion_fingerprint,
+    conversion_pairs,
     deduction_id,
     interest_fingerprint,
     row_fingerprint,
@@ -50,19 +53,28 @@ from pledger.web.views import (
 
 HTMX = {"HX-Request": "true"}
 
-# The internal base movements required to load the ledger
+# The internal base movements required to load the ledger: an empty `transfer` section
+# and the `result_types` one, with Init last (see with_internal)
 INITIAL_YAML = (
-    "internal:\n  Init:\n    id: 3\n    long_name: Initial\n    description: d\n"
-    "    base_movements:\n      gain:\n        Initial (G): Initial balance\n"
-    "      loss:\n        Initial (L): Initial balance\n"
+    "internal:\n  transfer:\n  result_types:\n    Init:\n      id: 3\n      long_name: Initial\n      description: d\n"
+    "      base_movements:\n        gain:\n          Initial (G): Initial balance\n"
+    "        loss:\n          Initial (L): Initial balance\n"
 )
 # The internal base movements of the results of the accounts in other currencies,
-# required once one is revalued; appended to the `internal` section of INITIAL_YAML
+# required once one is revalued; appended to the internal `result_types` of INITIAL_YAML
 RESULT_YAML = (
-    "  Expo:\n    id: 4\n    long_name: Exposition\n    description: d\n"
-    "    base_movements:\n      gain:\n        USD - Result (G): USD gains\n"
-    "      loss:\n        USD - Result (L): USD losses\n"
+    "    Expo:\n      id: 4\n      long_name: Exposition\n      description: d\n"
+    "      base_movements:\n        gain:\n          Foreign currency (G):\n            description: d\n"
+    "            debit: FOREIGN CURRENCY\n        loss:\n          Foreign currency (L):\n"
+    "            description: d\n            credit: FOREIGN CURRENCY\n"
 )
+
+
+def with_internal(path: Path, result_types: str = "", transfers: str = "") -> None:
+    """Add these internal result types and transfers (YAML entries of their sections) to the base movements YAML."""
+    text = path.read_text()
+    text = text.replace("  result_types:\n", "  result_types:\n" + result_types, 1)
+    path.write_text(text.replace("  transfer:\n", "  transfer:\n" + transfers, 1))
 
 
 @pytest.fixture
@@ -225,7 +237,7 @@ class TestInternalBaseMovements:
     def settings(self, settings):
         # An internal transfer, with one movement at the end of the ledger
         path = settings.base_movements_path
-        path.write_text(path.read_text().replace("internal:\n", "internal:\n  transfer:\n    Adjust: Set by pledger\n", 1))
+        with_internal(path, transfers="    Adjust: Set by pledger\n")
         with settings.ledger_path.open("a") as f:
             f.write("2026-01-05;Adjust;Bk;5;Ca;\n")
         return settings
@@ -285,10 +297,9 @@ class TestSetupStore:
     def test_add_account_keeps_the_rest_of_the_file(self, settings):
         path = settings.accounts_path
         path.write_text(
-            "# my accounts\nasset:\n  Ca:\n    long_name: Cash (A)\n    description: Cash\n"
+            "# my accounts\n" + INTERNAL_ACCOUNTS_YAML + "asset:\n  Ca:\n    long_name: Cash (A)\n    description: Cash\n"
             "    initial_amount: 0\n  Bk:\n    description: Bank account\n    initial_amount: 0\n"
             "\nliability:\n  Cc:\n    description: Credit card\n    initial_amount: 0\n"
-            "equity:\n  Eq:\n    description: Equity\n"
         )
         before = path.read_text()
 
@@ -296,10 +307,10 @@ class TestSetupStore:
 
         lines = before.splitlines()
         assert path.read_text().splitlines() == (
-            lines[:9] + [
+            lines[:13] + [
                 "  Sv:", "    description: 'Savings: 10%'", "    currency: ARS",
                 "    is_liquid: false", "    initial_amount: 0.0",
-            ] + lines[9:]
+            ] + lines[13:]
         )
         sv = LedgerStore(settings).load().accounts["Sv"]
         assert sv.description == "Savings: 10%"
@@ -319,10 +330,10 @@ class TestSetupStore:
 
     def test_add_account_with_checks(self, settings):
         store = LedgerStore(settings)
-        store.add_account("Fi", "asset", "Fictitious", 0, checks=["net_zero"])
-        assert "  Fi:\n    description: Fictitious\n" in settings.accounts_path.read_text()
+        store.add_account("Fx", "asset", "Fictitious", 0, checks=["net_zero"])
+        assert "  Fx:\n    description: Fictitious\n" in settings.accounts_path.read_text()
         assert "    checks:\n    - net_zero\n" in settings.accounts_path.read_text()
-        assert store.load().accounts["Fi"].checks == (AccountCheck.NET_ZERO,)
+        assert store.load().accounts["Fx"].checks == (AccountCheck.NET_ZERO,)
 
     @pytest.mark.parametrize(
         ("amount", "checks", "message"),
@@ -335,7 +346,7 @@ class TestSetupStore:
     def test_add_account_rejects_invalid_checks(self, settings, amount, checks, message):
         before = settings.accounts_path.read_text()
         with pytest.raises(ValueError, match=message):
-            LedgerStore(settings).add_account("Fi", "asset", "Fictitious", amount, checks=checks)
+            LedgerStore(settings).add_account("Fx", "asset", "Fictitious", amount, checks=checks)
         assert settings.accounts_path.read_text() == before
 
     def test_insert_yaml_entry_into_missing_section(self):
@@ -507,11 +518,11 @@ class TestPages:
         assert "<th>Special</th><th>Checks</th>" in r.text
 
     def test_accounts_form_adds_an_account_with_a_check(self, client, settings):
-        form = {"name": "Fi", "acc_type": "asset", "description": "Fictitious", "initial_amount": "0", "check": "net_zero"}
+        form = {"name": "Fx", "acc_type": "asset", "description": "Fictitious", "initial_amount": "0", "check": "net_zero"}
         r = client.post("/accounts", data=form, headers=HTMX)
-        assert "Added account Fi" in r.text and r.headers["HX-Trigger"] == "accounts-changed"
+        assert "Added account Fx" in r.text and r.headers["HX-Trigger"] == "accounts-changed"
         r = client.get("/accounts", headers=HTMX)  # the rest of the tab reloads
-        fi_row = r.text.split("<strong>Fi</strong>")[1].split("</tr>")[0]
+        fi_row = r.text.split("<strong>Fx</strong>")[1].split("</tr>")[0]
         assert "<td >Net zero</td>" in fi_row
         assert '<td class="muted">-</td>' in r.text.split("<strong>Ca</strong>")[1].split("</tr>")[0]
 
@@ -900,8 +911,8 @@ class TestCharts:
         charts = build_results(snapshot, "2026-02")
         # Only Food moved in February; every other bar is still there, at zero
         by_currency = build_accounts(snapshot, "2026-02")["groupings"]["currency"]
-        assert [c["name"] for r in by_currency["assets"] for c in r["children"]] == ["Ca", "Bk"]
-        assert [c["name"] for r in by_currency["liabilities"] for c in r["children"]] == ["Cc"]
+        assert [c["name"] for r in by_currency["assets"] for c in r["children"]] == ["Ca", "Fi", "Bk"]
+        assert [c["name"] for r in by_currency["liabilities"] for c in r["children"]] == ["Cc", "De"]
         gains = charts["gains"]
         assert [(r["name"], r["value"]) for r in gains] == [("Operative", 0), ("Gifts", 0)]
         assert [c["name"] for c in gains[0]["children"]] == ["Salary"]
@@ -1016,7 +1027,7 @@ class TestCurrencies:
     def test_build_currencies(self, values):
         currencies = build_currencies(LedgerStore(values).load(), self.TODAY)
         assert currencies["base"] == {
-            "name": "ARS", "description": "Pesos", "accounts": 2,
+            "name": "ARS", "description": "Pesos", "accounts": 4,  # Ca, Cc, Fi and De
             "assets": pytest.approx(159.75), "liabilities": pytest.approx(0), "own": [],
         }
         # Each month's inflation, the CPI at its end; March is projected
@@ -1098,6 +1109,9 @@ class TestCurrencies:
 
     def test_currencies_page_without_values(self, client, settings):
         folder = settings.currencies_path.parent
+        # Without values of USD, an initial amount in USD can't be valued
+        path = settings.accounts_path
+        path.write_text(path.read_text().replace("initial_amount: 0.1005", "initial_amount: 0"))
         (folder / "currencies.csv").write_text("date;USD\n")
         (folder / "base_currency.csv").write_text("month;monthly_inflation\n")
         r = client.get("/currencies")
@@ -1107,9 +1121,12 @@ class TestCurrencies:
 
 
 def with_conversion_bases(settings: Settings) -> Settings:
-    """The settings, with the transfers of the conversions of USD, at the end of the `transfer` section."""
+    """The settings, with the internal transfers of the conversions."""
     path = settings.base_movements_path
-    path.write_text(path.read_text() + "  USD - Bought: Pesos to dollars\n  USD - Sold: Dollars to pesos\n")
+    with_internal(path, transfers=(
+        "    Foreign currency - Bought:\n      description: Pesos to dollars\n      debit: FOREIGN CURRENCY\n"
+        "    Foreign currency - Sold:\n      description: Dollars to pesos\n      credit: FOREIGN CURRENCY\n"
+    ))
     return settings
 
 
@@ -1122,7 +1139,7 @@ class TestConversions:
         with_conversion_bases(revalued)
         path = tmp_path / "movements" / "conversion.csv"
         path.parent.mkdir()
-        path.write_text(self.HEADER + "2026-01-05;Move;Bk;1,100.00;Ca;Bought;1.0000\n", encoding="utf-8")
+        path.write_text(self.HEADER + "2026-01-05;Foreign currency - Bought;Bk;1,100.00;Ca;Bought;1.0000\n", encoding="utf-8")
         (tmp_path / "currencies.csv").write_text("date;USD\n2026-01-01;1000\n2026-01-10;1200\n")
         return replace(revalued, conversions_path=path)
 
@@ -1137,7 +1154,7 @@ class TestConversions:
     def test_are_in_the_ledger_in_the_base_currency(self, conv):
         snapshot = LedgerStore(conv).load()
         assert len(snapshot.rows) == 4  # the ledger CSV alone
-        assert self.rows(snapshot.conversion_rows) == [(-2, "2026-01-05", "Move", "Bk", "1,100.00", "Ca", "Bought")]
+        assert self.rows(snapshot.conversion_rows) == [(-2, "2026-01-05", "Foreign currency - Bought", "Bk", "1,100.00", "Ca", "Bought")]
         dates = list(snapshot.all_rows.move_date)
         assert dates == sorted(dates)  # in date order
         balances = snapshot.ledger().balances()
@@ -1148,7 +1165,7 @@ class TestConversions:
         # 1.901 USD, 2,001 ARS in the ledger, worth 2,281.20 at 1,200
         snapshot = LedgerStore(conv).load()
         assert self.rows(snapshot.result_rows) == [
-            (-3, "2026-01-10", "USD - Result (G)", "Bk", "280.20", "Eq", "1.9010 USD at 1,200.0000"),
+            (-3, "2026-01-10", "Foreign currency (G)", "Bk", "280.20", "Eq", "1.9010 USD at 1,200.0000"),
         ]
         assert snapshot.ledger().balances()["Bk"] == pytest.approx(2281.2)
         assert snapshot.other_balances == {"Bk": pytest.approx(1.901)}
@@ -1157,30 +1174,30 @@ class TestConversions:
         (tmp_path / "currencies.csv").write_text("date;USD\n2026-01-01;1000\n2026-01-10;900\n2026-01-20;900\n")
         snapshot = LedgerStore(conv).load()
         assert self.rows(snapshot.result_rows) == [  # nothing more on 2026-01-20
-            (-3, "2026-01-10", "USD - Result (L)", "Eq", "290.10", "Bk", "1.9010 USD at 900.0000"),
+            (-3, "2026-01-10", "Foreign currency (L)", "Eq", "290.10", "Bk", "1.9010 USD at 900.0000"),
         ]
         assert snapshot.ledger().balances()["Bk"] == pytest.approx(1710.9)
 
     def test_the_result_base_movements_are_required_to_revalue(self, conv):
         conv.base_movements_path.write_text(conv.base_movements_path.read_text().replace(RESULT_YAML, ""))
-        with pytest.raises(LedgerDataError, match=re.escape("'USD - Result (G)' is required to revalue")):
+        with pytest.raises(LedgerDataError, match=re.escape("'Foreign currency (G)' is required to revalue")):
             LedgerStore(conv).load()
 
     def test_results_cannot_be_in_the_ledger_csv(self, conv):
         with conv.ledger_path.open("a") as f:
-            f.write("2026-01-05;USD - Result (G);Bk;5;Eq;\n")
-        with pytest.raises(LedgerDataError, match=re.escape("cannot have movements of ['USD - Result (G)']")):
+            f.write("2026-01-05;Foreign currency (G);Bk;5;Eq;\n")
+        with pytest.raises(LedgerDataError, match=re.escape("cannot have movements of ['Foreign currency (G)']")):
             LedgerStore(conv).load()
 
     @pytest.mark.parametrize(
         ("row", "error"),
         [
-            ("2026-01-05;Move;Cc;100;Ca;;1", "between an account in ARS and one in another currency, not Cc and Ca"),
-            ("2026-01-05;Gift;Bk;100;Eq;;1", "must be of a non-internal transfer, not 'Gift'"),
+            ("2026-01-05;Foreign currency - Bought;Cc;100;Ca;;1", "between an account in ARS and one in another currency, not Cc and Ca"),
+            ("2026-01-05;Gift;Bk;100;Eq;;1", "must be of 'Foreign currency - Bought' or 'Foreign currency - Sold' (internal transfers), not 'Gift'"),
             ("2026-01-05;Nope;Bk;100;Ca;;1", "Unknown base movement of a conversion: 'Nope'"),
-            ("2026-13-05;Move;Bk;100;Ca;;1", "Invalid date of a conversion"),
-            ("2026-01-05;Move;Bk;100;Ca;;x", "Invalid amount in USD of a conversion"),
-            ("2026-01-05;Move;Bk;100;Ca;;0", "must both be zero or both positive"),
+            ("2026-13-05;Foreign currency - Bought;Bk;100;Ca;;1", "Invalid date of a conversion"),
+            ("2026-01-05;Foreign currency - Bought;Bk;100;Ca;;x", "Invalid amount in USD of a conversion"),
+            ("2026-01-05;Foreign currency - Bought;Bk;100;Ca;;0", "must both be zero or both positive"),
         ],
     )
     def test_invalid_rows(self, conv, row, error):
@@ -1238,17 +1255,17 @@ class TestConversions:
 
     def test_add_and_delete(self, conv):
         store = LedgerStore(conv)
-        store.add_conversion("2026-01-06", "USD - Sold", "Ca", "Bk", "1234.5", "1.2", "Sold; half")
+        store.add_conversion("2026-01-06", "Foreign currency - Sold", "Ca", "Bk", "1234.5", "1.2", "Sold; half")
         assert conv.conversions_path.read_text().splitlines()[-1] == (
-            "2026-01-06;USD - Sold;Ca;1,234.50;Bk;Sold, half;1.2000;C-2"
+            "2026-01-06;Foreign currency - Sold;Ca;1,234.50;Bk;Sold, half;1.2000;C-2"
         )
         conversions = store.load().conversions
         assert len(conversions) == 2
         with pytest.raises(StaleRowError):
-            store.delete_conversion(1, "2026-01-06|USD - Sold|1,234.50|9.0000")
+            store.delete_conversion(1, "2026-01-06|Foreign currency - Sold|1,234.50|9.0000")
         store.delete_conversion(1, conversion_fingerprint(conversions.iloc[1]))
         assert conv.conversions_path.read_text() == (
-            self.HEADER.replace("\n", ";id\n") + "2026-01-05;Move;Bk;1,100.00;Ca;Bought;1.0000;C-1\n"
+            self.HEADER.replace("\n", ";id\n") + "2026-01-05;Foreign currency - Bought;Bk;1,100.00;Ca;Bought;1.0000;C-1\n"
         )
 
     def test_edit(self, conv, conv_client):
@@ -1262,27 +1279,27 @@ class TestConversions:
             "fingerprint": fp, "move_date": "2026-01-05", "sold": "ARS", "bought": "USD", "acc_from": "Ca",
             "acc_to": "Bk", "amount_sold": "1200", "amount_bought": "1", "comment": "Bought",
         })
-        assert "Updated C-1 USD - Bought: 1,200.00 ARS sold for 1.00 USD" in r.text
+        assert "Updated C-1 Foreign currency - Bought: 1,200.00 ARS sold for 1.00 USD" in r.text
         assert r.headers["HX-Trigger"] == "conversions-changed"
-        assert conv.conversions_path.read_text().splitlines()[-1] == "2026-01-05;USD - Bought;Bk;1,200.00;Ca;Bought;1.0000;C-1"
+        assert conv.conversions_path.read_text().splitlines()[-1] == "2026-01-05;Foreign currency - Bought;Bk;1,200.00;Ca;Bought;1.0000;C-1"
 
     def test_adding_creates_the_csv(self, revalued, tmp_path):
         path = tmp_path / "movements" / "conversion.csv"
         store = LedgerStore(replace(with_conversion_bases(revalued), conversions_path=path))
-        store.add_conversion("2026-01-06", "USD - Bought", "Bk", "Ca", "100", "0.1")
+        store.add_conversion("2026-01-06", "Foreign currency - Bought", "Bk", "Ca", "100", "0.1")
         assert path.read_text() == (
-            self.HEADER.replace("\n", ";id\n") + "2026-01-06;USD - Bought;Bk;100.00;Ca;;0.1000;C-1\n"
+            self.HEADER.replace("\n", ";id\n") + "2026-01-06;Foreign currency - Bought;Bk;100.00;Ca;;0.1000;C-1\n"
         )
 
     @pytest.mark.parametrize(
         ("args", "error"),
         [
-            (("2026-01-06", "USD - Bought", "Ca", "Cc", "100", "1"), "between an account in ARS and one in another currency"),
-            (("2026-01-06", "USD - Bought", "Bk", "Bk", "100", "1"), "must be different"),
-            (("2026-01-06", "USD - Bought", "Bk", "Ca", "0", "0"), "must be positive"),
-            (("2026-01-06", "USD - Bought", "Bk", "Ca", "-1", "1"), "cannot be negative"),
-            (("2026-01-06", "Move", "Bk", "Ca", "100", "1"), "must be of 'USD - Bought' or 'USD - Sold', not 'Move'"),
-            (("2026-01-06", "USD - Sold", "Bk", "Ca", "100", "1"), "into Bk is a 'USD - Bought' conversion"),
+            (("2026-01-06", "Foreign currency - Bought", "Ca", "Cc", "100", "1"), "between an account in ARS and one in another currency"),
+            (("2026-01-06", "Foreign currency - Bought", "Bk", "Bk", "100", "1"), "must be different"),
+            (("2026-01-06", "Foreign currency - Bought", "Bk", "Ca", "0", "0"), "must be positive"),
+            (("2026-01-06", "Foreign currency - Bought", "Bk", "Ca", "-1", "1"), "cannot be negative"),
+            (("2026-01-06", "Move", "Bk", "Ca", "100", "1"), "must be of 'Foreign currency - Bought' or 'Foreign currency - Sold', not 'Move'"),
+            (("2026-01-06", "Foreign currency - Sold", "Bk", "Ca", "100", "1"), "into Bk is a 'Foreign currency - Bought' conversion"),
         ],
     )
     def test_add_rejects_invalid_ones(self, conv, args, error):
@@ -1298,19 +1315,76 @@ class TestConversions:
 
     def test_add_exchange_picks_the_base_movement_from_the_currencies(self, conv):
         store = LedgerStore(conv)
-        assert store.add_exchange("2026-01-06", "USD", "ARS", "Bk", "Ca", "0.5", "600") == "USD - Sold"
-        assert conv.conversions_path.read_text().splitlines()[-1] == "2026-01-06;USD - Sold;Ca;600.00;Bk;;0.5000;C-2"
+        assert store.add_exchange("2026-01-06", "USD", "ARS", "Bk", "Ca", "0.5", "600") == "Foreign currency - Sold"
+        assert conv.conversions_path.read_text().splitlines()[-1] == "2026-01-06;Foreign currency - Sold;Ca;600.00;Bk;;0.5000;C-2"
         for args, error in [
-            (("USD", "USD", "Bk", "Bk"), "sell or buy ARS for another currency, not USD for USD"),
+            (("USD", "USD", "Bk", "Bk"), "sell or buy ARS for another currency, or one other currency for another, not USD for USD"),
             (("ARS", "EUR", "Ca", "Bk"), "Unknown currency: 'EUR'"),
             (("ARS", "USD", "Bk", "Ca"), "The account from must be in ARS, but Bk is in USD"),
         ]:
             with pytest.raises(ValueError, match=re.escape(error)):
                 store.add_exchange("2026-01-06", *args, "1", "1")
 
+    @pytest.fixture
+    def cross(self, conv) -> Settings:
+        """With EUR and an Eu account in it."""
+        conv.currencies_path.write_text(conv.currencies_path.read_text() + "  - name: EUR\n    description: Euro\n")
+        (conv.currencies_path.parent / "currencies.csv").write_text(
+            "date;USD;EUR\n2026-01-01;1000;1100\n2026-01-10;1200;1300\n"
+        )
+        extra = "  Eu:\n    description: Euros\n    currency: EUR\n    initial_amount: 0\n"
+        conv.accounts_path.write_text(conv.accounts_path.read_text().replace("liability:\n", extra + "liability:\n", 1))
+        return conv
+
+    def test_cross_conversions_go_through_an_intermediary_account(self, cross):
+        store = LedgerStore(cross)
+        # 0.5 USD at 1,000 on 2026-01-06: 500.00 ARS into Fi and out of it
+        assert store.add_exchange("2026-01-06", "USD", "EUR", "Bk", "Eu", "0.5", "0.4", "Swap") == CROSS_CONVERSION
+        assert cross.conversions_path.read_text().splitlines()[-2:] == [
+            "2026-01-06;Foreign currency - Sold;Fi;500.00;Bk;Swap;0.5000;C-2",
+            "2026-01-06;Foreign currency - Bought;Eu;500.00;Fi;Swap;0.4000;C-3",
+        ]
+        snapshot = store.load()
+        assert conversion_pairs(snapshot) == {1: 2, 2: 1}
+        assert snapshot.other_balances["Eu"] == pytest.approx(0.4)
+        assert snapshot.ledger().balances().get("Fi", 0.0) == pytest.approx(0.0)
+        listed = {c["id"]: (c["pair_id"], c["through"]) for c in build_conversions(snapshot)}
+        assert listed == {"C-1": (None, "Ca"), "C-2": ("C-3", "Fi"), "C-3": ("C-2", "Fi")}
+
+    def test_cross_conversions_are_edited_and_deleted_together(self, cross):
+        store = LedgerStore(cross)
+        store.add_exchange("2026-01-06", "USD", "EUR", "Bk", "Eu", "0.5", "0.4")
+        fingerprint = conversion_fingerprint(store.load().conversions.iloc[2])
+        assert store.edit_exchange(2, fingerprint, "2026-01-07", "USD", "EUR", "Bk", "Eu", "0.25", "0.2", "Less") == CROSS_CONVERSION
+        assert cross.conversions_path.read_text().splitlines()[-2:] == [
+            "2026-01-07;Foreign currency - Sold;Fi;250.00;Bk;Less;0.2500;C-2",
+            "2026-01-07;Foreign currency - Bought;Eu;250.00;Fi;Less;0.2000;C-3",
+        ]
+        snapshot = store.load()
+        with pytest.raises(ValueError, match="between two other currencies and stays one"):
+            store.edit_exchange(1, None, "2026-01-07", "USD", "ARS", "Bk", "Ca", "0.25", "250")
+        with pytest.raises(ValueError, match="with ARS and stays one"):
+            store.edit_exchange(0, None, "2026-01-07", "USD", "EUR", "Bk", "Eu", "0.25", "0.2")
+        store.delete_conversion(1, conversion_fingerprint(snapshot.conversions.iloc[1]))
+        assert len(store.load().conversions) == 1
+
+    def test_cross_conversion_form(self, cross):
+        client = TestClient(create_app(cross))
+        r = client.get("/form/conversion-fields", params={"sold": "USD", "bought": "EUR"})
+        assert 'name="through"' not in r.text and "conversion of\n  USD into Fi" in r.text  # always through Fi
+        r = client.post("/conversions", data={
+            "move_date": "2026-01-06", "sold": "USD", "bought": "EUR", "acc_from": "Bk", "acc_to": "Eu",
+            "amount_sold": "0.5", "amount_bought": "0.4",
+        })
+        assert f"Added {CROSS_CONVERSION}: 0.50 USD sold for 0.40 EUR" in r.text
+        row = LedgerStore(cross).load().conversions.iloc[2]
+        form = client.get("/conversions/2/edit", params={"fingerprint": conversion_fingerprint(row)}, headers=HTMX).text
+        assert '<option selected>Eu</option>' in form and 'name="amount_sold" inputmode="decimal" min="0" value="0.5000"' in form
+        assert "⇄ C-3" in client.get("/currencies").text
+
     def test_add_exchange_needs_the_base_movement(self, revalued, tmp_path):
         store = LedgerStore(replace(revalued, conversions_path=tmp_path / "conversion.csv"))
-        with pytest.raises(ValueError, match=re.escape("No 'USD - Bought' base movement: add it as a transfer")):
+        with pytest.raises(ValueError, match=re.escape("No 'Foreign currency - Bought' base movement: add it as an internal transfer")):
             store.add_exchange("2026-01-06", "ARS", "USD", "Ca", "Bk", "1000", "1")
 
     def test_conversion_fields_follow_the_currencies(self, conv_client):
@@ -1322,22 +1396,22 @@ class TestConversions:
 
         assert fields()[:2] == ("ARS", "USD")  # those of the last conversion
         sold, bought, text = fields(sold="USD", bought="USD", changed="sold")
-        assert (sold, bought) == ("USD", "ARS") and "USD - Sold" in text
+        assert (sold, bought) == ("USD", "ARS") and "Foreign currency - Sold" in text
         assert '>Bk</option>' in text.split('name="acc_from"')[1].split("</select>")[0]
         assert fields(sold="ARS", bought="ARS", changed="bought")[:2] == ("USD", "ARS")
 
     def test_not_in_the_ledger_tab(self, conv, conv_client):
         form = conv_client.get("/").text.split('id="movement-form"')[1].split("</form>")[0]
-        assert "USD - Bought" not in form and "USD - Sold" not in form
+        assert "Foreign currency - Bought" not in form and "Foreign currency - Sold" not in form
         with pytest.raises(ValueError, match="are added from the Currencies tab"):
-            LedgerStore(conv).add("2026-01-06", "USD - Bought", "Bk", "Ca", "100")
+            LedgerStore(conv).add("2026-01-06", "Foreign currency - Bought", "Bk", "Ca", "100")
 
     def test_ledger_tab_links_them_to_the_currencies_tab(self, conv_client):
         r = conv_client.get("/")
         assert '<a class="source" href="/currencies" title="Added, edited and deleted from the Currencies tab"' in r.text
         assert "🔵</a>" in r.text
         assert r.text.count('hx-post="/movements/') == 4  # only the CSV rows
-        assert "USD - Result (G)" in r.text  # internal: not deletable either
+        assert "Foreign currency (G)" in r.text  # internal: not deletable either
         (moved,) = [m for m in conv_client.get("/api/movements").json() if m["conversion"]]
         assert (moved["date"], moved["amount"]) == ("2026-01-05", 1100.0)
 
@@ -1360,9 +1434,9 @@ class TestConversions:
             "move_date": "2026-01-06", "sold": "ARS", "bought": "USD", "acc_from": "Ca", "acc_to": "Bk",
             "amount_sold": "1,000", "amount_bought": "1",
         })
-        assert "Added USD - Bought: 1,000.00 ARS sold for 1.00 USD" in r.text
+        assert "Added Foreign currency - Bought: 1,000.00 ARS sold for 1.00 USD" in r.text
         assert r.headers["HX-Trigger"] == "conversions-changed"
-        assert "2026-01-06;USD - Bought;Bk;1,000.00;Ca;;1.0000" in conv.conversions_path.read_text()
+        assert "2026-01-06;Foreign currency - Bought;Bk;1,000.00;Ca;;1.0000" in conv.conversions_path.read_text()
         r = conv_client.post("/conversions", data={
             "move_date": "2026-01-06", "sold": "ARS", "bought": "USD", "acc_from": "Ca", "acc_to": "Cc",
             "amount_sold": "1", "amount_bought": "1",
@@ -1378,7 +1452,7 @@ class TestConversions:
         assert len(conv_client.get("/api/conversions").json()) == 1
 
     def test_api(self, conv_client):
-        body = {"move_date": "2026-01-06", "base_movement": "USD - Sold", "acc_debit": "Ca", "acc_credit": "Bk",
+        body = {"move_date": "2026-01-06", "base_movement": "Foreign currency - Sold", "acc_debit": "Ca", "acc_credit": "Bk",
                 "amount_base": 500, "amount_other": 0.5}
         assert conv_client.post("/api/conversions", json=body).status_code == 201
         assert conv_client.post("/api/conversions", json={**body, "acc_credit": "Cc"}).status_code == 422
@@ -1408,10 +1482,10 @@ class TestApi:
         movements = client.get("/api/movements").json()
         assert movements[0]["date"] == "2026-01-04"  # newest first
         accounts = {a["name"]: a for a in client.get("/api/accounts").json()}
-        assert len(accounts) == 4
+        assert list(accounts) == ["Ca", "Bk", "Cc", "Fi", "De", "Eq"]
         assert accounts["Bk"] == {
             "name": "Bk", "description": "Bank account", "type": "asset", "currency": "USD",
-            "is_liquid": True, "initial_amount": 100.5, "initial_date": "2025-12-31", "checks": [],
+            "is_liquid": True, "initial_amount": 0.1005, "initial_date": "2025-12-31", "checks": [],
         }
         assert accounts["Cc"]["initial_date"] is None
         bases = {b["name"]: b for b in client.get("/api/base-movements").json()}
@@ -1506,11 +1580,77 @@ class TestInternalResultTypes:
         store.add_account("Zr", "asset", "Zero", 0)
         assert settings.ledger_path.read_text() == before
         assert self.initial_rows(settings)[1:] == [
-            (-2, "2026-01-15", "Initial (G)", "Sv", "1234.5", "Eq"),
+            (-2, "2026-01-15", "Initial (G)", "Sv", "1234500.0", "Eq"),  # 1,234.50 USD at 1,000
             (-3, "2026-01-01", "Initial (L)", "Eq", "300.0", "Lo"),  # on the first ledger date
         ]
         balances = store.load().ledger().balances()
-        assert (balances["Sv"], balances["Lo"]) == (1234.5, 300.0)
+        assert (balances["Sv"], balances["Lo"]) == (1234500.0, 300.0)
+
+    def test_initial_amounts_in_other_currencies_need_their_values(self, settings):
+        (settings.currencies_path.parent / "currencies.csv").write_text("date;USD\n")
+        with pytest.raises(LedgerDataError, match=re.escape("There are no values of USD to set the initial amount of 'Bk'")):
+            LedgerStore(settings).load()
+
+    def test_initial_amounts_in_other_currencies_at_their_value_on_the_initial_date(self, revalued):
+        (revalued.currencies_path.parent / "currencies.csv").write_text("date;USD\n2025-12-01;800\n2025-12-31;1000\n")
+        snapshot = LedgerStore(revalued).load()
+        initial = snapshot.initial_rows
+        assert list(initial[["amount", "comment"]].itertuples(index=False)) == [("100.5", "0.1005 USD at 1,000.0000")]
+        assert snapshot.other_balances["Bk"] == pytest.approx(0.1005 + (1000.5 - 200) / 1000)
+        # Its initial amount is exactly in USD: no result on its initial date
+        assert not any(snapshot.result_rows.move_date == "2025-12-31")
+
+    def test_previous_month(self, settings):
+        # The last week of 2025-11 is that of Thursday 2025-11-27: from Monday 2025-11-24 to Sunday 2025-11-30
+        path = settings.accounts_path
+        path.write_text("previous_month: 2025-11\n" + path.read_text())
+        LedgerStore(settings).add_account("Lo", "liability", "Loan", 300, initial_date="2025-11-24")
+        assert "Lo:\n    description: Loan\n    currency: ARS\n    is_liquid: false\n    initial_amount: 300.0\n" in path.read_text()
+        snapshot = LedgerStore(settings).load()
+        assert snapshot.start_date == "2025-11-24"
+        assert snapshot.accounts["Lo"].initial_date == dt.date(2025, 11, 24)  # the default
+        assert snapshot.accounts["Bk"].initial_date == dt.date(2025, 12, 31)  # its own, after the initial week
+        assert [r[1] for r in self.initial_rows(settings)] == ["2025-12-31", "2025-11-24"]
+        with pytest.raises(ValueError, match=re.escape("must be after the initial week (2025-11-24 to 2025-11-30)")):
+            LedgerStore(settings).add_account("Lo2", "liability", "Loan", 300, initial_date="2025-11-30")
+
+    def test_the_initial_week_only_has_the_initial_movements(self, settings):
+        path = settings.accounts_path
+        text = path.read_text()
+        # The last week of 2026-01 goes from 2026-01-26 to 2026-02-01: the ledger CSV is before it
+        path.write_text("previous_month: 2026-01\n" + text.replace("    initial_date: 2025-12-31\n", ""))
+        with pytest.raises(LedgerDataError, match=re.escape(
+            "movements up to the end of the initial week (2026-01-26 to 2026-02-01, the last one of the previous "
+            "month 2026-01), which only has the initial ones: ['2026-01-01', '2026-01-02', '2026-01-03', '2026-01-04']"
+        )):
+            LedgerStore(settings).load()
+        path.write_text("previous_month: 2025-12\n" + text.replace("2025-12-31", "2025-12-24"))
+        with pytest.raises(LedgerDataError, match=re.escape(
+            "Account 'Bk' cannot start (2025-12-24) before the end of the initial week (2025-12-22 to 2025-12-28"
+        )):
+            LedgerStore(settings).load()
+
+    def test_previous_month_must_be_a_past_month(self, settings):
+        path = settings.accounts_path
+        text = path.read_text()
+        month = dt.date.today().strftime("%Y-%m")
+        path.write_text(f"previous_month: {month}\n" + text)
+        with pytest.raises(LedgerDataError, match=re.escape(f"({month}) must be a past month")):
+            LedgerStore(settings).load()
+        path.write_text("previous_month: 2025-13\n" + text)
+        with pytest.raises(LedgerDataError, match="must be YYYY-MM"):
+            LedgerStore(settings).load()
+        path.write_text("initial_date: 2025-12-22\n" + text)
+        with pytest.raises(LedgerDataError, match="'initial_date' is replaced by 'previous_month'"):
+            LedgerStore(settings).load()
+
+    def test_no_revaluations_in_the_initial_week(self, revalued):
+        path = revalued.accounts_path
+        path.write_text("previous_month: 2025-12\n" + path.read_text().replace("    initial_date: 2025-12-31\n", ""))
+        (revalued.currencies_path.parent / "currencies.csv").write_text("date;USD\n2025-12-22;1000\n2025-12-24;1100\n2026-01-05;1200\n")
+        snapshot = LedgerStore(revalued).load()
+        assert list(snapshot.all_rows[snapshot.all_rows.move_date <= "2025-12-28"].base_movement) == ["Initial (G)"]
+        assert list(snapshot.result_rows.move_date) == ["2026-01-05"]
 
     def test_without_ledger_rows_start_on_the_first_initial_date(self, settings):
         settings.ledger_path.write_text("move_date;base_movement;acc_debit;amount;acc_credit;comment\n")
@@ -1518,12 +1658,10 @@ class TestInternalResultTypes:
         assert [r[1] for r in self.initial_rows(settings)] == ["2025-12-31", "2025-12-31"]
 
     def test_a_negative_debt_is_a_gain(self, settings, tmp_path):
-        text = settings.accounts_path.read_text()
-        settings.accounts_path.write_text(text.replace("equity:\n", "  Db:\n    description: Debts\nequity:\n"))
         path = tmp_path / "creditors.yaml"
-        path.write_text("Db:\n  people:\n    Ann: 50\n    Bob: -80\n")
+        path.write_text("De:\n  people:\n    Ann: 50\n    Bob: -80\n")
         settings = replace(settings, creditors_path=path)
-        assert self.initial_rows(settings)[1:] == [(-2, "2026-01-01", "Initial (G)", "Db", "30.0", "Eq")]
+        assert self.initial_rows(settings)[1:] == [(-2, "2026-01-01", "Initial (G)", "De", "30.0", "Eq")]
 
     def test_are_hidden_by_default(self, client):
         assert all(m["base"] != "Initial (G)" for m in client.get("/api/movements").json())
@@ -1554,11 +1692,11 @@ class TestInternalResultTypes:
     @pytest.mark.parametrize(
         ("old", "new", "missing"),
         [
-            ("        Initial (G): Initial balance\n", "", "Initial (G)"),
-            ("        Initial (L): Initial balance\n", "", "Initial (L)"),
-            ("      gain:\n        Initial (G)", "      loss:\n        Initial (G)", "Initial (G)"),  # a loss
-            ("        Initial (G): Initial balance\n",
-             "        Initial (G):\n          description: d\n          debit: Ca\n", "Initial (G)"),
+            ("          Initial (G): Initial balance\n", "", "Initial (G)"),
+            ("          Initial (L): Initial balance\n", "", "Initial (L)"),
+            ("        gain:\n          Initial (G)", "        loss:\n          Initial (G)", "Initial (G)"),  # a loss
+            ("          Initial (G): Initial balance\n",
+             "          Initial (G):\n            description: d\n            debit: Ca\n", "Initial (G)"),
         ],
     )
     def test_are_required_to_load(self, settings, client, old, new, missing):
@@ -1625,7 +1763,7 @@ class TestInvestmentSides:
         assert '<option value="INVESTMENT" >Any investment account</option>' in r.text
         assert 'title="Any investment account">Investment<' in client.get("/results").text
 
-    @pytest.mark.parametrize("name", [INVESTMENT, DEBT])
+    @pytest.mark.parametrize("name", [INVESTMENT, CREDIT_CARD, "FOREIGN CURRENCY"])
     def test_is_not_an_account_name(self, settings, name):
         with pytest.raises(ValueError, match=f"'{name}' is reserved"):
             LedgerStore(settings).add_account(name, "asset", "d", "0")
@@ -1634,14 +1772,10 @@ class TestInvestmentSides:
 class TestDebtSides:
     @pytest.fixture
     def settings(self, settings, tmp_path):
-        text = settings.accounts_path.read_text(encoding="utf-8")
-        settings.accounts_path.write_text(
-            text.replace("equity:\n", "  De:\n    description: Debts\nequity:\n"), encoding="utf-8"
-        )
         path = tmp_path / "creditors.yaml"
         path.write_text("De:\n  people:\n    Dad: 0\n", encoding="utf-8")
         path_yaml = settings.base_movements_path
-        path_yaml.write_text(path_yaml.read_text().replace(INITIAL_YAML, INITIAL_YAML + DEBT_YAML, 1))
+        with_internal(path_yaml, transfers=DEBT_YAML)
         return replace(settings, creditors_path=path)
 
     @pytest.fixture
@@ -1650,7 +1784,7 @@ class TestDebtSides:
 
     def test_add_movement(self, settings):
         store = LedgerStore(settings)
-        with pytest.raises(ValueError, match="Credit account must be a debt account: Cc is not"):
+        with pytest.raises(ValueError, match=re.escape("Credit account must match: Cc != De")):
             store.add("2026-02-01", "Debt - Incurred", "Ca", "Cc", "1", debt=True)
         store.add("2026-02-01", "Debt - Incurred", "Ca", "De", "1", debt=True)
         assert rows(settings).iloc[-1]["acc_credit"] == "De"
@@ -1789,7 +1923,7 @@ class TestDebtSides:
 
     def test_debt_tab_form_without_debt_base_movements(self, settings, client):
         path = settings.base_movements_path
-        path.write_text(path.read_text().replace("    Loan - Collected:\n      description: d\n      credit: DEBT\n", ""))
+        path.write_text(path.read_text().replace("    Loan - Collected:\n      description: d\n      credit: De\n", ""))
         form = client.get("/debt").text.split('id="debt-form"')[1].split("</form>")[0]
         assert "The Debt tab needs these base movements" in form and "&#39;Loan - Collected&#39;" in form
         assert form.count('name="base_movement"') == 2  # those of Debt, picked first
@@ -1807,17 +1941,16 @@ class TestDebtSides:
     def test_form_offers_only_debt_accounts(self, client):
         r = client.get("/form/accounts", params={"base_movement": "Debt - Incurred"})
         debit, credit = r.text.split("<span>Credit")
-        assert "(debt account)" in credit and "<option >De</option>" in credit
+        assert '<input value="De" readonly' in credit  # always De
         assert "<option >Cc</option>" not in credit and "<option >Cc</option>" in debit
 
     def test_add_base_movement(self, settings, client):
-        LedgerStore(settings).add_base_movement("Repay", "transfer", "d", debit=DEBT)
+        LedgerStore(settings).add_base_movement("Repay", "transfer", "d", debit="De")
         bases = {b["name"]: b for b in client.get("/api/base-movements").json()}
-        assert (bases["Debt - Incurred"]["debit"], bases["Debt - Incurred"]["credit"]) == (None, "DEBT")
-        assert (bases["Repay"]["debit"], bases["Repay"]["credit"]) == ("DEBT", None)
+        assert (bases["Debt - Incurred"]["debit"], bases["Debt - Incurred"]["credit"]) == (None, "De")
+        assert (bases["Repay"]["debit"], bases["Repay"]["credit"]) == ("De", None)
         r = client.get("/form/base-sides", params={"move_type": "transfer"})
-        assert '<option value="DEBT" >Any debt account</option>' in r.text
-        assert 'title="Any debt account">Debt<' in client.get("/results").text
+        assert 'value="DEBT"' not in r.text and "Any debt account" not in r.text
 
     def test_accounts_special_column(self, settings, tmp_path):
         text = settings.accounts_path.read_text(encoding="utf-8")
@@ -1833,21 +1966,16 @@ class TestDebtSides:
             for row in re.split(r'<tr id="account-[^"]+">', r.text.split("<tbody>", 1)[1])[1:]
             if "<strong>" in row
         }
-        assert specials == {"Ca": "-", "Bk": "-", "Br": "Investment", "Cc": "-", "De": "Debt", "Eq": "-"}
+        assert specials == {"Ca": "-", "Bk": "-", "Br": "Investment", "Cc": "-", "Fi": "-", "De": "Debt", "Eq": "-"}
 
 
 class TestDebtAccounts:
     def test_debt_accounts_are_loaded(self, settings, tmp_path):
-        text = settings.accounts_path.read_text(encoding="utf-8")
-        settings.accounts_path.write_text(
-            text.replace("    description: Credit card\n    initial_amount: 0\n", "    description: Credit card\n"),
-            encoding="utf-8",
-        )
         path = tmp_path / "creditors.yaml"
-        path.write_text("Cc:\n  people:\n    Dad: 10\n", encoding="utf-8")
+        path.write_text("De:\n  people:\n    Dad: 10\n", encoding="utf-8")
         accounts = LedgerStore(replace(settings, creditors_path=path)).load().accounts
-        assert accounts["Cc"].creditors["Dad"].is_creditor
-        assert accounts["Cc"].initial_amount == 10.0
+        assert accounts["De"].creditors["Dad"].is_creditor
+        assert accounts["De"].initial_amount == 10.0
 
 
 class TestInvestmentsPage:
@@ -1910,14 +2038,9 @@ class TestInvestmentsPage:
 class TestDebtPage:
     @pytest.fixture
     def settings(self, settings, tmp_path):
-        text = settings.accounts_path.read_text(encoding="utf-8")
-        settings.accounts_path.write_text(
-            text.replace("    description: Credit card\n    initial_amount: 0\n", "    description: Credit card\n"),
-            encoding="utf-8",
-        )
         path = tmp_path / "creditors.yaml"
         path.write_text(
-            "Cc:\n  people:\n    Dad: 100\n    Ana: -30\n    Leo: 0\n  services:\n    Bank: 50.5\n  companies:\n",
+            "De:\n  people:\n    Dad: 100\n    Ana: -30\n    Leo: 0\n  services:\n    Bank: 50.5\n  companies:\n",
             encoding="utf-8",
         )
         return replace(settings, creditors_path=path)
@@ -1939,14 +2062,14 @@ class TestDebtPage:
 
     def test_month_filter(self, settings, client):
         with settings.ledger_path.open("a", encoding="utf-8") as f:
-            f.write("2026-01-05;Card fee;Eq;20;Cc;dad\n2026-02-05;Card fee;Eq;30;Cc;Dad\n")
+            f.write("2026-01-05;Food;Eq;20;De;dad\n2026-02-05;Food;Eq;30;De;Dad\n")
         snapshot = LedgerStore(settings).load()
         amounts = {
             month: snapshot.debt_accounts(month)[0].creditors["Dad"].amount
             for month in ("", "2025-12", "2026-01", "2026-02")
         }
         assert amounts == {"": 150, "2025-12": 100, "2026-01": 120, "2026-02": 150}
-        assert snapshot.accounts["Cc"].creditors["Dad"].amount == 100  # left as loaded
+        assert snapshot.accounts["De"].creditors["Dad"].amount == 100  # left as loaded
         r = client.get("/debt", params={"month": "2026-01"})
         assert '<option value="2026-01" selected>' in r.text
         assert "by people, services and companies, as of end of 2026-01</small>" in r.text
@@ -1961,12 +2084,12 @@ class TestDebtPage:
 
     def test_movements(self, settings, client):
         with settings.ledger_path.open("a", encoding="utf-8") as f:
-            f.write("2026-01-05;Card fee;Eq;20;Cc;dad\n2026-02-05;Card fee;Eq;30;Cc;no one\n")
+            f.write("2026-01-05;Food;Eq;20;De;dad\n2026-02-05;Food;Eq;30;De;no one\n")
         LedgerStore(settings).freeze_ids()
         r = client.get("/debt", params={"month": ""})
         movements = r.text.split('data-sortable="debt-movements"')[1].split("</table>")[0]
         # With their ids, the same as in the Ledger tab
-        assert movement_ids(movements) == ["L-6", "L-5", "A-Cc"]
+        assert movement_ids(movements) == ["L-6", "L-5", "A-De"]
         assert set(movement_ids(movements)) <= set(movement_ids(client.get("/", params={"initial": True}).text))
         # The initial movement too, with the initial amounts of everyone
         assert "<h2>Movements <small>3, all time</small></h2>" in r.text
@@ -1980,7 +2103,7 @@ class TestDebtPage:
     def test_initial_amounts_count_from_the_initial_date(self, settings):
         text = settings.accounts_path.read_text(encoding="utf-8")
         settings.accounts_path.write_text(
-            text.replace("    description: Credit card\n", "    description: Credit card\n    initial_date: 2026-01-02\n"),
+            text.replace("{description: Debts}", "{description: Debts, initial_date: 2026-01-02}"),
             encoding="utf-8",
         )
         snapshot = LedgerStore(settings).load()
@@ -2003,9 +2126,9 @@ class TestDebtPage:
     def test_ledger_debts_go_to_the_people_in_the_comment(self, settings, client):
         with settings.ledger_path.open("a", encoding="utf-8") as f:
             f.write(
-                "2026-01-05;Card fee;Eq;20;Cc;Fee for dad\n"  # a credit: we owe more
-                '2026-01-06;Move;Cc;"1,040.5";Ca;bank 2026-01\n'  # a debit: we owe less
-                "2026-01-07;Move;Cc;5;Ca;Zurich 1/24\n"  # names no one
+                "2026-01-05;Food;Eq;20;De;Fee for dad\n"  # a credit: we owe more
+                '2026-01-06;Move;De;"1,040.5";Ca;bank 2026-01\n'  # a debit: we owe less
+                "2026-01-07;Move;De;5;Ca;Zurich 1/24\n"  # names no one
                 "2026-01-08;Move;Ca;7;Bk;Dad\n"  # no debt account
             )
         settings.ledger_path.write_text(
@@ -2032,7 +2155,7 @@ class TestDebtPage:
 
 @pytest.mark.parametrize(
     ("path", "message"),
-    [("/investments", "No investment accounts yet"), ("/debt", "No debt accounts yet")],
+    [("/investments", "No investment accounts yet")],
 )
 def test_pages_without_special_accounts(client, path, message):
     r = client.get(path)
@@ -2344,14 +2467,9 @@ def test_no_salary_charts_without_months(client):
 class TestDebtKinds:
     @pytest.fixture
     def settings(self, settings, tmp_path):
-        text = settings.accounts_path.read_text(encoding="utf-8")
-        settings.accounts_path.write_text(
-            text.replace("    description: Credit card\n    initial_amount: 0\n", "    description: Credit card\n"),
-            encoding="utf-8",
-        )
         creditors = tmp_path / "creditors.yaml"
         creditors.write_text(
-            "Cc:\n  people:\n    Dad: 100\n  services:\n    Gas: 20\n  companies:\n    Acme: -5\n    Old Co: 3\n",
+            "De:\n  people:\n    Dad: 100\n  services:\n    Gas: 20\n  companies:\n    Acme: -5\n    Old Co: 3\n",
             encoding="utf-8",
         )
         work = tmp_path / "work.csv"
@@ -2360,7 +2478,7 @@ class TestDebtKinds:
 
     def test_companies_come_from_the_work_history(self, settings):
         before = settings.creditors_path.read_text(encoding="utf-8")
-        cc = LedgerStore(settings).load().accounts["Cc"]
+        cc = LedgerStore(settings).load().accounts["De"]
         assert {n: (c.kind.value, c.amount) for n, c in cc.creditors.items()} == {
             "Dad": ("people", 100), "Gas": ("services", 20),
             "Acme": ("companies", -5), "Old Co": ("companies", 3), "Globex": ("companies", 0),
@@ -2372,13 +2490,13 @@ class TestDebtKinds:
         store = LedgerStore(settings)
         store.save_month("2026-02", "Initech", "Dev", "10", {"Tax": "2"})
         with settings.ledger_path.open("a", encoding="utf-8") as f:
-            f.write("2026-02-05;Card fee;Eq;7;Cc;initech bonus\n")
+            f.write("2026-02-05;Food;Eq;7;De;initech bonus\n")
         assert store.load().debt_accounts()[0].creditors["Initech"].amount == 7
 
     def test_a_company_cannot_be_another_kind(self, settings):
         text = settings.creditors_path.read_text(encoding="utf-8")
         settings.creditors_path.write_text(text.replace("    Gas: 20\n", "    Gas: 20\n    Globex: 1\n"), encoding="utf-8")
-        with pytest.raises(LedgerDataError, match="'Globex' of the account 'Cc' is a company of the work history"):
+        with pytest.raises(LedgerDataError, match="'Globex' of the account 'De' is a company of the work history"):
             LedgerStore(settings).load()
 
     def test_debt_page_by_kind(self, settings):
@@ -2400,20 +2518,24 @@ class TestSalaries:
 
     @pytest.fixture
     def settings(self, settings, tmp_path):
-        text = settings.accounts_path.read_text(encoding="utf-8")
-        settings.accounts_path.write_text(
-            text.replace("    description: Credit card\n    initial_amount: 0\n", "    description: Credit card\n"),
-            encoding="utf-8",
-        )
         creditors = tmp_path / "creditors.yaml"
-        creditors.write_text("Cc:\n  companies:\n    Acme: -5\n", encoding="utf-8")
+        creditors.write_text("De:\n  companies:\n    Acme: -5\n", encoding="utf-8")
         work = tmp_path / "work.csv"
         work.write_text(WORK_CSV, encoding="utf-8")
-        return replace(with_salaries(settings, debit="Cc"), creditors_path=creditors, work_path=work)
+        return replace(with_salaries(settings, debit="De"), creditors_path=creditors, work_path=work)
 
     def salaries(self, settings) -> list[tuple]:
         rows = LedgerStore(settings).load().salary_rows
         return list(rows[["move_date", "base_movement", "acc_debit", "amount", "acc_credit", "comment"]].itertuples(index=False))
+
+    def test_from_the_month_after_the_previous_month(self, settings):
+        # Its initial week is the last one of 2025-12, from Monday 2025-12-22: the salaries
+        # start on the first week of 2026-01, that of Thursday 2026-01-01, on Monday 2025-12-29
+        path = settings.accounts_path
+        path.write_text("previous_month: 2025-12\n" + path.read_text())
+        assert [r[0] for r in self.salaries(settings)][::2] == [
+            "2025-12-29", "2026-01-05", "2026-01-12", "2026-01-19", "2026-01-26",
+        ]
 
     def test_each_week_of_a_month_from_the_start_of_the_ledger(self, settings):
         # 2026-01 has 5 weeks, from Monday 2025-12-29 (Thursday 2026-01-01) on, but the
@@ -2423,8 +2545,8 @@ class TestSalaries:
             row
             for i, day in enumerate(["2026-01-05", "2026-01-12", "2026-01-19", "2026-01-26"], 2)
             for row in (
-                (day, "Work - Salary Main", "Cc", "400.00", "Eq", f"Globex (GX Dev): week {i}/5 of 2026-01"),
-                (day, "Tax", "Eq", "80.00", "Cc", f"Globex (GX Dev): Tax, week {i}/5 of 2026-01"),
+                (day, "Work - Salary Main", "De", "400.00", "Eq", f"Globex (GX Dev): week {i}/5 of 2026-01"),
+                (day, "Tax", "Eq", "80.00", "De", f"Globex (GX Dev): Tax, week {i}/5 of 2026-01"),
             )
         ]
         LedgerStore(settings).save_month("2026-02", "Globex", "GX Dev", "1000.01", {"Tax": "200.01"})
@@ -2440,7 +2562,7 @@ class TestSalaries:
     def test_are_in_the_ledger_and_owed_by_the_company(self, settings):
         snapshot = LedgerStore(settings).load()
         # The net salary: 1,600 of salary minus 320 of tax, with the initial -5 of Acme
-        assert snapshot.ledger().balances()["Cc"] == -1285
+        assert snapshot.ledger().balances()["De"] == -1285
         cc = snapshot.debt_accounts()[0]
         assert (cc.creditors["Globex"].amount, cc.creditors["Acme"].amount, cc.unassigned) == (-1280, -5, 0)
         assert snapshot.debt_accounts("2026-01")[0].creditors["Globex"].amount == -1280
@@ -2459,17 +2581,17 @@ class TestSalaries:
     def test_cannot_be_stored_or_added_by_hand(self, settings):
         store = LedgerStore(settings)
         with pytest.raises(ValueError, match="'Work - Salary Main' are generated by pledger"):
-            store.add("2026-01-05", "Work - Salary Main", "Cc", "Eq", "1", "Globex")
+            store.add("2026-01-05", "Work - Salary Main", "De", "Eq", "1", "Globex")
         assert "Work - Salary Main" not in TestClient(create_app(settings)).get("/form/bases", params={"move_type": "gain"}).text
         with settings.ledger_path.open("a") as f:
-            f.write("2026-01-05;Work - Salary Main;Cc;1;Eq;Globex\n")
+            f.write("2026-01-05;Work - Salary Main;De;1;Eq;Globex\n")
         with pytest.raises(LedgerDataError, match=re.escape("cannot have movements of ['Work - Salary Main']")):
             store.load()
 
     @pytest.mark.parametrize(
         "salary",
-        ["        Work - Salary Main:\n          description: Main salary\n          debit: Cc\n",
-         "          debit: Cc\n"],  # no fixed debit account
+        ["        Work - Salary Main:\n          description: Main salary\n          debit: De\n",
+         "          debit: De\n"],  # no fixed debit account
     )
     def test_their_base_movement_is_required(self, settings, salary):
         path = settings.base_movements_path
@@ -2485,16 +2607,17 @@ class TestSalaries:
         [
             ("Taxes", "The column 'Taxes' of the work CSV is not a base movement"),
             ("Gift", "The column 'Gift' of the work CSV must be a deduction of the salary"),  # a gain
-            ("Card fee", "The column 'Card fee' of the work CSV must be a deduction"),  # credits Cc
+            ("Card fee", "The column 'Card fee' of the work CSV must be a deduction"),  # credits Cc, then Ca
             ("Initial (L)", "The column 'Initial \\(L\\)' of the work CSV must be a deduction"),  # internal
         ],
     )
     def test_deductions_must_be_losses_out_of_the_salary(self, settings, column, error):
         settings.work_path.write_text(WORK_CSV.replace(";Tax\n", f";{column}\n", 1), encoding="utf-8")
-        if column == "Card fee":  # fine while Cc is the account of the salary, but not of another one
-            LedgerStore(settings).load()
+        if column == "Card fee":  # fine while it credits the account of the salary, but not another one
             path = settings.base_movements_path
-            path.write_text(path.read_text().replace("          debit: Cc\n", "          debit: Ca\n", 1))
+            path.write_text(path.read_text().replace("          credit: Cc\n", "          credit: De\n", 1))
+            LedgerStore(settings).load()
+            path.write_text(path.read_text().replace("          debit: De\n", "          debit: Ca\n", 1))
         with pytest.raises(LedgerDataError, match=error):
             LedgerStore(settings).load()
 
@@ -2533,22 +2656,24 @@ class TestSalaries:
         assert 'name="deduction:Tax"' in r.text
 
 
+# The internal result type and transfers of the investments (see with_internal)
 INVEST_YAML = (
-    "  Invest:\n    id: 4\n    long_name: Investments\n    description: d\n"
-    "    base_movements:\n      gain:\n        Capital gains:\n          description: d\n"
-    "          debit: INVESTMENT\n        Dividends: d\n      loss:\n        Broker fees: d\n"
-    "        Capital losses:\n          description: d\n          credit: INVESTMENT\n"
-    "  transfer:\n    Investment - Bought:\n      description: d\n      debit: INVESTMENT\n"
+    "    Invest:\n      id: 4\n      long_name: Investments\n      description: d\n"
+    "      base_movements:\n        gain:\n          Capital gains:\n            description: d\n"
+    "            debit: INVESTMENT\n          Dividends: d\n        loss:\n          Broker fees: d\n"
+    "          Capital losses:\n            description: d\n            credit: INVESTMENT\n"
+)
+INVEST_TRANSFERS_YAML = (
+    "    Investment - Bought:\n      description: d\n      debit: INVESTMENT\n"
     "    Investment - Sold:\n      description: d\n      credit: INVESTMENT\n"
     "    Adjust: Set by pledger\n"
 )
-# The internal base movements of the Debt tab; appended to the `internal` section of INITIAL_YAML
+# The internal transfers of the Debt tab (see with_internal)
 DEBT_YAML = (
-    "  transfer:\n"
-    "    Debt - Incurred:\n      description: d\n      credit: DEBT\n"
-    "    Debt - Paid:\n      description: d\n      debit: DEBT\n"
-    "    Loan - Given:\n      description: d\n      debit: DEBT\n"
-    "    Loan - Collected:\n      description: d\n      credit: DEBT\n"
+    "    Debt - Incurred:\n      description: d\n      credit: De\n"
+    "    Debt - Paid:\n      description: d\n      debit: De\n"
+    "    Loan - Given:\n      description: d\n      debit: De\n"
+    "    Loan - Collected:\n      description: d\n      credit: De\n"
 )
 INVESTMENT_HEADER = "move_date;base_movement;acc_debit;amount;acc_credit;quantity;investment;comment\n"
 
@@ -2617,7 +2742,7 @@ class TestInvestMovements:
             text.replace("liability:\n", "  Br:\n    description: Broker\nliability:\n"), encoding="utf-8"
         )
         path = settings.base_movements_path
-        path.write_text(path.read_text().replace("internal:\n", "internal:\n" + INVEST_YAML, 1))
+        with_internal(path, INVEST_YAML, INVEST_TRANSFERS_YAML)
         # A capital gain of T
         movements = tmp_path / "investment.csv"
         movements.write_text(INVESTMENT_HEADER + "2026-01-05;Capital gains;Br;5;Eq;;T;\n")
@@ -2797,8 +2922,8 @@ class TestInvestMovements:
         path = settings.base_movements_path
         path.write_text(
             path.read_text()
-            .replace("Dividends: d\n", "Dividends: d\n        Interest on Money (G): d\n", 1)
-            .replace("Broker fees: d\n", "Broker fees: d\n        Interest on Money (L): d\n", 1)
+            .replace("Dividends: d\n", "Dividends: d\n          Interest on Money (G): d\n", 1)
+            .replace("Broker fees: d\n", "Broker fees: d\n          Interest on Money (L): d\n", 1)
         )
         r = client.get("/investments")
         assert card_labels(r.text) == ["Invested", "Net interest on money", "Net capital gains", "Total result"]
@@ -2853,7 +2978,7 @@ class TestInvestMovements:
     def test_invalid_interest(self, settings, line, message):
         path = settings.base_movements_path
         if "required" not in message:
-            path.write_text(path.read_text().replace("Dividends: d\n", "Dividends: d\n        Interest on Money (G): d\n", 1))
+            path.write_text(path.read_text().replace("Dividends: d\n", "Dividends: d\n          Interest on Money (G): d\n", 1))
         settings.interest_path.write_text("move_date;acc_debit;amount;comment\n" + line + "\n")
         with pytest.raises(LedgerDataError, match=re.escape(message)):
             LedgerStore(settings).load()
@@ -3006,13 +3131,16 @@ class TestInvestMovements:
 
     def test_no_form_without_invest_base_movements(self, settings, client):
         path = settings.base_movements_path
-        path.write_text(path.read_text().replace(INVEST_YAML, ""))
+        path.write_text(path.read_text().replace(INVEST_YAML, "").replace(INVEST_TRANSFERS_YAML, ""))
         settings.investment_movements_path.unlink()
         assert 'id="invest-form"' not in client.get("/investments").text
 
 
-# The internal base movement of the Credit Cards tab; appended to the `internal` section of INITIAL_YAML
-CARD_PAYMENT_YAML = "  transfer:\n    Credit card payment:\n      description: d\n      debit: CREDIT CARD\n"
+# The internal transfers of the Credit Cards tab (see with_internal)
+CARD_PAYMENT_YAML = (
+    "    Credit card - Payment:\n      description: d\n      debit: CREDIT CARD\n"
+    "    Credit card - Surplus:\n      description: d\n      credit: CREDIT CARD\n"
+)
 CREDIT_CARDS_YAML = """\
 Vi:
   long_name: Visa (L)
@@ -3060,27 +3188,28 @@ class TestCreditCards:
     def test_cannot_be_debt_accounts(self, settings, tmp_path):
         creditors = tmp_path / "creditors.yaml"
         creditors.write_text("Vi:\n  people:\n    Dad: 1\n", encoding="utf-8")
-        with pytest.raises(LedgerDataError, match="cannot be investment or debt accounts"):
+        with pytest.raises(LedgerDataError, match=re.escape("only has the creditors of De, not of ['Vi']")):
             LedgerStore(replace(settings, creditors_path=creditors)).load()
 
     @pytest.fixture
     def paying(self, settings):
         """With the internal card payment base movement, debiting any credit card."""
         path = settings.base_movements_path
-        path.write_text(path.read_text().replace(INITIAL_YAML, INITIAL_YAML + CARD_PAYMENT_YAML, 1))
+        with_internal(path, transfers=CARD_PAYMENT_YAML)
         return settings
 
     def test_card_payments_are_added_from_their_tab(self, paying):
         client = TestClient(create_app(paying))
-        pay = "Credit card payment"
-        assert LedgerStore(paying).load().card_payment_base_movements().keys() == {pay}
-        with pytest.raises(ValueError, match="'Credit card payment' are added from the Credit Cards tab"):
+        pay = "Credit card - Payment"
+        assert LedgerStore(paying).load().card_payment_base_movements().keys() == {pay, "Credit card - Surplus"}
+        with pytest.raises(ValueError, match="'Credit card - Payment' are added from the Credit Cards tab"):
             LedgerStore(paying).add("2026-02-07", pay, "Vi", "Bk", "10")
         assert pay not in client.get("/form/bases", params={"move_type": "transfer"}).text
         r = client.get("/credit-cards", params={"month": ""})
         form = r.text.split('id="card-payment-form"')[1].split("</form>")[0]
-        # The base movement is fixed, and the debit is any credit card
-        assert f'<input type="hidden" name="base_movement" value="{pay}">' in form
+        # The base movement is picked (a payment by default), and the debit is any credit card
+        assert f'<label class="liability" title="{pay}">\n        <input type="radio" name="base_movement" value="{pay}" checked' in form
+        assert '<label class="asset" title="Credit card - Surplus">' in form  # orange and blue buttons
         debit = form.split('name="acc_debit"')[1].split("</select>")[0]
         assert "<option >Vi</option>" in debit and "<option >MM</option>" in debit and "Bk" not in debit
         assert 'hx-trigger="credit-cards-changed from:body"' in r.text
@@ -3102,7 +3231,7 @@ class TestCreditCards:
 
     def test_edit_and_delete_card_payment(self, paying):
         client = TestClient(create_app(paying))
-        pay = "Credit card payment"
+        pay = "Credit card - Payment"
         LedgerStore(paying).add("2026-02-07", pay, "Vi", "Bk", "10", card_payment=True)
         index = len(rows(paying)) - 1
         page = client.get("/credit-cards", params={"month": ""}).text
@@ -3131,8 +3260,23 @@ class TestCreditCards:
         r = TestClient(create_app(settings)).get("/credit-cards", params={"month": "", "card": "Vi"})
         assert '<form id="card-filter"' in r.text and "<option selected>Vi</option>" in r.text
 
+    def test_card_surplus(self, paying):
+        client = TestClient(create_app(paying))
+        surplus = "Credit card - Surplus"
+        form = client.get("/form/card-payment", params={"base_movement": surplus}).text
+        assert f'value="{surplus}" checked' in form
+        fields = client.get("/form/accounts", params={"base_movement": surplus}).text  # picking its button
+        assert fields == form.split('<div id="card-account-fields">')[1].split("</div>\n  <label>Amount")[0]
+        credit = fields.split('name="acc_credit"')[1].split("</select>")[0]
+        assert "<option >Vi</option>" in credit and "Bk" not in credit  # any credit card
+        r = client.post("/credit-cards/payments", data={
+            "move_date": "2026-02-07", "base_movement": surplus, "acc_debit": "Bk", "acc_credit": "Vi", "amount": "10",
+        })
+        assert "Surplus of Vi: $10.00" in r.text
+        assert rows(paying).iloc[-1]["base_movement"] == surplus
+
     def test_credit_cards_tab_without_card_payment_base_movements(self, client):
-        assert "The Credit Cards tab needs this base movement" in client.get("/credit-cards").text
+        assert "The Credit Cards tab needs these base movements" in client.get("/credit-cards").text
 
     def test_credit_cards_tab(self, client):
         r = client.get("/credit-cards", params={"month": ""})
@@ -3455,9 +3599,22 @@ class TestEditAccounts:
         form = r.text.split('id="account-form"')[1].split("</form>")[0]
         assert 'hx-post="/accounts/edit"' in form and "Edit account" in form and ">Cancel</button>" in form
         assert 'name="name" value="Bk" readonly' in form and 'name="acc_type"' not in form
-        assert 'name="initial_amount" inputmode="decimal" value="100.50"' in form
+        assert 'name="initial_amount" inputmode="decimal" value="0.1005"' in form
         assert 'name="initial_date" value="2025-12-31"' in form and 'name="currency"' not in form  # the currency stays
         assert '<input value="USD" readonly' in form
+
+    def test_edit_an_internal_account(self, settings):
+        path = settings.accounts_path
+        block = (
+            "internal:\n  asset:\n    Fi:\n      description: Intermediary\n      initial_amount: 0\n"
+            "      checks:\n      - net_zero\n  liability:\n    De:\n      description: Debts\n"
+            "  equity:\n    Eq:\n      description: Equity\n"
+        )
+        path.write_text(path.read_text().replace(INTERNAL_ACCOUNTS_YAML, block))
+        LedgerStore(settings).edit_account("Fi", "Between movements", "0", False, "", ["net_zero"])
+        assert "internal:\n  asset:\n    Fi:\n      description: Between movements\n" in path.read_text()
+        fi = LedgerStore(settings).load().accounts["Fi"]
+        assert fi.internal and fi.description == "Between movements"
 
     def test_edit_keeps_the_rest_of_the_file(self, settings, client):
         path = settings.accounts_path
@@ -3472,7 +3629,7 @@ class TestEditAccounts:
             "description": "My bank", "currency": "USD", "is_liquid": True, "initial_amount": 200.0,
             "color": "blue", "checks": ["net_positive"],
         }
-        assert path.read_text().startswith("# mine\nasset:\n  Ca:\n") and "liability:\n  Cc:\n" in path.read_text()
+        assert path.read_text().startswith("# mine\n" + INTERNAL_ACCOUNTS_YAML + "asset:\n  Ca:\n") and "liability:\n  Cc:\n" in path.read_text()
         assert LedgerStore(settings).load().accounts["Bk"].initial_amount == 200
 
     def test_invalid_edits_roll_back(self, settings, client):
@@ -3512,8 +3669,8 @@ class TestAccountFormSwaps:
         assert LedgerStore(settings).load().accounts["Bk"].currency.name == "USD"
 
 
-CORRECTION_YAML = INVEST_YAML.replace("        Dividends: d\n", "        Dividends: d\n        Correction (G): c\n").replace(
-    "        Broker fees: d\n", "        Broker fees: d\n        Correction (L): c\n"
+CORRECTION_YAML = INVEST_YAML.replace("          Dividends: d\n", "          Dividends: d\n          Correction (G): c\n").replace(
+    "          Broker fees: d\n", "          Broker fees: d\n          Correction (L): c\n"
 )
 
 
@@ -3525,7 +3682,7 @@ class TestBalanceCorrections:
             text.replace("liability:\n", "  Br:\n    description: Broker\nliability:\n"), encoding="utf-8"
         )
         path = settings.base_movements_path
-        path.write_text(path.read_text().replace("internal:\n", "internal:\n" + CORRECTION_YAML, 1))
+        with_internal(path, CORRECTION_YAML, INVEST_TRANSFERS_YAML)
         investments = tmp_path / "investment.yaml"
         investments.write_text("Br:\n  T: stock\n", encoding="utf-8")
         return replace(
@@ -3604,7 +3761,7 @@ class TestBalanceCorrections:
 
     def test_needs_the_correction_base_movements(self, settings):
         path = settings.base_movements_path
-        path.write_text(path.read_text().replace("        Correction (G): c\n", ""))
+        path.write_text(path.read_text().replace("          Correction (G): c\n", ""))
         with pytest.raises(ValueError, match="Correcting balances needs 'Correction \\(G\\)'"):
             LedgerStore(settings).correct_balance("Ca", "200")
 

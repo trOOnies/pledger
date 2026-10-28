@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import os
 import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from itertools import pairwise
 from math import isclose
@@ -23,6 +24,7 @@ from pledger.enums import (
     LedgerSide,
     MovementType,
 )
+from pledger.weeks import Week
 
 
 def _load_yaml(path: str) -> dict:
@@ -33,11 +35,28 @@ def _load_yaml(path: str) -> dict:
     return data
 
 
-# A base movement side set to one of these (reserved names) takes any investment,
-# debt or credit card account instead of a fixed one. See SPECIAL_SIDES.
+# A base movement side set to one of these (reserved names) takes any investment, credit
+# card or foreign currency account instead of a fixed one. See SPECIAL_SIDES.
 INVESTMENT = "INVESTMENT"
-DEBT = "DEBT"
 CREDIT_CARD = "CREDIT CARD"
+FOREIGN_CURRENCY = "FOREIGN CURRENCY"
+RESERVED = {INVESTMENT, CREDIT_CARD, FOREIGN_CURRENCY}
+
+# The internal accounts, mandatory, under the top-level `internal` key of the accounts
+# YAML: the intermediary between movements (in the base currency, e.g. of the
+# conversions between two other currencies), the debts with other people (the only debt
+# account, see DebtAccount) and the equity (the only equity account).
+INTERMEDIARY, DEBT_ACCOUNT, EQUITY_ACCOUNT = "Fi", "De", "Eq"
+INTERNAL_ACCOUNTS = {
+    INTERMEDIARY: AccountType.ASSET, DEBT_ACCOUNT: AccountType.LIABILITY, EQUITY_ACCOUNT: AccountType.EQUITY,
+}
+INTERNAL = "internal"
+
+INITIAL_DATE = "initial_date"  # of an account in the accounts YAML
+# The top-level key of the accounts YAML with the last past month left out of the
+# movements, an initial picture: its last week (see initial_week) has the initial
+# movements of the accounts, and nothing else (see Account.load_yaml).
+PREVIOUS_MONTH = "previous_month"
 
 INFLATION_COLUMN = "monthly_inflation"  # of the base currency, in base_currency.csv
 CPI_BASE = 100.0  # the CPI at the end of the day before the first month of base_currency.csv
@@ -58,10 +77,10 @@ def _coalesce_mt_account(
     )
 
     acc = (
-        accounts["Eq"]
+        accounts[EQUITY_ACCOUNT]
         if move_type == equity_side
         else accounts[base_move_d[ls_value]]
-        if base_move_d.get(ls_value) not in {None, INVESTMENT, DEBT, CREDIT_CARD}
+        if base_move_d.get(ls_value) not in {None, *RESERVED}
         else None
     )
     if (move_type == MovementType.TRANSFER) and (acc is not None):
@@ -76,10 +95,10 @@ def _coalesce_mt_account(
 
 def _special_side(acc: Account | None, value: str | None) -> str | None:
     """
-    INVESTMENT, DEBT or CREDIT_CARD if a side is set to it. Ignored on the equity
-    side of gains and losses, like fixed accounts.
+    INVESTMENT, CREDIT_CARD or FOREIGN_CURRENCY if a side is set to it. Ignored on the
+    equity side of gains and losses, like fixed accounts.
     """
-    return value if acc is None and value in {INVESTMENT, DEBT, CREDIT_CARD} else None
+    return value if acc is None and value in RESERVED else None
 
 
 # * ---------------------------------------
@@ -243,10 +262,11 @@ class Account:
     description: str
     acc_type: AccountType
     currency: Currency
-    initial_amount: float
+    initial_amount: float  # in its currency
     is_liquid: bool = False
-    initial_date: dt.date | None = None  # None: the first date found in the ledger
+    initial_date: dt.date | None = None  # None: the first date of the ledger
     checks: tuple[AccountCheck, ...] = ()  # on its daily balance in the ledger (see Ledger.check_accounts)
+    internal: bool = False  # one of the INTERNAL_ACCOUNTS
 
     def __post_init__(self):
         self.total = 0
@@ -304,14 +324,21 @@ class Account:
     ) -> dict[str, Account]:
         """
         Load Accounts from YAML path. An account without a `currency` is in the
-        base currency. Every account must set its `initial_amount`, except equity
-        accounts, which must not (theirs is 0.0), and investment and debt accounts.
+        base currency. Every account must set its `initial_amount`, in its currency,
+        except equity accounts, which must not (theirs is 0.0), and investment and
+        debt accounts. An account without an `initial_date` starts on the initial
+        week of the top-level `previous_month` of the YAML (see previous_month_of_yaml),
+        if any: on its Monday. One with it must start after that week.
+
+        The top-level `internal` key has the same sections, with exactly the
+        INTERNAL_ACCOUNTS, which no other section has: the asset Fi and the liability
+        De, in the base currency, and the equity Eq, the only equity account.
 
         Investment accounts are the asset accounts listed in the investments YAML
-        (if given), and debt accounts the liability accounts listed in the creditors
-        YAML (if given). They must not set an `initial_amount` either: theirs is the
-        sum of the initial amounts of their investments or creditors. Every debt
-        account has the `companies` (of the work history), with no initial debt
+        (if given), and De is the debt account, with its creditors in the creditors
+        YAML (if given, with no other account). They must not set an `initial_amount`
+        either: theirs is the sum of the initial amounts of their investments or
+        creditors. De has the `companies` (of the work history), with no initial debt
         unless its `companies` section sets one.
 
         Credit card accounts are the ones in the credit cards YAML (if given), set
@@ -319,12 +346,34 @@ class Account:
 
         Any account may list `checks` (AccountCheck values) on its daily balance.
         """
-        data = _load_yaml(path)
+        data = dict(_load_yaml(path) or {})
+        previous_month = previous_month_of_yaml(data)
+        week = initial_week(previous_month) if previous_month else None
+        data.pop(PREVIOUS_MONTH, None)
+        internal_data = data.pop(INTERNAL, None) or {}
+        if not isinstance(internal_data, dict):
+            raise ValueError(f"The accounts YAML {INTERNAL!r} key must be a mapping of account types")  # noqa: TRY004 (a bad config value)
+        found = {name: t for t, at_accounts in internal_data.items() for name in (at_accounts or {})}
+        expected = {n: t.value for n, t in INTERNAL_ACCOUNTS.items()}
+        if found != expected:
+            raise ValueError(
+                f"The accounts YAML {INTERNAL!r} key must have exactly the asset {INTERMEDIARY}, the liability "
+                f"{DEBT_ACCOUNT} and the equity {EQUITY_ACCOUNT}: it has {found or 'none'}"
+            )
+        for t, at_accounts in data.items():
+            if AccountType(t) == AccountType.EQUITY and at_accounts:
+                raise ValueError(f"The only equity account is the internal {EQUITY_ACCOUNT}: {sorted(at_accounts)}")
+            internal_names = sorted(set(at_accounts or {}) & set(INTERNAL_ACCOUNTS))
+            if internal_names:
+                raise ValueError(f"The accounts {internal_names} are internal: under the {INTERNAL!r} key only")
         investments_data = (_load_yaml(investments_path) if investments_path else None) or {}
         creditors_data = (_load_yaml(creditors_path) if creditors_path else None) or {}
-        both = sorted(set(investments_data) & set(creditors_data))
+        others = sorted(set(creditors_data) - {DEBT_ACCOUNT})
+        if others:
+            raise ValueError(f"The creditors YAML only has the creditors of {DEBT_ACCOUNT}, not of {others}")
+        both = sorted(set(investments_data) & set(INTERNAL_ACCOUNTS))
         if both:
-            raise ValueError(f"Accounts cannot be both investment and debt accounts: {both}")
+            raise ValueError(f"The internal accounts cannot be investment accounts: {both}")
         currencies = {base_currency.name: base_currency, **(other_currencies or {})}
 
         def currency_of(name: str, acc_d: dict) -> Currency:
@@ -346,9 +395,7 @@ class Account:
                 if "initial_amount" in acc_d:
                     raise ValueError(f"Investment account {name!r} must not have an initial_amount")
                 return 0.0  # set from its investments
-            if name in creditors_data:
-                if acc_type != AccountType.LIABILITY:
-                    raise ValueError(f"Debt account {name!r} must be a liability account")
+            if name == DEBT_ACCOUNT:
                 if "initial_amount" in acc_d:
                     raise ValueError(f"Debt account {name!r} must not have an initial_amount")
                 return 0.0  # set from its creditors
@@ -364,13 +411,18 @@ class Account:
             return float(value)
 
         def initial_date_of(name: str, acc_d: dict) -> dt.date | None:
-            value = acc_d.get("initial_date")
-            if value is None or isinstance(value, dt.date):
+            value = _parse_date(acc_d.get(INITIAL_DATE), f"Account {name!r} has an invalid initial date")
+            if week is None:
                 return value
-            try:
-                return dt.date.fromisoformat(str(value))
-            except ValueError:
-                raise ValueError(f"Account {name!r} has an invalid initial date: {value!r}") from None
+            if value is None or value == week.start:
+                return week.start
+            if value <= week.end:
+                raise ValueError(
+                    f"Account {name!r} cannot start ({value}) before the end of the initial week "
+                    f"({week.start} to {week.end}, the last one of {previous_month}): leave its "
+                    "initial_date out to start on it"
+                )
+            return value
 
         def checks_of(name: str, acc_d: dict) -> tuple[AccountCheck, ...]:
             values = acc_d.get("checks") or []
@@ -385,9 +437,9 @@ class Account:
             return tuple(AccountCheck(v) for v in values)
 
         credit_cards_data = (_load_yaml(credit_cards_path) if credit_cards_path else None) or {}
-        special = sorted(set(credit_cards_data) & (set(investments_data) | set(creditors_data)))
+        special = sorted(set(credit_cards_data) & (set(investments_data) | set(INTERNAL_ACCOUNTS)))
         if special:
-            raise ValueError(f"Credit card accounts cannot be investment or debt accounts: {special}")
+            raise ValueError(f"Credit card accounts cannot be investment or internal accounts: {special}")
         for name, acc_d in credit_cards_data.items():
             if acc_d.get("is_liquid", True) is not True:
                 raise ValueError(f"Credit card account {name!r} is always liquid: is_liquid must be true or missing")
@@ -395,13 +447,14 @@ class Account:
         accounts = {}
         sections = [
             *((AccountType(t), at_accounts, Account) for t, at_accounts in data.items()),
+            *((AccountType(t), at_accounts, Account) for t, at_accounts in internal_data.items()),
             (AccountType.LIABILITY, credit_cards_data, CreditCardAccount),
         ]
         for acc_type, at_accounts, acc_cls in sections:
-            for name, acc_d in at_accounts.items():
+            for name, acc_d in (at_accounts or {}).items():
                 if name in accounts:
                     raise ValueError(f"Duplicated account name: {name!r}")
-                if name in {INVESTMENT, DEBT, CREDIT_CARD}:
+                if name in RESERVED:
                     raise ValueError(f"{name!r} is reserved and cannot be an account name")
                 fields = {
                     "name": name,
@@ -412,25 +465,68 @@ class Account:
                     "is_liquid": is_liquid_of(name, acc_d) or acc_cls is CreditCardAccount,
                     "initial_date": initial_date_of(name, acc_d),
                     "checks": checks_of(name, acc_d),
+                    "internal": name in INTERNAL_ACCOUNTS,
                 }
+                if name in (INTERMEDIARY, DEBT_ACCOUNT) and not fields["currency"].is_base_currency:
+                    raise ValueError(f"The internal account {name!r} must be in the base currency")
                 if name in investments_data:
                     investments = InvestmentAccount.investments_from_dict(
                         name, investments_data[name] or {}
                     )
                     fields["initial_amount"] = sum(i["total_amount"] for i in investments.values())
                     accounts[name] = InvestmentAccount(**fields, investments=investments)
-                elif name in creditors_data:
-                    creditors = DebtAccount.creditors_from_dict(name, creditors_data[name] or {}, companies)
+                elif name == DEBT_ACCOUNT:
+                    creditors = DebtAccount.creditors_from_dict(name, creditors_data.get(name) or {}, companies)
                     fields["initial_amount"] = sum(c.amount for c in creditors.values())
                     accounts[name] = DebtAccount(**fields, creditors=creditors)
                 else:
                     accounts[name] = acc_cls(**fields)
 
-        for what, special_data in (("investments", investments_data), ("creditors", creditors_data)):
-            unknown = sorted(set(special_data) - set(accounts))
-            if unknown:
-                raise ValueError(f"The {what} YAML has accounts not in the accounts YAML: {unknown}")
+        unknown = sorted(set(investments_data) - set(accounts))
+        if unknown:
+            raise ValueError(f"The investments YAML has accounts not in the accounts YAML: {unknown}")
         return accounts
+
+
+def _parse_date(value, error: str) -> dt.date | None:
+    """A date of a YAML: a date, its ISO text or None."""
+    if value is None or isinstance(value, dt.date):
+        return value
+    try:
+        return dt.date.fromisoformat(str(value))
+    except ValueError:
+        raise ValueError(f"{error}: {value!r}") from None
+
+
+def previous_month_of_yaml(data: dict | None, today: dt.date | None = None) -> str | None:
+    """
+    The top-level PREVIOUS_MONTH of the accounts YAML data (YYYY-MM), if any: the last
+    past month left out of the movements. It must be before the current month.
+    """
+    data = data or {}
+    if INITIAL_DATE in data:
+        raise ValueError(f"The accounts YAML top-level {INITIAL_DATE!r} is replaced by {PREVIOUS_MONTH!r} (YYYY-MM)")
+    value = data.get(PREVIOUS_MONTH)
+    if value is None:
+        return None
+    month = parse_month(value, f"{PREVIOUS_MONTH} of the accounts YAML")
+    current = (today or dt.date.today()).strftime("%Y-%m")
+    if month >= current:
+        raise ValueError(f"The {PREVIOUS_MONTH} of the accounts YAML ({month}) must be a past month, before {current}")
+    return month
+
+
+def initial_week(previous_month: str) -> Week:
+    """
+    The week of the initial movements of the accounts: the last one of the previous
+    month (see weeks.Week: of the month of its Thursday). Nothing else happens in it.
+    """
+    return Week.of_month(previous_month)[-1]
+
+
+def load_previous_month(path: str) -> str | None:
+    """The top-level previous month of the accounts YAML at this path (see previous_month_of_yaml)."""
+    return previous_month_of_yaml(_load_yaml(path))
 
 
 @dataclass
@@ -720,16 +816,26 @@ class DebtAccount(Account):
         return creditors
 
 
-# The kind of account each special side takes, with its display name.
-SPECIAL_SIDES: dict[str, type[Account]] = {
-    INVESTMENT: InvestmentAccount, DEBT: DebtAccount, CREDIT_CARD: CreditCardAccount,
+def is_foreign(account: Account) -> bool:
+    """An account in another currency, but the equity and investment ones: revalued with it (see store._result_rows)."""
+    return (
+        not account.currency.is_base_currency and account.acc_type != AccountType.EQUITY
+        and not isinstance(account, InvestmentAccount)
+    )
+
+
+# Whether an account is of the kind each special side takes, with its display name.
+SPECIAL_SIDES: dict[str, Callable[[Account], bool]] = {
+    INVESTMENT: lambda a: isinstance(a, InvestmentAccount),
+    CREDIT_CARD: lambda a: isinstance(a, CreditCardAccount),
+    FOREIGN_CURRENCY: is_foreign,
 }
-SPECIAL_LABELS = {INVESTMENT: "Investment", DEBT: "Debt", CREDIT_CARD: "Credit card"}
+SPECIAL_LABELS = {INVESTMENT: "Investment", CREDIT_CARD: "Credit card", FOREIGN_CURRENCY: "Foreign currency"}
 
 
 def special_of(account: Account) -> str | None:
-    """INVESTMENT, DEBT or CREDIT_CARD for investment, debt and credit card accounts, else None."""
-    return next((s for s, cls in SPECIAL_SIDES.items() if isinstance(account, cls)), None)
+    """INVESTMENT or CREDIT_CARD for investment and credit card accounts, else None."""
+    return next((s for s in (INVESTMENT, CREDIT_CARD) if SPECIAL_SIDES[s](account)), None)
 
 
 @dataclass
@@ -757,8 +863,8 @@ class MovementBase:
     acc_credit: Account | None
     result_type: ResultType | None
     internal: bool = False  # set by pledger itself: cannot be picked or deleted by hand
-    debit_special: str | None = None  # INVESTMENT, DEBT or CREDIT_CARD: the debit side takes any such account
-    credit_special: str | None = None  # INVESTMENT, DEBT or CREDIT_CARD: the credit side takes any such account
+    debit_special: str | None = None  # one of RESERVED: the debit side takes any such account
+    credit_special: str | None = None  # one of RESERVED: the credit side takes any such account
 
     def __post_init__(self):
         self.move_type = MovementType.from_accounts(
@@ -789,8 +895,8 @@ class MovementBase:
 
     def side(self, ledger_side: LedgerSide) -> str | None:
         """
-        What a side takes: its fixed account name, INVESTMENT or DEBT (any
-        investment or debt account) or None (any account).
+        What a side takes: its fixed account name, one of RESERVED (any such account,
+        see SPECIAL_SIDES) or None (any account).
         """
         if ledger_side == LedgerSide.DEBIT:
             acc, special = self.acc_debit, self.debit_special
@@ -808,12 +914,16 @@ class MovementBase:
         Load MovementBases and ResultTypes from YAML path. A base movement is either
         a dict or just its description (a str), with no fixed accounts.
 
-        The top-level `internal` key has the same structure (result types next to a
-        `transfer` dict): those base movements and result types are internal, reserved
+        The top-level `internal` key has the same structure (its `result_types` next to
+        a `transfer` dict): those base movements and result types are internal, reserved
         for pledger itself. Result type ids are shared by internal and other ones.
         """
         data = _load_yaml(path)
-        internal = dict(data.get("internal") or {})
+        internal_data = dict(data.get(INTERNAL) or {})
+        unknown = sorted(set(internal_data) - {"result_types", MovementType.TRANSFER.value})
+        if unknown:
+            raise ValueError(f"The base movements YAML {INTERNAL!r} key only has 'result_types' and 'transfer', not {unknown}")
+        internal = dict(internal_data.get("result_types") or {})
 
         def result_types_of(rt_dicts: dict, is_internal: bool) -> dict[int, ResultType]:
             return {
@@ -843,7 +953,7 @@ class MovementBase:
                 )
             return sections
 
-        internal_transfers = internal.pop(MovementType.TRANSFER.value, None)
+        internal_transfers = internal_data.get(MovementType.TRANSFER.value)
         repeated = sorted(set(data["result_types"]) & set(internal))
         if repeated:
             raise ValueError(f"Result type names are both internal and not: {repeated}")
@@ -954,7 +1064,7 @@ class Movement:
             if not special:
                 continue
             kind = SPECIAL_LABELS[special].lower()
-            assert isinstance(input_acc, SPECIAL_SIDES[special]), (
+            assert SPECIAL_SIDES[special](input_acc), (
                 f"{ledger_side.value.capitalize()} account must be "
                 f"{'an' if kind[0] in 'aeiou' else 'a'} {kind} account: {input_acc.name} is not ({self.move_date})"
             )

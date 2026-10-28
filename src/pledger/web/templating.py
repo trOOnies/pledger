@@ -190,7 +190,7 @@ def render_debt_form(request: Request, snapshot: Snapshot, values: dict, **extra
 def render_card_payment_form(request: Request, snapshot: Snapshot, values: dict, **extra):
     """The new card payment form of the Credit Cards tab, for the card payment base movements."""
     values.setdefault("move_date", dt.date.today().isoformat())
-    fields = card_payment_fields(snapshot)
+    fields = card_payment_fields(snapshot, values.get("base_movement", ""))
     values["base_movement"] = fields["base_movement"]
     return templates.TemplateResponse(
         request,

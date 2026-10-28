@@ -9,8 +9,24 @@
     <input type="date" name="move_date" value="{{ values.move_date }}" required data-future-warning>
     <span class="hint warn" hidden>⚠️ This date is in the future.</span>
   </label>
+  {% if buttons | length > 1 %}
+  {# Payment or surplus (see views.CARD_BUTTONS), with the account fields of the selected one #}
+  <div class="field">
+    <span class="field-label" id="card-base">Movement</span>
+    <div class="segmented types" role="radiogroup" aria-labelledby="card-base">
+      {% for name, (label, color) in buttons.items() %}
+      <label class="{{ color }}" title="{{ name }}">
+        <input type="radio" name="base_movement" value="{{ name }}" {% if name == base_movement %}checked{% endif %}
+          hx-get="/form/accounts" hx-target="#card-account-fields" hx-swap="innerHTML">
+        {{ label }}
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+  {% else %}
   <input type="hidden" name="base_movement" value="{{ base_movement }}">
-  {% include "_account_fields.html" %}
+  {% endif %}
+  <div id="card-account-fields">{% include "_account_fields.html" %}</div>
   <label>Amount
     <span class="money-input">
       <span class="prefix">{{ currency }}</span>
@@ -20,10 +36,11 @@
   <label><span>Comment <em class="optional">(optional)</em></span>
     <input name="comment" value="{{ values.comment }}" autocomplete="off">
   </label>
-  <button type="submit">{{ "Save changes" if editing else "Add card payment" }}</button>
-  <p class="muted small">Saved as a <strong>{{ base_movement }}</strong>, from the account paying it to the card.</p>
+  <button type="submit">{{ "Save changes" if editing else "Add card movement" }}</button>
+  <p class="muted small">A <strong>payment</strong> goes from the account paying it to the card, and a
+    <strong>surplus</strong> from the card back to an account.</p>
   {% else %}
-  <p class="msg warn small">The Credit Cards tab needs this base movement, under <code>transfer</code> in the
+  <p class="msg warn small">The Credit Cards tab needs these base movements, under <code>transfer</code> in the
     <code>internal</code> section of the base movements YAML: {{ missing | join(", ") }}.</p>
   {% endif %}
 </form>

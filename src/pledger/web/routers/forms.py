@@ -10,7 +10,7 @@ from fastapi.responses import HTMLResponse, Response
 
 from pledger.models import DebtAccount, InvestmentAccount
 from pledger.web.dependencies import StoreDep
-from pledger.web.store import LedgerStore, Snapshot, StaleRowError
+from pledger.web.store import CARD_SURPLUS, LedgerStore, Snapshot, StaleRowError
 from pledger.web.templating import (
     money,
     render_card_payment_form,
@@ -366,7 +366,9 @@ def create_conversion(
     except ValueError as e:
         return render_conversion_form(request, store.load(), values, error=str(e))
     # Keep date, currencies and accounts to speed up entering similar conversions.
-    keep = {"move_date": move_date, "sold": sold, "bought": bought, "acc_from": acc_from, "acc_to": acc_to}
+    keep = {
+        "move_date": move_date, "sold": sold, "bought": bought, "acc_from": acc_from, "acc_to": acc_to,
+    }
     value = float(amount_sold.replace(",", ""))
     response = render_conversion_form(
         request, store.load(), keep,
@@ -442,7 +444,8 @@ def create_card_payment(
     keep = {"move_date": move_date, "base_movement": base_movement}
     response = render_card_payment_form(
         request, store.load(), keep,
-        success=f"Paid {acc_debit}: {money(float(amount.replace(',', '')), store.settings.currency)}"
+        success=(f"Surplus of {acc_credit}" if base_movement == CARD_SURPLUS else f"Paid {acc_debit}")
+        + f": {money(float(amount.replace(',', '')), store.settings.currency)}"
         + (" (dated in the future)" if move_date > dt.date.today().isoformat() else ""),
     )
     response.headers["HX-Trigger"] = "credit-cards-changed"
@@ -773,9 +776,22 @@ def conversion_form(request: Request, store: StoreDep):
 
 @router.get("/conversions/{index}/edit")
 def edit_conversion_form(request: Request, store: StoreDep, index: int, fingerprint: str):
-    """The conversion form filled with a row of the conversions CSV, to edit it."""
+    """
+    The conversion form filled with a row of the conversions CSV, to edit it: with both
+    rows of a cross conversion (see store.conversion_pairs).
+    """
     editing, snapshot = editing_of(store, "conversions", index, fingerprint)
-    c = next(c for c in build_conversions(snapshot) if c["index"] == index)
+    conversions = {c["index"]: c for c in build_conversions(snapshot)}
+    c = conversions[index]
+    if c["pair"] is not None:
+        # Its Foreign currency - Sold row, then its Foreign currency - Bought one
+        out, into = sorted([c, conversions[c["pair"]]], key=lambda r: r["index"])
+        values = {
+            "move_date": c["date"], "sold": out["currency"], "bought": into["currency"], "acc_from": out["credit"],
+            "acc_to": into["debit"], "amount_sold": f"{out['other_amount']:,.4f}",
+            "amount_bought": f"{into['other_amount']:,.4f}", "comment": c["comment"],
+        }
+        return render_conversion_form(request, snapshot, values, editing=editing)
     base, other = snapshot.base_currency.name, c["currency"]
     base_amount, other_amount = f"{c['amount']:,.2f}", f"{c['other_amount']:,.4f}"
     # The account to (debit) gets the currency bought, from the account from (credit).
@@ -891,9 +907,9 @@ def edit_debt_movement(
 
 
 @router.get("/form/card-payment")
-def card_payment_form(request: Request, store: StoreDep):
+def card_payment_form(request: Request, store: StoreDep, base_movement: str = ""):
     """A new card payment form, e.g. to cancel editing one."""
-    return render_card_payment_form(request, store.load(), {})
+    return render_card_payment_form(request, store.load(), {"base_movement": base_movement})
 
 
 @router.get("/credit-cards/payments/{index}/edit")

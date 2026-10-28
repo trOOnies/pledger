@@ -92,7 +92,7 @@
       {% endfor %}
     </select>
   </label>
-  <p class="muted small">The initial amount is in the account's currency. Without an initial date, the account starts on the first date of the ledger.</p>
+  <p class="muted small">The initial amount is in the account's currency. Without an initial date, the account starts on the first date of the ledger (the initial week of the <code>previous_month</code> of the accounts YAML, if set).</p>
   <p class="muted small">A check is on the balance at the end of each day: never negative (net positive) or always 0.00 (net zero). Movements breaking it are rejected.</p>
   {% if editing %}<p class="muted small">The name, type and currency of an account stay; rename it by hand in its YAML and CSVs.</p>{% endif %}
   <button type="submit">{{ "Save changes" if editing else "Add account" }}</button>

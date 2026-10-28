@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from conftest import INTERNAL_ACCOUNTS_YAML
 
 from pledger.enums import (
     AccountCheck,
@@ -17,7 +18,8 @@ from pledger.enums import (
 )
 from pledger.models import (
     CPI_BASE,
-    DEBT,
+    CREDIT_CARD,
+    FOREIGN_CURRENCY,
     INVESTMENT,
     Account,
     Company,
@@ -122,7 +124,9 @@ class TestAccount:
 
     def test_load_yaml(self, accounts_yaml, currencies_yaml):
         accounts = Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml))
-        assert set(accounts) == {"Ca", "Bk", "Cc", "Eq"}
+        assert set(accounts) == {"Ca", "Bk", "Cc", "Fi", "De", "Eq"}
+        assert [n for n, a in accounts.items() if a.internal] == ["Fi", "De", "Eq"]
+        assert isinstance(accounts["De"], DebtAccount) and accounts["Fi"].checks == (AccountCheck.NET_ZERO,)
         assert accounts["Cc"].acc_type is AccountType.LIABILITY
         assert accounts["Bk"].description == "Bank account"
 
@@ -130,7 +134,7 @@ class TestAccount:
         accounts = Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml))
         bk, cc = accounts["Bk"], accounts["Cc"]
         assert bk.currency.name == "USD" and not bk.currency.is_base_currency
-        assert bk.is_liquid and bk.initial_amount == 100.5
+        assert bk.is_liquid and bk.initial_amount == 0.1005  # in USD
         assert bk.initial_date == dt.date(2025, 12, 31)
         # Defaults: base currency, not liquid, 0 from the first ledger date
         assert cc.currency.name == "ARS" and cc.currency.is_base_currency
@@ -141,12 +145,12 @@ class TestAccount:
     def test_load_yaml_checks(self, tmp_path, currencies_yaml):
         path = tmp_path / "accounts.yaml"
         path.write_text(
-            "asset:\n  Ca:\n    description: Cash\n    initial_amount: 0\n    checks:\n    - net_positive\n"
-            "  Fi:\n    description: Fictitious\n    initial_amount: 0\n    checks: [net_zero]\n"
+            INTERNAL_ACCOUNTS_YAML + "asset:\n  Ca:\n    description: Cash\n    initial_amount: 0\n    checks:\n    - net_positive\n"
+            "  Fx:\n    description: Fictitious\n    initial_amount: 0\n    checks: [net_zero]\n"
         )
         accounts = Account.load_yaml(str(path), *Currency.load_yaml(currencies_yaml))
         assert accounts["Ca"].checks == (AccountCheck.NET_POSITIVE,)
-        assert accounts["Fi"].checks == (AccountCheck.NET_ZERO,)
+        assert accounts["Fx"].checks == (AccountCheck.NET_ZERO,)
 
     @pytest.mark.parametrize(
         ("extra", "message"),
@@ -166,7 +170,7 @@ class TestAccount:
         path = tmp_path / "accounts.yaml"
         if "initial_amount" not in extra:
             extra += "    initial_amount: 0\n"
-        path.write_text("asset:\n  Ca:\n    description: Cash\n" + extra)
+        path.write_text(INTERNAL_ACCOUNTS_YAML + "asset:\n  Ca:\n    description: Cash\n" + extra)
         with pytest.raises(ValueError, match=message):
             Account.load_yaml(str(path), *Currency.load_yaml(currencies_yaml))
 
@@ -175,15 +179,33 @@ class TestAccount:
         [
             ("asset:\n  Ca:\n    description: Cash\n", "'Ca' must have an initial_amount"),
             ("liability:\n  Cc:\n    description: Card\n", "'Cc' must have an initial_amount"),
-            (
-                "equity:\n  Eq:\n    description: Equity\n    initial_amount: 0\n",
-                "Equity account 'Eq' must not have an initial_amount",
-            ),
         ],
     )
     def test_load_yaml_initial_amount_is_required_except_for_equity(
         self, tmp_path, currencies_yaml, text, message
     ):
+        path = tmp_path / "accounts.yaml"
+        path.write_text(INTERNAL_ACCOUNTS_YAML + text)
+        with pytest.raises(ValueError, match=message):
+            Account.load_yaml(str(path), *Currency.load_yaml(currencies_yaml))
+        path.write_text(INTERNAL_ACCOUNTS_YAML.replace("{description: Equity}", "{description: Equity, initial_amount: 0}"))
+        with pytest.raises(ValueError, match="Equity account 'Eq' must not have an initial_amount"):
+            Account.load_yaml(str(path), *Currency.load_yaml(currencies_yaml))
+
+    @pytest.mark.parametrize(
+        ("text", "message"),
+        [
+            ("", r"must have exactly the asset Fi, the liability De and the equity Eq: it has none"),
+            (INTERNAL_ACCOUNTS_YAML.replace("{Fi:", "{Fx:"), r"it has \{'Fx': 'asset', 'De': 'liability', 'Eq': 'equity'\}"),
+            (INTERNAL_ACCOUNTS_YAML.replace("  liability: {De: {description: Debts}}\n", "").replace("[net_zero]}}", "[net_zero]}, De: {description: Debts}}"), "must have exactly"),
+            (INTERNAL_ACCOUNTS_YAML + "equity:\n  Eq2:\n    description: d\n", r"The only equity account is the internal Eq: \['Eq2'\]"),
+            (INTERNAL_ACCOUNTS_YAML + "asset:\n  Ca:\n    description: d\n    initial_amount: 0\n  Fi:\n    description: d\n",
+             r"The accounts \['Fi'\] are internal"),
+            (INTERNAL_ACCOUNTS_YAML.replace("{description: Debts}", "{description: Debts, currency: USD}"),
+             "The internal account 'De' must be in the base currency"),
+        ],
+    )
+    def test_load_yaml_internal_accounts(self, tmp_path, currencies_yaml, text, message):
         path = tmp_path / "accounts.yaml"
         path.write_text(text)
         with pytest.raises(ValueError, match=message):
@@ -191,7 +213,7 @@ class TestAccount:
 
     def test_load_yaml_rejects_unknown_account_type(self, tmp_path, currencies_yaml):
         path = tmp_path / "accounts.yaml"
-        path.write_text("assets:\n  Ca:\n    description: Cash\n")
+        path.write_text(INTERNAL_ACCOUNTS_YAML + "assets:\n  Ca:\n    description: Cash\n")
         with pytest.raises(ValueError, match="assets"):
             Account.load_yaml(str(path), *Currency.load_yaml(currencies_yaml))
 
@@ -202,13 +224,14 @@ class TestAccount:
 
 INTERNAL_YAML = """\
 internal:
-  Init:
-    id: 3
-    long_name: Initial
-    description: Account initializations
-    base_movements:
-      gain:
-        Initial (G): Initial balance
+  result_types:
+    Init:
+      id: 3
+      long_name: Initial
+      description: Account initializations
+      base_movements:
+        gain:
+          Initial (G): Initial balance
   transfer:
     Adjust:
       description: d
@@ -296,10 +319,11 @@ class TestMovementBase:
             ("internal:\n", "  Adjust2:\n    description: d\n    internal: true\ninternal:\n",
              "must not set 'internal'"),
             ("  transfer:\n    Adjust:", "  transfer:\n    Move:", "Duplicated base movement name: 'Move'"),
-            ("    id: 3\n", "    id: 2\n", r"ids \(internal ones included\) must be unique and go from 1 to 3"),
-            ("    id: 3\n", "    id: 4\n", r"Values seen: \[1, 2, 4\]"),
-            ("  Init:\n", "  Op:\n", r"both internal and not: \['Op'\]"),
-            ("      gain:\n", "      transfer:\n", "only include 'gain' and 'loss'"),
+            ("      id: 3\n", "      id: 2\n", r"ids \(internal ones included\) must be unique and go from 1 to 3"),
+            ("      id: 3\n", "      id: 4\n", r"Values seen: \[1, 2, 4\]"),
+            ("    Init:\n", "    Op:\n", r"both internal and not: \['Op'\]"),
+            ("        gain:\n", "        transfer:\n", "only include 'gain' and 'loss'"),
+            ("  result_types:\n", "  types:\n", r"only has 'result_types' and 'transfer', not \['types'\]"),
         ],
     )
     def test_load_yaml_rejects_invalid_internal(
@@ -639,7 +663,7 @@ class TestCreditor:
 
 
 CREDITORS_YAML = """\
-Cc:
+De:
   people:
     Dad: 100
     Mum: -150.5
@@ -652,8 +676,6 @@ Cc:
 class TestDebtAccount:
     @pytest.fixture
     def paths(self, tmp_path, accounts_yaml, currencies_yaml):
-        text = Path(accounts_yaml).read_text(encoding="utf-8")
-        Path(accounts_yaml).write_text(text.replace("    initial_amount: 0\n", ""), encoding="utf-8")
         creditors = tmp_path / "creditors.yaml"
         creditors.write_text(CREDITORS_YAML, encoding="utf-8")
         return accounts_yaml, currencies_yaml, str(creditors)
@@ -712,29 +734,32 @@ class TestDebtAccount:
 
     def test_load_yaml(self, paths):
         accounts = self.load(paths)
-        cc = accounts["Cc"]
-        assert isinstance(cc, DebtAccount) and cc.acc_type == AccountType.LIABILITY
+        # Without a creditors YAML, De is still the debt account, with no creditors
+        bare = Account.load_yaml(paths[0], *Currency.load_yaml(paths[1]))["De"]
+        assert isinstance(bare, DebtAccount) and bare.creditors == {} and bare.initial_amount == 0
+        cc = accounts["De"]  # the debt account, always
+        assert isinstance(cc, DebtAccount) and cc.acc_type == AccountType.LIABILITY and cc.internal
         assert cc.creditors == {
             "Dad": Creditor("Dad", 100.0), "Mum": Creditor("Mum", -150.5),
             "Work": Creditor("Work", 0.0, CreditorKind.SERVICE, DebtRole.CREDITOR),
         }
         assert list(cc.get_kind(CreditorKind.SERVICE)) == ["Work"]
         assert cc.initial_amount == -50.5
-        assert not any(isinstance(a, DebtAccount) for n, a in accounts.items() if n != "Cc")
+        assert not any(isinstance(a, DebtAccount) for n, a in accounts.items() if n != "De")
 
     @pytest.mark.parametrize(
         ("old", "new", "message"),
         [
-            ("  companies:\n", "  companies:\nNope: {}\n", r"creditors YAML has accounts not in the accounts YAML: \['Nope'\]"),
-            ("  companies:\n", "  companies:\nCa: {}\n", "Debt account 'Ca' must be a liability account"),
-            ("    Dad: 100\n", "    Dad: lots\n", "Creditor 'Dad' of the account 'Cc' amount must be a number"),
-            ("    Dad: 100\n", "    Dad:\n", "Creditor 'Dad' of the account 'Cc' amount must be a number"),
+            ("  companies:\n", "  companies:\nNope: {}\n", r"only has the creditors of De, not of \['Nope'\]"),
+            ("  companies:\n", "  companies:\nCc: {}\n", r"only has the creditors of De, not of \['Cc'\]"),
+            ("    Dad: 100\n", "    Dad: lots\n", "Creditor 'Dad' of the account 'De' amount must be a number"),
+            ("    Dad: 100\n", "    Dad:\n", "Creditor 'Dad' of the account 'De' amount must be a number"),
             ("  companies:\n", "  pets:\n", r"unknown sections \['pets'\]"),
-            ("  companies:\n", "  companies: 3\n", "The companies of the account 'Cc' must be a mapping"),
-            ("    Work: 0\n", "    Work: 0\n    Dad: 1\n", "'Dad' of the account 'Cc' is in both people and services"),
+            ("  companies:\n", "  companies: 3\n", "The companies of the account 'De' must be a mapping"),
+            ("    Work: 0\n", "    Work: 0\n    Dad: 1\n", "'Dad' of the account 'De' is in both people and services"),
             ("    Work: 0\n", "    Work:\n      amount: 0\n      expected: owed\n", "unknown expected role: 'owed'"),
             ("    Work: 0\n", "    Work:\n      amount: 0\n      due: 1\n", r"unknown keys \['due'\]"),
-            ("    Work: 0\n", "    Work:\n      expected: debtor\n", "'Work' of the account 'Cc' amount must be a number"),
+            ("    Work: 0\n", "    Work:\n      expected: debtor\n", "'Work' of the account 'De' amount must be a number"),
         ],
     )
     def test_load_yaml_rejects_invalid(self, paths, old, new, message):
@@ -747,14 +772,14 @@ class TestDebtAccount:
 
     def test_load_yaml_rejects_initial_amount(self, paths):
         text = Path(paths[0]).read_text(encoding="utf-8")
-        Path(paths[0]).write_text(text.replace("    description: Credit card\n", "    description: Credit card\n    initial_amount: 0\n"), encoding="utf-8")
-        with pytest.raises(ValueError, match="Debt account 'Cc' must not have an initial_amount"):
+        Path(paths[0]).write_text(text.replace("{description: Debts}", "{description: Debts, initial_amount: 0}"), encoding="utf-8")
+        with pytest.raises(ValueError, match="Debt account 'De' must not have an initial_amount"):
             self.load(paths)
 
     def test_expected_roles(self, paths):
         creditors_yaml = paths[2]
         Path(creditors_yaml).write_text(
-            "Cc:\n  people:\n    Dad: 1\n    Mum:\n      amount: 2\n      expected: debtor\n"
+            "De:\n  people:\n    Dad: 1\n    Mum:\n      amount: 2\n      expected: debtor\n"
             "  services:\n    Gas: 3\n    Rent:\n      amount: 4\n      expected: null\n"
             "  companies:\n    Acme:\n      amount: 5\n      expected: creditor\n",
             encoding="utf-8",
@@ -763,7 +788,7 @@ class TestDebtAccount:
         cc = Account.load_yaml(
             accounts_yaml, *Currency.load_yaml(currencies_yaml), creditors_path=creditors_yaml,
             companies=["Acme", "Globex"],
-        )["Cc"]
+        )["De"]
         assert {n: c.expected for n, c in cc.creditors.items()} == {
             "Dad": None, "Mum": DebtRole.DEBTOR,  # people have no default
             "Gas": DebtRole.CREDITOR, "Rent": None,  # services default to creditors
@@ -785,11 +810,11 @@ class TestDebtAccount:
     def test_meets_expected(self, expected, amount, met):
         assert Creditor("X", amount, expected=expected).meets_expected is met
 
-    def test_load_yaml_rejects_investment_and_debt_accounts(self, paths, tmp_path):
+    def test_load_yaml_rejects_internal_investment_accounts(self, paths, tmp_path):
         investments = tmp_path / "investment.yaml"
-        investments.write_text("Cc: {}\n", encoding="utf-8")
+        investments.write_text("De: {}\n", encoding="utf-8")
         accounts_yaml, currencies_yaml, creditors_yaml = paths
-        with pytest.raises(ValueError, match=r"both investment and debt accounts: \['Cc'\]"):
+        with pytest.raises(ValueError, match=r"internal accounts cannot be investment accounts: \[.De.\]"):
             Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml), str(investments), creditors_yaml)
 
 
@@ -807,18 +832,18 @@ class TestSpecialSides:
         path = tmp_path / "result_types.yaml"
         text = Path(base_movements_yaml).read_text(encoding="utf-8")
         text += "  Buy:\n    description: d\n    debit: INVESTMENT\n    credit: Ca\n"
-        text += "  Lend:\n    description: d\n    debit: DEBT\n    credit: INVESTMENT\n"
+        text += "  Lend:\n    description: d\n    debit: FOREIGN CURRENCY\n    credit: INVESTMENT\n"
         text = text.replace("        Gift:\n", "        Gains:\n          description: d\n          debit: INVESTMENT\n        Gift:\n")
-        text = text.replace("        Food:\n", "        Forgiven:\n          description: d\n          credit: DEBT\n        Food:\n")
+        text = text.replace("        Food:\n", "        Forgiven:\n          description: d\n          credit: FOREIGN CURRENCY\n        Food:\n")
         path.write_text(text, encoding="utf-8")
         bases, _ = MovementBase.load_yaml(str(path), accounts)
         buy, lend, gains, forgiven = bases["Buy"], bases["Lend"], bases["Gains"], bases["Forgiven"]
         assert buy.acc_debit is None and not buy.debit_fixed and buy.debit_special == INVESTMENT
         assert buy.acc_credit is accounts["Ca"] and buy.credit_special is None
         assert buy.side(LedgerSide.DEBIT) == INVESTMENT and buy.side(LedgerSide.CREDIT) == "Ca"
-        assert lend.side(LedgerSide.DEBIT) == DEBT and lend.side(LedgerSide.CREDIT) == INVESTMENT
+        assert lend.side(LedgerSide.DEBIT) == FOREIGN_CURRENCY and lend.side(LedgerSide.CREDIT) == INVESTMENT
         assert gains.move_type == MovementType.GAIN and gains.debit_special == INVESTMENT
-        assert forgiven.move_type == MovementType.LOSS and forgiven.credit_special == DEBT
+        assert forgiven.move_type == MovementType.LOSS and forgiven.credit_special == FOREIGN_CURRENCY
         assert bases["Move"].side(LedgerSide.DEBIT) is None
         specials = {"Buy", "Lend", "Gains", "Forgiven"}
         assert not any(b.debit_special or b.credit_special for n, b in bases.items() if n not in specials)
@@ -833,18 +858,18 @@ class TestSpecialSides:
         with pytest.raises(AssertionError, match="Credit account must be an investment account: Cc is not"):
             Movement("2026-01-01", sell, accounts["Ca"], accounts["Cc"], 1.0)
 
-    def test_movement_requires_a_debt_account(self, accounts, broker, debts):
-        borrow = MovementBase("Borrow", "", None, None, None, credit_special=DEBT)
-        move = Movement("2026-01-01", borrow, accounts["Ca"], debts, 1.0)
-        assert move.acc_credit is debts
-        with pytest.raises(AssertionError, match="Credit account must be a debt account: Cc is not"):
-            Movement("2026-01-01", borrow, accounts["Ca"], accounts["Cc"], 1.0)
-        lend = MovementBase("Lend", "", None, None, None, debit_special=DEBT, credit_special=INVESTMENT)
-        assert Movement("2026-01-01", lend, debts, broker, 1.0).acc_debit is debts
-        with pytest.raises(AssertionError, match="Debit account must be a debt account: Br is not"):
-            Movement("2026-01-01", lend, broker, broker, 1.0)
+    def test_movement_requires_a_foreign_currency_account(self, accounts, broker, debts):
+        sell = MovementBase("Sell", "", None, None, None, credit_special=FOREIGN_CURRENCY)
+        move = Movement("2026-01-01", sell, accounts["Ca"], accounts["Bk"], 1.0)
+        assert move.acc_credit is accounts["Bk"]
+        with pytest.raises(AssertionError, match="Credit account must be a foreign currency account: Cc is not"):
+            Movement("2026-01-01", sell, accounts["Ca"], accounts["Cc"], 1.0)
+        lend = MovementBase("Lend", "", None, None, None, debit_special=FOREIGN_CURRENCY, credit_special=INVESTMENT)
+        assert Movement("2026-01-01", lend, accounts["Bk"], broker, 1.0).acc_debit is accounts["Bk"]
+        with pytest.raises(AssertionError, match="Debit account must be a foreign currency account: De is not"):
+            Movement("2026-01-01", lend, debts, broker, 1.0)
 
-    @pytest.mark.parametrize("special", [INVESTMENT, DEBT])
+    @pytest.mark.parametrize("special", [INVESTMENT, CREDIT_CARD, FOREIGN_CURRENCY])
     def test_cannot_be_both_fixed_and_special(self, accounts, special):
         with pytest.raises(ValueError, match=f"both a fixed account and {special}"):
             MovementBase("Buy", "", accounts["Ca"], None, None, debit_special=special)
@@ -853,16 +878,16 @@ class TestSpecialSides:
         with pytest.raises(ValueError, match="unknown special side: 'NOPE'"):
             MovementBase("Buy", "", None, None, None, debit_special="NOPE")
 
-    @pytest.mark.parametrize("name", [INVESTMENT, DEBT])
-    def test_is_not_an_account_name(self, tmp_path, currencies_yaml, name):
-        path = tmp_path / "accounts.yaml"
-        path.write_text(f"asset:\n  {name}:\n    description: d\n    initial_amount: 0\n", encoding="utf-8")
+    @pytest.mark.parametrize("name", [INVESTMENT, CREDIT_CARD, FOREIGN_CURRENCY])
+    def test_is_not_an_account_name(self, accounts_yaml, currencies_yaml, name):
+        path = Path(accounts_yaml)
+        path.write_text(path.read_text().replace("liability:\n", f"  {name}:\n    description: d\n    initial_amount: 0\nliability:\n"))
         with pytest.raises(ValueError, match=f"'{name}' is reserved"):
             Account.load_yaml(str(path), *Currency.load_yaml(currencies_yaml))
 
     def test_special_of(self, accounts, broker, debts):
         assert special_of(broker) == INVESTMENT
-        assert special_of(debts) == DEBT
+        assert special_of(debts) is None  # De is the debt account, but no special side takes it
         assert special_of(accounts["Ca"]) is None
 
 

@@ -28,7 +28,16 @@ month;monthly_inflation
 2026-01;3.00%
 """
 
-ACCOUNTS_YAML = """\
+# The mandatory internal accounts, first in every accounts YAML of the tests: in flow
+# style, so that replacing the lines of the other sections leaves them alone
+INTERNAL_ACCOUNTS_YAML = """\
+internal:
+  asset: {Fi: {description: Intermediary, initial_amount: 0, checks: [net_zero]}}
+  liability: {De: {description: Debts}}
+  equity: {Eq: {description: Equity}}
+"""
+
+ACCOUNTS_YAML = INTERNAL_ACCOUNTS_YAML + """\
 asset:
   Ca:
     description: Cash
@@ -38,15 +47,12 @@ asset:
     description: Bank account
     currency: USD
     is_liquid: true
-    initial_amount: 100.5
+    initial_amount: 0.1005  # 100.50 ARS at 1,000
     initial_date: 2025-12-31
 liability:
   Cc:
     description: Credit card
     initial_amount: 0
-equity:
-  Eq:
-    description: Equity
 """
 
 BASE_MOVEMENTS_YAML = """\
@@ -107,7 +113,7 @@ def accounts(currencies) -> dict[str, Account]:
         "Ca": Account("Ca", "Cash", AccountType.ASSET, ars, 0.0, is_liquid=True),
         "Bk": Account("Bk", "Bank account", AccountType.ASSET, usd, 100.5, is_liquid=True),
         "Cc": Account("Cc", "Credit card", AccountType.LIABILITY, ars, 0.0),
-        "Eq": Account("Eq", "Equity", AccountType.EQUITY, ars, 0.0),
+        "Eq": Account("Eq", "Equity", AccountType.EQUITY, ars, 0.0, internal=True),
     }
 
 

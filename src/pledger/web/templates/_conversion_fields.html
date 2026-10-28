@@ -47,4 +47,7 @@
   {{ amount("amount_sold", "Amount sold in " ~ sold, sold) }}
   {{ amount("amount_bought", "Amount bought in " ~ bought, bought) }}
 </div>
-{% if base_movement %}<p class="muted small">Saved as a <strong>{{ base_movement }}</strong> conversion.</p>{% endif %}
+{% if base_movement %}<p class="muted small">Saved as a <strong>{{ base_movement }}</strong> conversion.</p>
+{% elif cross and not missing %}<p class="muted small">Saved as a <strong>Foreign currency - Sold</strong> conversion of
+  {{ sold }} into {{ through }}, right followed by a <strong>Foreign currency - Bought</strong> one of
+  {{ bought }} out of it, both of the amount sold at the value of {{ sold }} in {{ base_currency }} on that date.</p>{% endif %}

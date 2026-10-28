@@ -83,7 +83,7 @@
           <th>Account</th><th>Description</th><th>Currency</th>
           <th class="num" title="In its currency: its conversions, with their amount in it, and its other movements at the value of the currency on their date">Balance</th>
           <th class="num" title="In {{ base.name }}, revalued at each date of the currencies CSV">Balance in {{ base.name }}</th>
-          <th class="num" title="Of the USD - Result movements: the change of its value in {{ base.name }}">Result</th>
+          <th class="num" title="Of the Foreign currency (G) and (L) movements: the change of its value in {{ base.name }}">Result</th>
         </tr></thead>
         <tbody>
         {% for c in own_accounts %}{% for a in c.own %}
@@ -100,7 +100,7 @@
       </table>
     </div>
     <p class="muted small">At the end of each date of <code>currencies.csv</code>, each account is revalued: a
-      <strong>USD - Result</strong> gain or loss brings its balance in {{ base.name }} to its balance in its currency at
+      <strong>Foreign currency (G)</strong> or <strong>(L)</strong> gain or loss brings its balance in {{ base.name }} to its balance in its currency at
       that value. Investment accounts are left out, as their capital gains and losses already do that.</p>
   </section>
   {% endif %}
