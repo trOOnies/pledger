@@ -225,13 +225,15 @@
       document.querySelectorAll(".line-chart.hover").forEach((c) => c.classList.remove("hover"));
     });
 
-    // Money inputs always show two decimals, e.g. 1234.5 -> 1,234.50.
+    // Money inputs always show two decimals, e.g. 1234.5 -> 1,234.50, or up to the ones
+    // of their data-money (like 4, for amounts that may be in other currencies).
     document.addEventListener("change", (e) => {
       const input = e.target;
       if (!input.matches("input[data-money]") || !input.value.trim()) return;
       const value = Number(input.value.replace(/,/g, ""));
       if (Number.isFinite(value)) {
-        input.value = value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        const digits = Math.max(Number(input.dataset.money) || 2, 2);
+        input.value = value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: digits });
       }
     });
 
