@@ -1,4 +1,5 @@
 {% from "_id.html" import id_cell, id_header %}
+{% from "_edit.html" import edit_button %}
 <div class="panel">
   <h2>Conversions <small>{{ conversions | length }}</small></h2>
   <div class="table-wrap">
@@ -12,7 +13,7 @@
       <tbody>
         {% for c in conversions %}
         <tr{% if c.id %} id="{{ row_anchor('movement', c.id) }}"{% endif %}>
-          {{ id_cell(c.id) }}
+          {{ id_cell(c.id, ledger_link(c.id, c.date) if c.id) }}
           <td class="nowrap">{{ c.date }}</td>
           <td><span class="badge transfer" title="{{ c.currency }} {{ 'bought' if c.bought else 'sold' }}">T</span> {{ c.base }}</td>
           <td>{{ c.debit }}</td>
@@ -21,7 +22,8 @@
           <td class="num money" data-sort="{{ c.other_amount }}">{{ c.currency }} {{ "{:,.4f}".format(c.other_amount) }}</td>
           <td class="num {{ 'muted' if c.rate is none }}" data-sort="{{ c.rate if c.rate is not none else '' }}">{{ (c.rate | number) if c.rate is not none else "-" }}</td>
           <td class="muted">{{ c.comment }}</td>
-          <td>
+          <td class="nowrap">
+            {{ edit_button("/conversions/%d/edit" % c.index, c.fingerprint, "conversion-form") }}
             <button class="icon" title="Delete" aria-label="Delete conversion"
               hx-post="/conversions/{{ c.index }}/delete"
               hx-vals='{{ {"fingerprint": c.fingerprint} | tojson }}'

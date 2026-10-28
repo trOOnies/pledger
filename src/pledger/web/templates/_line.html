@@ -68,11 +68,12 @@
 {% endmacro %}
 
 {# A waterfall from views.waterfall_chart: gains, losses and the profit as floating columns.
-   Each point of `points` adds its tooltip texts, like column_chart. #}
-{% macro waterfall_chart(chart, points, aria) %}
+   Each point of `points` adds its tooltip texts, like column_chart. With `money`, the y axis
+   and the values are amounts. #}
+{% macro waterfall_chart(chart, points, aria, money=True) %}
 <div class="line-chart columns waterfall" data-points='{{ points | tojson }}'>
   <div class="y-axis" aria-hidden="true">
-    {% for t in chart.y_ticks %}<span class="money" style="top: {{ t.y }}%">{{ t.label }}</span>{% endfor %}
+    {% for t in chart.y_ticks %}<span class="{{ 'money' if money }}" style="top: {{ t.y }}%">{{ t.label }}</span>{% endfor %}
   </div>
   <div class="plot">
     <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="{{ aria }}">
@@ -85,8 +86,8 @@
     <span class="dot hover-dot"></span>
     <div class="tooltip" aria-hidden="true">
       <div class="tip-date muted"></div>
-      <div class="tip-value money"></div>
-      <div class="tip-change money"></div>
+      <div class="tip-value {{ 'money' if money }}"></div>
+      <div class="tip-change {{ 'money' if money }}"></div>
     </div>
   </div>
   <div class="x-axis" aria-hidden="true">

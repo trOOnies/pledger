@@ -10,7 +10,7 @@
     owe them, negative if they owe you.</p>
 </div>
 {% else %}
-<form id="filters" class="filters" hx-get="/debt" hx-target="#debt-view" hx-push-url="true" hx-trigger="change">
+<form id="filters" class="filters" hx-get="/debt" hx-target="#debt-view" hx-include="#who-filter" hx-push-url="true" hx-trigger="change">
   <label>Month
     <select name="month">
       <option value="">All time</option>
@@ -21,10 +21,9 @@
 
 <div class="layout">
   <aside class="panel">
-    <h2>New debt movement</h2>
     {{ debt_form | safe }}
   </aside>
-  <section id="debt-view" hx-get="/debt" hx-include="#filters" hx-trigger="debt-changed from:body">
+  <section id="debt-view" hx-get="/debt" hx-include="#filters, #who-filter" hx-trigger="debt-changed from:body">
     {% include "_debt.html" %}
   </section>
 </div>

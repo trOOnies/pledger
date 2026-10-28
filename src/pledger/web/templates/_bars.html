@@ -21,6 +21,12 @@
 {% endif %}
 {% endmacro %}
 
+{# A button expanding or collapsing every expandable row of the bars of its panel, `open`
+   if they start expanded (see the expand all toggles in base.html). #}
+{% macro expand_all(key, open=False) %}
+<button type="button" class="secondary compact" data-expand-all="{{ key }}" aria-expanded="{{ 'true' if open else 'false' }}">{{ "Collapse all" if open else "Expand all" }}</button>
+{% endmacro %}
+
 {# With `open`, expandable rows start expanded. #}
 {% macro bars(title, items, kind, empty, open=False) %}
 <div class="composition">

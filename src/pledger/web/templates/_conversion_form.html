@@ -1,4 +1,7 @@
-<form id="conversion-form" class="stack" hx-post="/conversions" hx-swap="outerHTML">
+{% from "_edit.html" import form_head %}
+{# The conversion form: a new one, or with `editing` one of the conversions CSV. #}
+<form id="conversion-form" class="stack" hx-post="{{ '/conversions/%d/edit' % editing.index if editing else '/conversions' }}" hx-swap="outerHTML">
+  {{ form_head("conversion", editing, "/form/conversion", "conversion-form") }}
   {% if error %}<p class="msg error">{{ error }}</p>{% endif %}
   {% if success %}<p class="msg success">{{ success }}</p>{% endif %}
   <label>Date
@@ -9,5 +12,5 @@
   <label><span>Comment <em class="optional">(optional)</em></span>
     <input name="comment" value="{{ values.comment }}" autocomplete="off">
   </label>
-  <button type="submit">Add conversion</button>
+  <button type="submit">{{ "Save changes" if editing else "Add conversion" }}</button>
 </form>

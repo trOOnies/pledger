@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  {# English, also for the browser's language detection: names and comments in the data may not be #}
+  <meta http-equiv="content-language" content="en">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}pledger{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', path='favicon.svg') }}?v={{ static_version('favicon.svg') }}">
@@ -33,6 +35,7 @@
       <svg class="eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
       <svg class="eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
     </button>
+    <button type="button" id="quit" class="quit" title="Save what is left to save and stop pledger">Save &amp; Quit</button>
   </header>
   <div id="flash" class="flash" role="alert" hidden></div>
   <main>{% block content %}{% endblock %}</main>
@@ -228,6 +231,74 @@
       if (Number.isFinite(value)) {
         input.value = value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
       }
+    });
+
+    // Expand all toggles (data-expand-all): expand or collapse every expandable row of
+    // the bars of their panel. Their state is kept when HTMX re-renders the panel.
+    const expandState = {};
+    const expandables = (button) => button.closest(".panel").querySelectorAll("details.other");
+
+    function showExpandAll(button) {
+      const rows = [...expandables(button)];
+      const open = rows.length > 0 && rows.every((d) => d.open);
+      button.textContent = open ? "Collapse all" : "Expand all";
+      button.setAttribute("aria-expanded", String(open));
+      button.disabled = rows.length === 0;
+    }
+
+    function initExpandAll(root) {
+      root.querySelectorAll("button[data-expand-all]").forEach((button) => {
+        const open = expandState[button.dataset.expandAll];
+        if (open !== undefined) expandables(button).forEach((d) => { d.open = open; });
+        showExpandAll(button);
+      });
+    }
+    document.addEventListener("click", (e) => {
+      const button = e.target.closest("button[data-expand-all]");
+      if (!button) return;
+      const open = button.getAttribute("aria-expanded") !== "true";
+      expandState[button.dataset.expandAll] = open;
+      expandables(button).forEach((d) => { d.open = open; });
+      showExpandAll(button);
+    });
+    // Expanding or collapsing a single row updates the toggle of its panel.
+    document.addEventListener("toggle", (e) => {
+      if (!e.target.matches?.("details.other")) return;
+      const button = e.target.closest(".panel")?.querySelector("button[data-expand-all]");
+      if (button) showExpandAll(button);
+    }, true);
+    document.addEventListener("DOMContentLoaded", () => initExpandAll(document));
+    document.addEventListener("htmx:afterSettle", (e) => initExpandAll(e.detail.elt));
+
+    // Save & Quit: the server saves what is left and stops; then this window closes, or
+    // says it can be closed if the browser doesn't let a page close a window it didn't open.
+    function unsentForms() {
+      return [...document.forms].filter((form) => form.id !== "filters" && [...form.elements].some((el) => {
+        if (el.type === "checkbox" || el.type === "radio") return el.checked !== el.defaultChecked;
+        if (el.tagName === "SELECT") return [...el.options].some((o) => o.selected !== o.defaultSelected);
+        return "defaultValue" in el && el.type !== "hidden" && el.value !== el.defaultValue;
+      }));
+    }
+    document.getElementById("quit").addEventListener("click", async () => {
+      const lost = unsentForms().length ? " What you typed in forms you didn't send will be lost." : "";
+      if (!window.confirm(`Save and quit pledger?${lost}`)) return;
+      try {
+        const r = await fetch("/quit", { method: "POST" });
+        if (!r.ok) throw new Error(r.statusText);
+      } catch (err) {
+        const flash = document.getElementById("flash");
+        flash.textContent = `Could not quit pledger: ${err.message || err}`;
+        flash.hidden = false;
+        setTimeout(() => { flash.hidden = true; }, 6000);
+        return;
+      }
+      window.close();
+      document.title = "pledger stopped";
+      document.querySelector("main").innerHTML =
+        '<div class="panel quit-done"><h2>pledger has stopped</h2>' +
+        '<p class="muted">Everything is saved. You can close this tab; run <code>make serve</code> to start pledger again.</p></div>';
+      document.querySelector(".topbar nav").remove();
+      document.getElementById("quit").remove();
     });
 
     // Autofill buttons (data-autofill): fill in the fields of their form with these

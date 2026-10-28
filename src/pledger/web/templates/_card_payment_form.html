@@ -1,17 +1,16 @@
-<form id="card-payment-form" class="stack" hx-post="/credit-cards/payments" hx-swap="outerHTML">
+{% from "_edit.html" import form_head %}
+{# The card payment form: a new one, or with `editing` one of the ledger CSV. #}
+<form id="card-payment-form" class="stack" hx-post="{{ '/credit-cards/payments/%d/edit' % editing.index if editing else '/credit-cards/payments' }}" hx-swap="outerHTML">
+  {{ form_head("card payment", editing, "/form/card-payment", "card-payment-form") }}
   {% if error %}<p class="msg error">{{ error }}</p>{% endif %}
   {% if success %}<p class="msg success">{{ success }}</p>{% endif %}
-  {% if bases %}
+  {% if base_movement %}
   <label>Date
     <input type="date" name="move_date" value="{{ values.move_date }}" required data-future-warning>
     <span class="hint warn" hidden>⚠️ This date is in the future.</span>
   </label>
-  <label>Base movement
-    <select name="base_movement" hx-get="/form/accounts" hx-target="#card-account-fields" hx-swap="innerHTML">
-      {% for name in bases %}<option value="{{ name }}" {% if name == base_movement %}selected{% endif %}>{{ name }} ({{ cards[name] }})</option>{% endfor %}
-    </select>
-  </label>
-  <div id="card-account-fields">{% include "_account_fields.html" %}</div>
+  <input type="hidden" name="base_movement" value="{{ base_movement }}">
+  {% include "_account_fields.html" %}
   <label>Amount
     <span class="money-input">
       <span class="prefix">{{ currency }}</span>
@@ -21,9 +20,10 @@
   <label><span>Comment <em class="optional">(optional)</em></span>
     <input name="comment" value="{{ values.comment }}" autocomplete="off">
   </label>
-  <button type="submit">Add card payment</button>
+  <button type="submit">{{ "Save changes" if editing else "Add card payment" }}</button>
+  <p class="muted small">Saved as a <strong>{{ base_movement }}</strong>, from the account paying it to the card.</p>
   {% else %}
-  <p class="muted">No card payment base movements yet: add a transfer debiting a credit card in the
-    <a href="/results">Results</a> tab.</p>
+  <p class="msg warn small">The Credit Cards tab needs this base movement, under <code>transfer</code> in the
+    <code>internal</code> section of the base movements YAML: {{ missing | join(", ") }}.</p>
   {% endif %}
 </form>

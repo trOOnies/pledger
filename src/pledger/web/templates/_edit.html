@@ -1,0 +1,22 @@
+{# Editing a movement from its table: the ✎ button of its row, getting its form filled with it. #}
+{% macro edit_button(url, fingerprint, form_id) %}
+<button class="icon edit" title="Edit" aria-label="Edit movement"
+  hx-get="{{ url }}"
+  hx-vals='{{ {"fingerprint": fingerprint} | tojson }}'
+  hx-target="#{{ form_id }}" hx-swap="outerHTML"
+  hx-on::after-request="document.getElementById('{{ form_id }}')?.scrollIntoView({block: 'nearest', behavior: 'smooth'})">&#9998;</button>
+{% endmacro %}
+
+{# The heading of a form: `title`, or while `editing` a movement its ID, a Cancel button getting
+   a new form from `cancel_url` and the fingerprint of the row edited. #}
+{% macro form_head(title, editing, cancel_url, form_id) %}
+{% if editing %}
+<div class="form-head">
+  <h2>Edit {{ title }} {% if editing.id %}<small>{{ editing.id }}</small>{% endif %}</h2>
+  <button type="button" class="secondary" hx-get="{{ cancel_url }}" hx-target="#{{ form_id }}" hx-swap="outerHTML">Cancel</button>
+</div>
+<input type="hidden" name="fingerprint" value="{{ editing.fingerprint }}">
+{% else %}
+<h2>New {{ title }}</h2>
+{% endif %}
+{% endmacro %}

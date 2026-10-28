@@ -47,6 +47,9 @@
         If you hold other currencies, enter their value converted to the base currency.</p>
       <p class="note">👁️ Showing Pledger to someone? The <strong>eye button</strong> at the top
         right replaces every amount with <code>******</code> until you click it again.</p>
+      <p class="note">⏻ Done for now? <strong>Save &amp; Quit</strong>, at the top right, saves
+        what is left to save and stops Pledger (the <code>make serve</code> server too), closing the
+        window when the browser allows it.</p>
     </section>
 
     <section class="panel" id="tabs">
@@ -60,12 +63,13 @@
           movements setting each account's <strong>initial amount</strong> are left out unless
           you tick <em>Initial movements</em>. Each movement has an <strong>ID</strong> that
           never changes, given by pledger itself (rows added to the CSVs by hand get theirs when
-          pledger starts). Movements handled in another tab can't be deleted
-          here: instead of ×, they show a <strong>colored circle</strong> linking to their row in that tab (or
+          pledger starts). Click ✎ on a movement to <strong>edit it</strong> in the form, or × to
+          delete it. Movements handled in another tab can't be edited or deleted
+          here: instead, they show a <strong>colored circle</strong> linking to their row in that tab (or
           to the row they are generated from, like the month of a salary), highlighted:
           🟢 Investments, 🔵 Currencies (conversions and revaluations), 🟠 Work (salaries),
-          🟣 Accounts (initial amounts) and 🟡 Debt (debt and loan movements, changed in the
-          ledger CSV).</dd>
+          🟣 Accounts (initial amounts), 🟡 Debt (debts and loans) and 🔴 Credit Cards (card payments). Their <strong>ID</strong> links there too, and the IDs of the Investments,
+          Currencies, Debt and Credit Cards tabs link back to the same movement in the Ledger tab.</dd>
         <dt>🏦 Accounts</dt>
         <dd>Every account with its <strong>description and balance</strong>, your total
           <strong>assets, liabilities and equity</strong>, and the form to <strong>add a new
@@ -91,7 +95,8 @@
           out inflation), and how many <strong>months of expenses</strong> it covers (at the average
           monthly losses of the year up to then, leaving out the deductions of the salary). Your gains and losses <strong>grouped by result type</strong> (click a result type to
           see what is inside it), a <strong>waterfall</strong> of the gains and then the losses of
-          each result type adding up to your profit (with its table one click away), and a line
+          each result type adding up to your profit (with its table one click away; tick
+          <em>% of Operative gains</em> to see it all as a share of the gains of your first result type), and a line
           showing your <strong>equity over time</strong>, nominal and real (dashed, deflated by the CPI
           to the prices of its last date). Hover over the line to see each day.
           Initial movements are left out of the results here too, unless you tick <em>Initial
@@ -111,17 +116,18 @@
           The Ledger tab shows these with a 🟠: change them by editing the month here.</dd>
         <dt>📈 Investments</dt>
         <dd>What you hold in your <strong>investment accounts</strong>: each investment with its
-          type, quantity, amount and <strong>price</strong> (amount over quantity), and what your
+          type, quantity, amount, <strong>price</strong> (amount over quantity) and broker <strong>fees over
+          its amount</strong>, and what your
           investments are made of, <strong>by type or by account</strong>. The investment results
           (capital gains and losses, interest, dividends, broker fees and stock splits) and the
           buying and selling of investments are
-          <strong>added and deleted here</strong>, not in the Ledger tab, which shows them with a 🟢.
+          <strong>added, edited and deleted here</strong>, not in the Ledger tab, which shows them with a 🟢.
           Each one names its <strong>investment</strong> and, when buying, selling or splitting, its
           <strong>quantity</strong>, so the amounts and quantities above stay up to date. The
           <strong>interest on money</strong> earned or paid in a regular account (picking an
           <em>Interest on Money</em> base movement, with no investment) gets a section of its own, by account and month by month, and counts towards the total
           result. Two charts show the <strong>total invested</strong> (nominal and real, dashed) and the <strong>total result</strong>
-          month by month.</dd>
+          month by month. The <em>Investment</em> filter shows the movements of one investment.</dd>
         <dt>🤝 Debt</dt>
         <dd>Who is in your <strong>debt accounts</strong>, split into <strong>people</strong>,
           <strong>services</strong> and <strong>companies</strong>: <strong>what you owe</strong>
@@ -131,14 +137,16 @@
           movement names no one, or when someone owes the other way around from what is
           <strong>expected</strong> (by default, you owe services and companies owe you). The
           <strong>movements</strong> of the debt accounts are listed too, with who each one names.
-          Lending, borrowing and paying debts back are <strong>added here</strong>, picking who they are about.</dd>
+          Borrowing (<em>Debt</em>: Incurred, Paid) and lending (<em>Loan</em>: Given, Collected) are <strong>added,
+          edited and deleted here</strong>, picking who they are about; the <em>Who</em> filter shows the movements of one of them.</dd>
         <dt>💳 Credit Cards</dt>
         <dd>What you <strong>owe on each credit card</strong>, plus what was <strong>charged</strong>
           to it and <strong>paid</strong> off it. With a month picked, the balance is the one at
           the end of that month, and the charges and payments are the ones of that month. A bar chart shows what was
           <strong>charged each month</strong> (your purchases, not your payments), and another one
           shows what you owe on them <strong>as a share of your equity</strong>, month by month,
-          and their <strong>movements</strong> are listed below. <strong>Card payments</strong> are added here.</dd>
+          and their <strong>movements</strong> are listed below (the <em>Credit card</em> filter shows the ones of one card).
+          <strong>Card payments</strong> are added, edited and deleted here, picking the card and the account paying it.</dd>
         <dt>❓ Help</dt>
         <dd>This page.</dd>
       </dl>
@@ -212,9 +220,14 @@
         movement, Pledger <strong>explains the problem and nothing is saved</strong>.</p>
 
       <h3>🩹 Fix a mistake</h3>
-      <p>Movements cannot be edited. <strong>Delete</strong> the wrong one with the
-        <strong>&times;</strong> button at the end of its row and <strong>add it again</strong> with
-        the right details.</p>
+      <p>Click the <strong>&#9998;</strong> button at the end of the movement's row in the
+        <a href="/">Ledger</a>: the form becomes <strong>Edit movement</strong>, filled in with it.
+        Fix it and press <strong>Save changes</strong>, or <strong>Cancel</strong> to go back to a new
+        movement. It keeps its ID. To remove it instead, use the <strong>&times;</strong> button.
+        The movements of other tabs are edited the same way there: the investment movements in
+        <a href="/investments">Investments</a>, the conversions in <a href="/currencies">Currencies</a>, the debt
+        movements in <a href="/debt">Debt</a> and the card payments in <a href="/credit-cards">Credit Cards</a>.
+        The ones pledger generates (salaries, initial amounts, revaluations) change with what they come from.</p>
 
       <h3>➕ Add an account</h3>
       <p>Go to <a href="/accounts">Accounts</a>, fill in the <strong>New account</strong> form

@@ -232,7 +232,6 @@
   {% if conversion_form %}
   <div class="layout">
     <aside class="panel">
-      <h2>New conversion</h2>
       {{ conversion_form | safe }}
       <p class="muted small">Saved in <code>{{ settings.conversions_path.name if settings.conversions_path else "conversion.csv" }}</code>,
         with the amount in each currency. The ledger gets it in {{ base.name }}.</p>

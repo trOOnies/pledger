@@ -18,4 +18,16 @@
 <p class="muted">New result types and base movements are added to
   <code>{{ settings.base_movements_path }}</code>. Edit that file to change or remove them.</p>
 <div id="setup">{% include "_setup.html" %}</div>
+
+<script>
+  // Keep the result by type over the gains of a result type when the results re-render.
+  let resultsRelative = false;
+  document.addEventListener("change", (e) => {
+    if (e.target.name === "results-relative") resultsRelative = e.target.checked;
+  });
+  document.addEventListener("htmx:afterSwap", () => {
+    const box = document.querySelector('input[name="results-relative"]');
+    if (box && !box.disabled) box.checked = resultsRelative;
+  });
+</script>
 {% endblock %}

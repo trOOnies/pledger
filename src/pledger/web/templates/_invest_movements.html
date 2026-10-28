@@ -1,4 +1,5 @@
 {% from "_id.html" import id_cell, id_header %}
+{% from "_edit.html" import edit_button %}
 <div class="panel">
   <h2>Investment movements <small>{{ movements | length }}</small></h2>
   <div class="table-wrap">
@@ -9,7 +10,7 @@
       <tbody>
         {% for m in movements %}
         <tr{% if m.id %} id="{{ row_anchor('movement', m.id) }}"{% endif %}>
-          {{ id_cell(m.id) }}
+          {{ id_cell(m.id, ledger_link(m.id, m.date) if m.id) }}
           <td class="nowrap">{{ m.date }}</td>
           <td><span class="badge {{ m.type }}">{{ m.type[0] | upper }}</span> {{ m.base }}</td>
           <td class="{{ 'muted' if not m.investment }}">{{ m.investment or "-" }}</td>
@@ -18,7 +19,8 @@
           <td class="num money" data-sort="{{ m.amount }}">{{ m.amount | money }}</td>
           <td>{{ m.credit }}</td>
           <td class="muted">{{ m.comment }}</td>
-          <td>
+          <td class="nowrap">
+            {{ edit_button("/investments/%s/%d/edit" % ("interest" if m.source == "interest" else "movements", m.index), m.fingerprint, "invest-form") }}
             <button class="icon" title="Delete" aria-label="Delete movement"
               hx-post="/investments/{{ 'interest' if m.source == 'interest' else 'movements' }}/{{ m.index }}/delete"
               hx-vals='{{ {"fingerprint": m.fingerprint} | tojson }}'

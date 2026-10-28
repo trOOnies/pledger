@@ -1,4 +1,4 @@
-{% from "_bars.html" import bars with context %}
+{% from "_bars.html" import bars, expand_all with context %}
 {% from "_line.html" import line_chart, waterfall_chart with context %}
 {% set period = ("in " ~ month) if month else "all time" %}
 <div class="cards">
@@ -17,7 +17,10 @@
 </div>
 
 <section class="panel">
-  <h2>Gains &amp; losses by result type <small>{{ ("in " ~ month) if month else "all time" }}</small></h2>
+  <div class="panel-head">
+    <h2>Gains &amp; losses by result type <small>{{ ("in " ~ month) if month else "all time" }}</small></h2>
+    {{ expand_all("results") }}
+  </div>
   <div class="composition-pair">
     {{ bars("Gains", gains, "gain", "No result types yet.") }}
     {{ bars("Losses", losses, "loss", "No result types yet.") }}
@@ -25,57 +28,71 @@
   <p class="muted small">Click a result type to see its base movements.</p>
 </section>
 
-<section class="panel">
-  <h2>Result by type <small>{{ ("in " ~ month) if month else "all time" }}, in result type order</small></h2>
-  {% if waterfall %}
-  <p class="equity-headline">
-    <span class="num-lg money {{ 'gain' if waterfall.last.value > 0 else 'loss' if waterfall.last.value < 0 }}">{{ waterfall.last.value | money }}</span>
-    <span class="muted">profit</span>
-  </p>
-  {% set ns = namespace(points=[]) %}
-  {% for c in waterfall.columns %}
-    {% set ns.points = ns.points + [{
-      "x": c.x, "y": c.y, "change": c.end,
-      "label": c.name if c.kind == "total" else c.name ~ " · " ~ ("Gains" if c.kind == "gain" else "Losses"),
-      "value_text": c.value | money,
-      "change_text": (c.end | money) ~ " cumulative",
-    }] %}
-  {% endfor %}
-  {{ waterfall_chart(waterfall, ns.points, "Gains and losses of each result type, in order, adding up to a profit of " ~ (waterfall.last.value | money)) }}
-  <p class="muted small">For each result type in order, its gains go up from the running total and its losses go
-    down from there; the last column is the profit.</p>
-  <details class="chart-table">
-    <summary>Show table</summary>
-  {% endif %}
-  <div class="table-wrap">
-    <table class="statement">
-      <thead><tr><th>Result type</th><th class="num">Gains</th><th class="num">Losses</th><th class="num">Net</th><th class="num" title="Running total of the net results, from the first result type down">Cumulative</th></tr></thead>
-      <tbody>
-      {% for r in statement %}
-      <tr title="{{ r.description }}">
-        <td>{{ r.name }}</td>
-        <td class="num money {{ 'muted' if not r.gains }}">{{ r.gains | money }}</td>
-        <td class="num money {{ 'muted' if not r.losses else 'loss' }}">{{ r.losses | money }}</td>
-        <td class="num money {{ 'gain' if r.net > 0 else 'loss' if r.net < 0 else 'muted' }}">{{ r.net | money }}</td>
-        <td class="num money">{{ r.cumulative | money }}</td>
-      </tr>
-      {% endfor %}
-      </tbody>
-      {% if statement %}
-      {% set net = statement | sum(attribute='net') %}
-      <tfoot>
-      <tr>
-        <th>Profit</th>
-        <th class="num money">{{ statement | sum(attribute='gains') | money }}</th>
-        <th class="num money">{{ statement | sum(attribute='losses') | money }}</th>
-        <th class="num money {{ 'gain' if net >= 0 else 'loss' }}">{{ net | money }}</th>
-        <th></th>
-      </tr>
-      </tfoot>
-      {% endif %}
-    </table>
+{# The result by type, in amounts or, with `pct`, over the gains of a result type. #}
+{% macro result_by_type(statement, waterfall, pct=False) %}
+{% macro value(v) %}{{ ("%.1f%%" | format(100 * v)) if pct else (v | money) }}{% endmacro %}
+{% set money_class = "" if pct else "money" %}
+{% if waterfall %}
+<p class="equity-headline">
+  <span class="num-lg {{ money_class }} {{ 'gain' if waterfall.last.value > 0 else 'loss' if waterfall.last.value < 0 }}">{{ value(waterfall.last.value) }}</span>
+  <span class="muted">profit{% if pct %}, of {{ relative.name }} gains{% endif %}</span>
+</p>
+{% set ns = namespace(points=[]) %}
+{% for c in waterfall.columns %}
+  {% set ns.points = ns.points + [{
+    "x": c.x, "y": c.y, "change": c.end,
+    "label": c.name if c.kind == "total" else c.name ~ " · " ~ ("Gains" if c.kind == "gain" else "Losses"),
+    "value_text": value(c.value),
+    "change_text": value(c.end) ~ " cumulative",
+  }] %}
+{% endfor %}
+{{ waterfall_chart(waterfall, ns.points, "Gains and losses of each result type, in order, adding up to a profit of " ~ value(waterfall.last.value), money=not pct) }}
+<p class="muted small">For each result type in order, its gains go up from the running total and its losses go
+  down from there; the last column is the profit{% if pct %}. Every amount is a share of the {{ relative.name }} gains{% endif %}.</p>
+<details class="chart-table">
+  <summary>Show table</summary>
+{% endif %}
+<div class="table-wrap">
+  <table class="statement">
+    <thead><tr><th>Result type</th><th class="num">Gains</th><th class="num">Losses</th><th class="num">Net</th><th class="num" title="Running total of the net results, from the first result type down">Cumulative</th></tr></thead>
+    <tbody>
+    {% for r in statement %}
+    <tr title="{{ r.description }}">
+      <td>{{ r.name }}</td>
+      <td class="num {{ money_class }} {{ 'muted' if not r.gains }}">{{ value(r.gains) }}</td>
+      <td class="num {{ money_class }} {{ 'muted' if not r.losses else 'loss' }}">{{ value(r.losses) }}</td>
+      <td class="num {{ money_class }} {{ 'gain' if r.net > 0 else 'loss' if r.net < 0 else 'muted' }}">{{ value(r.net) }}</td>
+      <td class="num {{ money_class }}">{{ value(r.cumulative) }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+    {% if statement %}
+    {% set net = statement | sum(attribute='net') %}
+    <tfoot>
+    <tr>
+      <th>Profit</th>
+      <th class="num {{ money_class }}">{{ value(statement | sum(attribute='gains')) }}</th>
+      <th class="num {{ money_class }}">{{ value(statement | sum(attribute='losses')) }}</th>
+      <th class="num {{ money_class }} {{ 'gain' if net >= 0 else 'loss' }}">{{ value(net) }}</th>
+      <th></th>
+    </tr>
+    </tfoot>
+    {% endif %}
+  </table>
+</div>
+{% if waterfall %}</details>{% endif %}
+{% endmacro %}
+
+<section class="panel relative-view">
+  <div class="panel-head">
+    <h2>Result by type <small>{{ ("in " ~ month) if month else "all time" }}, in result type order</small></h2>
+    <label class="check toggle" {% if not relative %}title="No gains of a result type to compare with in this period"{% endif %}>
+      <input type="checkbox" name="results-relative" {% if not relative %}disabled{% endif %}>
+      % of {{ relative.name if relative else "Operative" }} gains
+    </label>
   </div>
-  {% if waterfall %}</details>{% endif %}
+  <div data-relative="false">{{ result_by_type(statement, waterfall) }}</div>
+  {% if relative %}<div data-relative="true">{{ result_by_type(relative.statement, relative.waterfall, pct=True) }}</div>{% endif %}
 </section>
 
 <section class="panel">

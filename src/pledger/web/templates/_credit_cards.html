@@ -137,5 +137,13 @@
   <p class="muted small">Credit cards are liquid liabilities: charging them is a credit, paying them a debit.
     Charged and paid leave out the initial amounts.</p>
 
-  {{ account_movements(movements, "credit-card-movements", ("in " ~ month) if month else "all time", added_here="the card payments") }}
+  <form id="card-filter" class="filters" hx-get="/credit-cards" hx-target="#credit-cards-view" hx-include="#filters" hx-push-url="true" hx-trigger="change">
+    <label>Credit card
+      <select name="card">
+        <option value="">All credit cards</option>
+        {% for a in accounts %}<option {% if a.name == card %}selected{% endif %}>{{ a.name }}</option>{% endfor %}
+      </select>
+    </label>
+  </form>
+  {{ account_movements(movements, "credit-card-movements", ("in " ~ month) if month else "all time", added_here="the card payments", edit="/credit-cards/payments/%d/edit", delete="/credit-cards/payments/%d/delete", form_id="card-payment-form") }}
 </div>

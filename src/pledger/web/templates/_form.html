@@ -1,5 +1,8 @@
 {% from "_type_buttons.html" import type_buttons %}
-<form id="movement-form" class="stack" hx-post="/movements" hx-swap="outerHTML">
+{% from "_edit.html" import form_head %}
+{# The movement form of the Ledger tab: a new movement, or with `editing` one of the ledger CSV. #}
+<form id="movement-form" class="stack" hx-post="{{ '/movements/%d/edit' % editing.index if editing else '/movements' }}" hx-swap="outerHTML">
+  {{ form_head("movement", editing, "/form/movement", "movement-form") }}
   {% if error %}<p class="msg error">{{ error }}</p>{% endif %}
   {% if success %}<p class="msg success">{{ success }}</p>{% endif %}
   <label>Date
@@ -17,5 +20,5 @@
   <label><span>Comment <em class="optional">(optional)</em></span>
     <input name="comment" value="{{ values.comment }}" autocomplete="off">
   </label>
-  <button type="submit">Add movement</button>
+  <button type="submit">{{ "Save changes" if editing else "Add movement" }}</button>
 </form>

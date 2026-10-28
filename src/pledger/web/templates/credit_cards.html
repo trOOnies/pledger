@@ -9,7 +9,7 @@
     initial amount (what you owe on it).</p>
 </div>
 {% else %}
-<form id="filters" class="filters" hx-get="/credit-cards" hx-target="#credit-cards-view" hx-push-url="true" hx-trigger="change">
+<form id="filters" class="filters" hx-get="/credit-cards" hx-target="#credit-cards-view" hx-include="#card-filter" hx-push-url="true" hx-trigger="change">
   <label>Month
     <select name="month">
       <option value="">All time</option>
@@ -20,10 +20,9 @@
 
 <div class="layout">
   <aside class="panel">
-    <h2>New card payment</h2>
     {{ card_payment_form | safe }}
   </aside>
-  <section id="credit-cards-view" hx-get="/credit-cards" hx-include="#filters" hx-trigger="credit-cards-changed from:body">
+  <section id="credit-cards-view" hx-get="/credit-cards" hx-include="#filters, #card-filter" hx-trigger="credit-cards-changed from:body">
     {% include "_credit_cards.html" %}
   </section>
 </div>

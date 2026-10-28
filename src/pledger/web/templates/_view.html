@@ -1,4 +1,5 @@
 {% from "_id.html" import id_cell, id_header %}
+{% from "_edit.html" import edit_button %}
 <div class="panel">
   <h2>Movements <small>{{ movements | length }}</small></h2>
   <div class="table-wrap">
@@ -8,21 +9,24 @@
       </thead>
       <tbody>
         {% for m in movements %}
-        <tr>
-          {{ id_cell(m.id) }}
+        <tr{% if m.id %} id="{{ row_anchor('movement', m.id) }}"{% endif %}>
+          {{ id_cell(m.id, m.link) }}
           <td class="nowrap">{{ m.date }}</td>
           <td><span class="badge {{ m.type }}">{{ m.type[0] | upper }}</span> {{ m.base }}</td>
           <td>{{ m.debit }}</td>
           <td class="num money" data-sort="{{ m.amount }}">{{ m.amount | money }}</td>
           <td>{{ m.credit }}</td>
           <td class="muted">{{ m.comment }}</td>
-          <td>
+          <td class="nowrap">
             {% if m.source %}
             {% set emoji, title = movement_sources[m.source] %}
             <a class="source" href="{{ m.link }}" title="{{ title }}" aria-label="{{ title }}">{{ emoji }}</a>
             {% elif m.internal %}
             <span class="source" title="Added by pledger itself; it cannot be deleted by hand" aria-label="Added by pledger itself">⚪</span>
             {% else %}
+            {% if m.editable %}
+            {{ edit_button("/movements/%d/edit" % m.index, m.fingerprint, "movement-form") }}
+            {% endif %}
             <button class="icon" title="Delete" aria-label="Delete movement"
               hx-post="/movements/{{ m.index }}/delete"
               hx-vals='{{ {"fingerprint": m.fingerprint} | tojson }}'

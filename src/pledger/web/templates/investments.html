@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_bars.html" import bars with context %}
+{% from "_bars.html" import bars, expand_all with context %}
 {% from "_line.html" import column_chart, line_chart with context %}
 {% block title %}Investments · pledger{% endblock %}
 {# The results of an investment: net capital gains, the other results by base movement and their total. #}
@@ -17,7 +17,7 @@
 {% if has_results %}{{ signed(i.total) }}{% endif %}
 {% endmacro %}
 {% macro fees_cell(i) %}
-{% if i.fees_share is none %}<td class="num muted">-</td>{% else %}<td class="num loss" data-sort="{{ i.fees_share }}">{{ "%.1f" | format(100 * i.fees_share) }}%</td>{% endif %}
+{% if i.fees_share is none %}<td class="num muted">-</td>{% else %}<td class="num loss" data-sort="{{ i.fees_share }}">{{ "%.2f" | format(100 * i.fees_share) }}%</td>{% endif %}
 {% endmacro %}
 {% block content %}
 <div class="view">
@@ -120,9 +120,12 @@
   <section class="panel grouped-bars">
     <div class="panel-head">
       <h2>Composition</h2>
-      <div class="segmented" role="radiogroup" aria-label="Group investments by">
-        <label><input type="radio" name="investments-group" value="type" checked> By type</label>
-        <label><input type="radio" name="investments-group" value="account"> By account</label>
+      <div class="panel-tools">
+        {{ expand_all("investments", open=True) }}
+        <div class="segmented" role="radiogroup" aria-label="Group investments by">
+          <label><input type="radio" name="investments-group" value="type" checked> By type</label>
+          <label><input type="radio" name="investments-group" value="account"> By account</label>
+        </div>
       </div>
     </div>
     {% for group, comp in groupings.items() %}
@@ -135,7 +138,7 @@
   <div class="panel">
     <h2>Investments</h2>
     <table data-sortable="investments">
-      <thead><tr><th>Investment</th><th>Type</th><th>Account</th><th class="num">Quantity</th><th class="num" title="Amount over quantity">Price</th><th class="num">Amount</th><th class="num">Share</th>{{ result_heads() }}{% if has_fees %}<th class="num" title="The broker fees as a share of the total result; - without fees or a positive total result">Fees of result</th>{% endif %}</tr></thead>
+      <thead><tr><th>Investment</th><th>Type</th><th>Account</th><th class="num">Quantity</th><th class="num" title="Amount over quantity">Price</th><th class="num">Amount</th><th class="num">Share</th>{{ result_heads() }}{% if has_fees %}<th class="num" title="The broker fees as a share of the amount; - without fees or a positive amount">Fees over amount</th>{% endif %}</tr></thead>
       <tbody>
       {% for h in holdings %}
       <tr>
@@ -267,6 +270,20 @@
   </div>
 {% endif %}
 
+{% if invest_form %}
+<form id="invest-filter" class="filters" hx-get="/investments/movements" hx-target="#invest-movements" hx-trigger="change">
+  <label>Investment
+    <select name="investment" title="The investment movements of one investment">
+      <option value="">All investments</option>
+      {% for account, names in investments_by_account.items() %}
+      <optgroup label="{{ account if account != '-' else 'Other accounts' }}">
+        {% for name in names %}{% set value = [account, name] | tojson %}<option value='{{ value }}' {% if value == investment %}selected{% endif %}>{{ name }}</option>{% endfor %}
+      </optgroup>
+      {% endfor %}
+    </select>
+  </label>
+</form>
+{% endif %}
 <div class="layout">
   <aside class="column">
     <section class="panel">
@@ -275,13 +292,12 @@
     </section>
     {% if invest_form %}
     <section class="panel">
-      <h2>New investment movement</h2>
       {{ invest_form | safe }}
     </section>
     {% endif %}
   </aside>
   {% if invest_form %}
-  <section id="invest-movements" hx-get="/investments/movements" hx-trigger="investments-changed from:body">
+  <section id="invest-movements" hx-get="/investments/movements" hx-include="#invest-filter" hx-trigger="investments-changed from:body">
     {% include "_invest_movements.html" %}
   </section>
   {% endif %}

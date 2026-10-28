@@ -1,5 +1,8 @@
 {% from "_type_buttons.html" import type_buttons %}
-<form id="invest-form" class="stack" hx-post="/investments/movements" hx-swap="outerHTML">
+{% from "_edit.html" import form_head %}
+{# The investment movement form: a new one, or with `editing` one of the investments or interest CSV. #}
+<form id="invest-form" class="stack" hx-post="{{ editing.url if editing else '/investments/movements' }}" hx-swap="outerHTML">
+  {{ form_head("investment movement", editing, "/form/invest-movement", "invest-form") }}
   {% if error %}<p class="msg error">{{ error }}</p>{% endif %}
   {% if success %}<p class="msg success">{{ success }}</p>{% endif %}
   <label>Date
@@ -17,5 +20,5 @@
   <label><span>Comment <em class="optional">(optional)</em></span>
     <input name="comment" value="{{ values.comment }}" autocomplete="off">
   </label>
-  <button type="submit">Add movement</button>
+  <button type="submit">{{ "Save changes" if editing else "Add movement" }}</button>
 </form>

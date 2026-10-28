@@ -162,6 +162,8 @@ main { padding: 1rem 1.5rem 3rem; max-width: 1400px; width: 100%; margin: 0 auto
 .layout > aside { position: sticky; top: 1rem; }
 .layout > aside.column { position: static; }  /* several panels: too tall to stick */
 .layout.setup { grid-template-columns: 1fr 2fr; }
+/* Result types and base movements one on top of the other when their tables don't fit side by side */
+@media (max-width: 1200px) { .layout.setup { grid-template-columns: minmax(0, 1fr); } }
 .layout .column { display: grid; gap: 1rem; min-width: 0; }
 #view, .layout > .view, main > .view, #debt-view > .view, #credit-cards-view > .view { display: grid; gap: 1rem; min-width: 0; }
 
@@ -253,6 +255,21 @@ button.icon {
 }
 button.icon:hover { color: var(--loss); }
 button.icon.edit:hover { color: var(--accent); }
+/* The Save & Quit button of the top bar */
+.quit {
+  width: auto; padding: .3rem .7rem; font-size: .85rem; cursor: pointer;
+  color: var(--muted); border-color: var(--border);
+}
+.quit:hover { color: var(--text); border-color: var(--muted); }
+.quit-done { max-width: 520px; margin: 3rem auto; text-align: center; }
+/* The head of the movement form, with its Cancel button while editing a movement */
+form.stack > h2 { margin: 0; }
+.form-head { display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
+.form-head h2 { margin: 0; }
+.form-head button { width: auto; padding: .25rem .7rem; font-size: .8rem; }
+/* The ID of a movement linking to it in another tab */
+a.id-link { color: inherit; text-decoration: underline dotted; text-underline-offset: 2px; }
+a.id-link:hover { color: var(--accent); }
 /* The colored circle of a movement handled in another tab, linking to it. */
 .source { padding: 0 .4rem; font-size: .8rem; line-height: 1; text-decoration: none; }
 /* The row a colored circle links to: clear of the sticky table header, and highlighted. */
@@ -327,6 +344,16 @@ section.panel > .msg, .panel > .msg.warn { margin-bottom: .75rem; }
 .segmented.types label.asset:has(input:checked) { background: var(--series-asset); color: #fff; }
 .segmented.types label.liability:has(input:checked) { background: var(--series-liability); color: #fff; }
 button.secondary { cursor: pointer; color: var(--accent); }
+button.compact { width: auto; padding: .25rem .7rem; font-size: .8rem; }
+button.compact:disabled { cursor: default; color: var(--muted); }
+/* The tools of a panel head: an expand all toggle and a grouping */
+.panel-tools { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+/* A checkbox of a panel head, e.g. the result by type over the gains of a result type */
+.panel-head label.check.toggle { display: flex; align-items: center; gap: .4rem; font-size: .8rem; color: var(--muted); cursor: pointer; }
+.panel-head label.check.toggle:has(input:disabled) { cursor: default; opacity: .6; }
+.relative-view [data-relative="true"],
+.relative-view:has(input[name="results-relative"]:checked) [data-relative="false"] { display: none; }
+.relative-view:has(input[name="results-relative"]:checked) [data-relative="true"] { display: block; }
 .grouped-bars [data-group="liquidity"],
 .grouped-bars:has(input[value="liquidity"]:checked) [data-group="currency"] { display: none; }
 .grouped-bars:has(input[value="liquidity"]:checked) [data-group="liquidity"] { display: grid; }

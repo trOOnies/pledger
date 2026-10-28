@@ -1,19 +1,21 @@
-{# The movements of some accounts (views.account_movements), read only: they are added and
-   deleted from the Ledger tab. With `who`, the movements say who their comment names, and
-   with `account`, which of the accounts they are of. #}
+{# The movements of some accounts (views.account_movements). With `who`, the movements say who
+   their comment names, and with `account`, which of the accounts they are of. With `edit` and
+   `delete` URLs (with the row index as %d), the editable ones (the movements added in the tab)
+   get their ✎ button, filling the form `form_id`, and their × one. #}
 {% from "_id.html" import id_cell, id_header %}
-{% macro account_movements(movements, key, period, who=False, account=False, added_here=False) %}
+{% from "_edit.html" import edit_button %}
+{% macro account_movements(movements, key, period, who=False, account=False, added_here=False, edit=none, delete=none, form_id="") %}
 <div class="panel">
   <h2>Movements <small>{{ movements | length }}, {{ period }}</small></h2>
   <div class="table-wrap">
     <table class="movements" data-sortable="{{ key }}">
       <thead>
-        <tr>{{ id_header() }}<th>Date</th><th>Base movement</th>{% if who %}<th title="Who the comment names">Who</th>{% endif %}{% if account %}<th>Account</th>{% endif %}<th>Debit</th><th class="num">Amount</th><th>Credit</th><th>Comment</th></tr>
+        <tr>{{ id_header() }}<th>Date</th><th>Base movement</th>{% if who %}<th title="Who the comment names">Who</th>{% endif %}{% if account %}<th>Account</th>{% endif %}<th>Debit</th><th class="num">Amount</th><th>Credit</th><th>Comment</th>{% if edit %}<th></th>{% endif %}</tr>
       </thead>
       <tbody>
         {% for m in movements %}
         <tr{% if m.id %} id="{{ row_anchor('movement', m.id) }}"{% endif %}>
-          {{ id_cell(m.id) }}
+          {{ id_cell(m.id, ledger_link(m.id, m.date, m.initial) if m.id) }}
           <td class="nowrap">{{ m.date }}</td>
           <td><span class="badge {{ m.type }}">{{ m.type[0] | upper }}</span> {{ m.base }}</td>
           {% if who %}{% if m.initial %}<td class="muted" title="The initial amounts of everyone in the account">Initial amounts</td>{% elif m.who %}<td class="nowrap"><strong>{{ m.who }}</strong></td>{% else %}<td class="muted" title="The comment names no one: unassigned debt">-</td>{% endif %}{% endif %}
@@ -22,14 +24,28 @@
           <td class="num money" data-sort="{{ m.amount }}">{{ m.amount | money }}</td>
           <td>{{ m.credit }}</td>
           <td class="muted">{{ m.comment }}</td>
+          {% if edit %}
+          <td class="nowrap">
+            {% if m.editable %}
+            {{ edit_button(edit % m.index, m.fingerprint, form_id) }}
+            <button class="icon" title="Delete" aria-label="Delete movement"
+              hx-post="{{ delete % m.index }}"
+              hx-vals='{{ {"fingerprint": m.fingerprint} | tojson }}'
+              hx-confirm="Delete {{ m.date }} {{ m.base }} ({{ m.amount | money }})?"
+              data-confirm-money="{{ m.amount | money }}"
+              hx-swap="none">&times;</button>
+            {% endif %}
+          </td>
+          {% endif %}
         </tr>
         {% else %}
-        <tr><td colspan="{{ 7 + (1 if who else 0) + (1 if account else 0) }}" class="muted">No movements.</td></tr>
+        <tr><td colspan="{{ 7 + (1 if who else 0) + (1 if account else 0) + (1 if edit else 0) }}" class="muted">No movements.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-  <p class="muted small">The initial movements set the initial amounts; {% if added_here %}add {{ added_here }} with the form, and add the
-    other movements and delete any of them from the <a href="/">Ledger</a> tab{% else %}add and delete the others from the <a href="/">Ledger</a> tab{% endif %}.</p>
+  <p class="muted small">The initial movements set the initial amounts; {% if added_here %}add, edit and delete {{ added_here }}
+    with the form and the buttons of their row, and the other movements from the <a href="/">Ledger</a> tab{% else %}add, edit
+    and delete the others from the <a href="/">Ledger</a> tab{% endif %}.</p>
 </div>
 {% endmacro %}

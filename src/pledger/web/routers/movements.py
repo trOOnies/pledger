@@ -28,6 +28,19 @@ def create_movement(store: StoreDep, movement: MovementIn):
     return {"ok": True}
 
 
+@router.put("/{index}")
+def edit_movement(
+    store: StoreDep, index: int, movement: MovementIn, fingerprint: Annotated[str | None, Query()] = None
+):
+    try:
+        store.edit(index, fingerprint, **movement.model_dump())
+    except StaleRowError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from None
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
+    return {"ok": True}
+
+
 @router.delete("/{index}")
 def delete_movement(
     store: StoreDep, index: int, fingerprint: Annotated[str | None, Query()] = None

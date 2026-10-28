@@ -63,14 +63,14 @@ A FastAPI + HTMX UI, one tab per area:
 
 | Tab | What it shows |
 | --- | --- |
-| 📋 **Ledger** | Lists, adds and deletes movements. Conversions, debt movements and card payments are added in their own tabs instead. |
+| 📋 **Ledger** | Lists, adds, edits and deletes movements. Conversions, debt movements and card payments are added in their own tabs instead. |
 | 🏦 **Accounts** | Balances, total assets, liabilities and equity, a form to add accounts, the composition of assets and liabilities (by currency or by liquidity) and, at each month end, debt over equity and net liquidity (liquid assets minus liquid liabilities) over equity. |
-| 💱 **Currencies** | Balances per currency, the balance of each account in other currencies in its own currency, the daily CPI of the base currency, its monthly inflation, the nominal and real value of each other currency, and the share of each currency in the assets at each month end. The conversions are added (picking the currency sold and the one bought) and deleted here. |
-| 📊 **Results** | The nominal and real change of equity in the period and the months of expenses it covers, gains and losses by result type, a waterfall of the result by type (with its result statement as a table) and equity over time. Result types and base movements are listed and added here. |
+| 💱 **Currencies** | Balances per currency, the balance of each account in other currencies in its own currency, the daily CPI of the base currency, its monthly inflation, the nominal and real value of each other currency, and the share of each currency in the assets at each month end. The conversions are added (picking the currency sold and the one bought), edited and deleted here. |
+| 📊 **Results** | The nominal and real change of equity in the period and the months of expenses it covers, gains and losses by result type, a waterfall of the result by type (with its result statement as a table, both also as a share of the gains of the first result type, e.g. *Operative*) and equity over time. Result types and base movements are listed and added here. |
 | 💼 **Work** | The company, job position and salary of each month, from gross to net through its deductions (taxes, contributions...), with a chart of both salaries (0 for the months without a job). |
-| 📈 **Investments** | The investments of the investment accounts with their price (amount over quantity), their composition by type or by account, the results of each one, the interest on money of regular accounts, and charts of the total invested and the total result. The internal `Invest` movements are added and deleted here. |
-| 🤝 **Debt** | Who we owe and who owes us in the debt accounts (people, services and companies), with alerts and the movements of the month. The debt movements are added here. |
-| 💳 **Credit Cards** | What we owe on each card, what was charged and paid in the month, a chart of the monthly charges, the net owed over equity, and the movements of the month. The card payments are added here. |
+| 📈 **Investments** | The investments of the investment accounts with their price (amount over quantity), their composition by type or by account, the results of each one, the interest on money of regular accounts, and charts of the total invested and the total result. The broker fees of each investment are shown over its amount. The **Investment** filter shows only the movements of one investment. The internal `Invest` movements are added, edited and deleted here. |
+| 🤝 **Debt** | Who we owe and who owes us in the debt accounts (people, services and companies), with alerts and the movements of the month. The debt movements are added and edited here. |
+| 💳 **Credit Cards** | What we owe on each card, what was charged and paid in the month, a chart of the monthly charges, the net owed over equity, and the movements of the month. The card payments are added and edited here. |
 | ❓ **Help** | The concepts, explained for everyday users. |
 
 A few things are shared across tabs:
@@ -81,6 +81,14 @@ A few things are shared across tabs:
   CPI chart and faded in the inflation one.
 - 👁️ The **eye button** in the top bar replaces every amount with `******` until clicked
   again. The browser remembers the choice.
+- 🔗 The **ID** of a movement links to its other face: from the Ledger tab to its row in the tab
+  that handles it (like its colored circle), and from the Investments, Currencies, Debt and
+  Credit Cards tabs back to the Ledger tab.
+- ↕️ The bars of Accounts, Results, Investments and Debt have an **Expand all / Collapse all**
+  toggle.
+- ⏻ **Save & Quit**, in the top bar, saves what is left to save (the IDs of the rows added to the
+  CSVs by hand) and stops the server, `make serve` included, closing the window if the browser
+  allows it.
 - 💲 Amounts are shown with a `$` symbol and two decimals. Set `PLEDGER_CURRENCY` (e.g. `ARS`)
   to use another one.
 
@@ -173,14 +181,15 @@ The Accounts tab groups their balances by currency or by liquidity.
 ### Base movements and internal movements
 
 A base movement is a dict (`description` and optional fixed `debit`/`credit` accounts) or just
-its description. A side set to `INVESTMENT` or `DEBT` (reserved names) takes any investment or
-debt account instead of a fixed one, and the New movement form only offers those there. The
+its description. A side set to `INVESTMENT`, `DEBT` or `CREDIT CARD` (reserved names) takes any
+investment, debt or credit card account instead of a fixed one, and the forms only offer those there. The
 Accounts tab marks these accounts in its Special column.
 
 The top-level `internal` key mirrors the rest of the file: result types, sharing their ids with
 the other ones, next to a `transfer` section. Its base movements are reserved for pledger
-itself. They can't be picked for a new movement, their movements can't be deleted by hand,
-and its result types can't get new base movements.
+itself. They can't be picked for a new movement in the Ledger tab, their movements can't be deleted
+by hand (but those of the Investments, Debt and Credit Cards tabs, from there), and its result
+types can't get new base movements.
 
 > [!NOTE]
 > **Exception: investments.** The base movements of the internal `Invest` result type (capital
@@ -380,17 +389,38 @@ whoever is named in their `comment`: as a whole word, ignoring case, the earlies
 and the longest one if several start there. A credit is more that we owe them, and a debit is
 less.
 
-The **debt movements**, the non-internal transfers with a `DEBT` side or a fixed debt account,
-are added from the Debt tab (or `/api/debt/movements`), not the Ledger one. Its form asks who
-the movement is about, and names them first in the comment: people and services, never a
-company, whose debt comes from the salaries of the Work tab (it is still listed as usual). They are still deleted from the
-Ledger tab.
+The **debt movements** are those of four internal transfers, which the Debt tab needs under
+`transfer` in the `internal` section:
+
+```yaml
+internal:
+  transfer:
+    Debt - Incurred:   # we owe more
+      description: Debt incurred by oneself
+      credit: DEBT
+    Debt - Paid:       # we owe less
+      description: Debt paid by oneself
+      debit: DEBT
+    Loan - Given:      # we are owed more
+      description: Loan given to another person
+      debit: DEBT
+    Loan - Collected:  # we are owed less
+      description: Loan repaid by another person
+      credit: DEBT
+```
+
+They are added, edited and deleted from the Debt tab only (or `/api/debt/movements`), picking one
+of them in its two pairs of buttons (Debt: Incurred or Paid; Loan: Given or Collected). Its form
+asks who the movement is about, and names them first in the comment: people and services, never
+a company, whose debt comes from the salaries of the Work tab (it is still listed as usual). The
+Ledger tab shows them with a 🟡 linking there.
 
 Like Accounts, the Debt tab shows everyone as of the end of the month picked. It lists people,
 services and companies apart, and the movements naming no one as unassigned. It alerts when
 there is unassigned debt (listing it by comment) and when anyone is in the opposite role to the
 expected one. It also lists the movements of the debt accounts in the month picked, the initial
-ones included, with whoever each one names.
+ones included, with whoever each one names, and the **Who** filter shows only the movements of
+one of them (or of no one).
 
 ### Credit cards
 
@@ -405,9 +435,20 @@ Vi:
   initial_amount: 57236.80
 ```
 
-The **card payments**, the non-internal transfers with a fixed credit card debit (e.g. `Card
-payment`, debiting `Vi`), are added from the Credit Cards tab (or `/api/credit-cards/payments`),
-not the Ledger one. They are still deleted from the Ledger tab.
+The **card payments** are those of an internal transfer, which the Credit Cards tab needs under
+`transfer` in the `internal` section:
+
+```yaml
+internal:
+  transfer:
+    Credit card payment:
+      description: Payment of a credit card balance
+      debit: CREDIT CARD
+```
+
+They are added, edited and deleted from the Credit Cards tab only (or
+`/api/credit-cards/payments`), picking the card paid and the account paying it. The Ledger tab
+shows them with a 🔴 linking there. The **Credit card** filter shows only the movements of one card.
 
 The Credit Cards tab warns about the cards with a negative balance (more paid than charged),
 which is rare and may be an error. It also charts what was charged to them in each month (their

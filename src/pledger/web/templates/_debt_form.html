@@ -1,4 +1,7 @@
-<form id="debt-form" class="stack" hx-post="/debt/movements" hx-swap="outerHTML">
+{% from "_edit.html" import form_head %}
+{# The debt movement form: a new one, or with `editing` one of the ledger CSV. #}
+<form id="debt-form" class="stack" hx-post="{{ '/debt/movements/%d/edit' % editing.index if editing else '/debt/movements' }}" hx-swap="outerHTML">
+  {{ form_head("debt movement", editing, "/form/debt-movement", "debt-form") }}
   {% if error %}<p class="msg error">{{ error }}</p>{% endif %}
   {% if success %}<p class="msg success">{{ success }}</p>{% endif %}
   {% if bases %}
@@ -6,11 +9,21 @@
     <input type="date" name="move_date" value="{{ values.move_date }}" required data-future-warning>
     <span class="hint warn" hidden>⚠️ This date is in the future.</span>
   </label>
-  <label>Base movement
-    <select name="base_movement" hx-get="/form/accounts" hx-target="#debt-account-fields" hx-swap="innerHTML">
-      {% for name in bases %}<option {% if name == base_movement %}selected{% endif %}>{{ name }}</option>{% endfor %}
-    </select>
-  </label>
+  {# The debt base movements (see views.DEBT_PAIRS), as one radio group of two pairs of buttons #}
+  <div class="field" role="radiogroup" aria-label="Base movement">
+    {% for pair in pairs %}
+    <span class="field-label">{{ pair.title }}</span>
+    <div class="segmented types">
+      {% for name, label in pair.buttons.items() %}
+      <label class="{{ pair.color }}" title="{{ name }}">
+        <input type="radio" name="base_movement" value="{{ name }}" {% if name == base_movement %}checked{% endif %}
+          hx-get="/form/accounts" hx-target="#debt-account-fields" hx-swap="innerHTML">
+        {{ label }}
+      </label>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </div>
   <div id="debt-account-fields">{% include "_account_fields.html" %}</div>
   <label>Who
     <select name="who" required>
@@ -33,9 +46,10 @@
   </label>
   <p class="muted small">The comment names who it is about first, so their debt adds it. The debt with companies
     comes from the salaries of the <a href="/work">Work</a> tab.</p>
-  <button type="submit">Add debt movement</button>
-  {% else %}
-  <p class="muted">No debt base movements yet: add a transfer with a debt side (any debt account or a fixed one) in the
-    <a href="/results">Results</a> tab.</p>
+  <button type="submit">{{ "Save changes" if editing else "Add debt movement" }}</button>
+  {% endif %}
+  {% if missing %}
+  <p class="msg warn small">The Debt tab needs these base movements, under <code>transfer</code> in the
+    <code>internal</code> section of the base movements YAML: {{ missing | join(", ") }}.</p>
   {% endif %}
 </form>

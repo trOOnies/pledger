@@ -20,11 +20,19 @@ from pledger.web.routers import (
     movements,
     pages,
     result_types,
+    server,
     summary,
     work,
 )
 from pledger.web.store import LedgerDataError, LedgerStore, Settings
 from pledger.web.templating import HERE, templates
+
+
+async def content_language(request: Request, call_next):
+    """Every response is in English, whatever the language of the names and comments in the data."""
+    response = await call_next(request)
+    response.headers.setdefault("Content-Language", "en")
+    return response
 
 
 async def ledger_data_error(request: Request, exc: LedgerDataError):
@@ -51,6 +59,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.store = LedgerStore(settings or Settings.from_env())
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     app.add_exception_handler(LedgerDataError, ledger_data_error)
+    app.middleware("http")(content_language)
 
     # HTML
     app.include_router(pages.router)
@@ -66,6 +75,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(credit_cards.router)
     app.include_router(summary.router)
     app.include_router(work.router)
+    app.include_router(server.router)
     return app
 
 

@@ -1,4 +1,4 @@
-{% from "_bars.html" import bars with context %}
+{% from "_bars.html" import bars, expand_all with context %}
 {% from "_account_movements.html" import account_movements with context %}
 <div class="view">
   {% if unassigned_accounts %}
@@ -36,7 +36,10 @@
   </div>
 
   <section class="panel">
-    <h2>Who <small>by people, services and companies{% if month %}, as of end of {{ month }}{% endif %}</small></h2>
+    <div class="panel-head">
+      <h2>Who <small>by people, services and companies{% if month %}, as of end of {{ month }}{% endif %}</small></h2>
+      {{ expand_all("debt", open=True) }}
+    </div>
     <div class="composition-pair">
       {{ bars("We owe", creditors, "liability", "We owe no one.", open=True) }}
       {{ bars("Owed to us", debtors, "asset", "No one owes us.", open=True) }}
@@ -92,5 +95,18 @@
     </table>
   </div>
 
-  {{ account_movements(movements, "debt-movements", ("in " ~ month) if month else "all time", who=True, account=multiple_accounts, added_here="the transfers of the debt accounts") }}
+  <form id="who-filter" class="filters" hx-get="/debt" hx-target="#debt-view" hx-include="#filters" hx-push-url="true" hx-trigger="change">
+    <label>Who
+      <select name="who">
+        <option value="">Everyone</option>
+        {% for kind, names in who_options.items() %}
+        <optgroup label="{{ kind }}">
+          {% for name in names %}<option {% if name == who %}selected{% endif %}>{{ name }}</option>{% endfor %}
+        </optgroup>
+        {% endfor %}
+        <option value="-" {% if who == "-" %}selected{% endif %}>No one (unassigned)</option>
+      </select>
+    </label>
+  </form>
+  {{ account_movements(movements, "debt-movements", ("in " ~ month) if month else "all time", who=True, account=multiple_accounts, added_here="the debt movements", edit="/debt/movements/%d/edit", delete="/debt/movements/%d/delete", form_id="debt-form") }}
 </div>

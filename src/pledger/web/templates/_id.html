@@ -1,9 +1,10 @@
 {# The ID column of a table of movements, the same in every tab (see store.ID_COLUMN). #}
 {% macro id_header() %}<th title="Given by pledger itself; it never changes">ID</th>{% endmacro %}
 
-{% macro id_cell(id) %}
+{# With a `link`, the ID links to the same movement (or the row it comes from) in another tab. #}
+{% macro id_cell(id, link=none) %}
 {% if id %}
-<td class="nowrap muted small" data-sort="{{ id }}">{{ id }}</td>
+<td class="nowrap muted small" data-sort="{{ id }}">{% if link %}<a class="id-link" href="{{ link }}" title="Go to this movement in its other tab">{{ id }}</a>{% else %}{{ id }}{% endif %}</td>
 {% else %}
 <td class="muted small" title="Added to the CSV while pledger runs: it gets its ID when pledger restarts or adds a movement to that CSV">-</td>
 {% endif %}

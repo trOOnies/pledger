@@ -29,6 +29,7 @@ from pledger.web.views import (
     build_results,
     build_view,
     build_work,
+    invest_filter,
     months_of,
     setup_context,
 )
@@ -62,12 +63,12 @@ def accounts(request: Request, store: StoreDep, month: str | None = None):
 
 
 @router.get("/investments")
-def investments(request: Request, store: StoreDep):
+def investments(request: Request, store: StoreDep, investment: str = ""):
     snapshot = store.load()
     context = {
         **build_investments(snapshot),
         "settings": store.settings,
-        "movements": build_invest_movements(snapshot),
+        **invest_filter(build_invest_movements(snapshot), investment),
         "invest_form": (
             render_invest_form(request, snapshot, {}).body.decode()
             if snapshot.invest_base_movements() else None
@@ -78,10 +79,10 @@ def investments(request: Request, store: StoreDep):
 
 
 @router.get("/debt")
-def debt(request: Request, store: StoreDep, month: str | None = None):
+def debt(request: Request, store: StoreDep, month: str | None = None, who: str = ""):
     snapshot = store.load()
     month = remembered_month(request, month, months_of(snapshot))
-    context = {**build_debts(snapshot, month), "settings": store.settings}
+    context = {**build_debts(snapshot, month, who), "settings": store.settings}
     if is_partial(request):
         return remember_month(templates.TemplateResponse(request, "_debt.html", context), month)
     context["debt_form"] = render_debt_form(request, snapshot, {}).body.decode()
@@ -89,10 +90,10 @@ def debt(request: Request, store: StoreDep, month: str | None = None):
 
 
 @router.get("/credit-cards")
-def credit_cards(request: Request, store: StoreDep, month: str | None = None):
+def credit_cards(request: Request, store: StoreDep, month: str | None = None, card: str = ""):
     snapshot = store.load()
     month = remembered_month(request, month, months_of(snapshot))
-    context = {**build_credit_cards(snapshot, month), "settings": store.settings}
+    context = {**build_credit_cards(snapshot, month, card), "settings": store.settings}
     if is_partial(request):
         return remember_month(templates.TemplateResponse(request, "_credit_cards.html", context), month)
     context["card_payment_form"] = render_card_payment_form(request, snapshot, {}).body.decode()

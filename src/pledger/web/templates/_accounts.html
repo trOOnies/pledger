@@ -1,13 +1,16 @@
 {% from "_type_buttons.html" import type_buttons %}
-{% from "_bars.html" import bars with context %}
+{% from "_bars.html" import bars, expand_all with context %}
 {% from "_line.html" import ratio_panel with context %}
 {% set as_of = ("as of end of " ~ month) if month else "today" %}
 <section class="panel grouped-bars">
   <div class="panel-head">
     <h2>Assets &amp; liabilities <small>{{ as_of }}</small></h2>
-    <div class="segmented" role="radiogroup" aria-label="Group accounts by">
-      <label><input type="radio" name="accounts-group" value="currency" checked> By currency</label>
-      <label><input type="radio" name="accounts-group" value="liquidity"> By liquidity</label>
+    <div class="panel-tools">
+      {{ expand_all("accounts", open=True) }}
+      <div class="segmented" role="radiogroup" aria-label="Group accounts by">
+        <label><input type="radio" name="accounts-group" value="currency" checked> By currency</label>
+        <label><input type="radio" name="accounts-group" value="liquidity"> By liquidity</label>
+      </div>
     </div>
   </div>
   {% for group, comp in groupings.items() %}

@@ -10,7 +10,7 @@ import math
 import os
 import re
 import tempfile
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field, replace
 from functools import cached_property
 from pathlib import Path
@@ -28,13 +28,13 @@ from pledger.enums import (
 )
 from pledger.ledger import Ledger
 from pledger.models import (
+    CREDIT_CARD,
     DEBT,
     INFLATION_COLUMN,
     INVESTMENT,
     SPECIAL_SIDES,
     Account,
     Company,
-    CreditCardAccount,
     Currency,
     DebtAccount,
     Investment,
@@ -86,6 +86,19 @@ CONVERSION_COLUMNS = ["move_date", "base_movement", "acc_debit", BASE_AMOUNT, "a
 # Base movements of the conversions of each other currency: a transfer bringing it
 # in (debiting an account in it) or taking it out (crediting one), e.g. "USD - Bought".
 CONVERSION_BOUGHT, CONVERSION_SOLD = "{} - Bought", "{} - Sold"
+
+# The internal transfers of the debt accounts, added from the Debt tab, with the side
+# taking any debt account (DEBT): we owe more or less, or are owed more or less.
+DEBT_INCURRED, DEBT_PAID = "Debt - Incurred", "Debt - Paid"
+LOAN_GIVEN, LOAN_COLLECTED = "Loan - Given", "Loan - Collected"
+DEBT_BASES = {
+    DEBT_INCURRED: LedgerSide.CREDIT, DEBT_PAID: LedgerSide.DEBIT,
+    LOAN_GIVEN: LedgerSide.DEBIT, LOAN_COLLECTED: LedgerSide.CREDIT,
+}
+# The internal transfer paying a credit card, added from the Credit Cards tab, with its
+# debit taking any credit card account (CREDIT_CARD).
+CARD_PAYMENT = "Credit card payment"
+CARD_PAYMENT_BASES = {CARD_PAYMENT: LedgerSide.DEBIT}
 
 # Internal result type of the investment results. Its base movements, and the
 # internal transfers with an INVESTMENT side, are added and deleted from the
@@ -383,24 +396,31 @@ class Snapshot:
         }
 
     def debt_base_movements(self) -> dict[str, MovementBase]:
-        """
-        The transfers of the debt accounts, added from the Debt tab: those with a DEBT
-        side or a fixed debt account.
-        """
-        return {
-            n: b for n, b in self.manual_base_movements().items()
-            if b.move_type == MovementType.TRANSFER and (
-                DEBT in {b.debit_special, b.credit_special}
-                or any(isinstance(a, DebtAccount) for a in (b.acc_debit, b.acc_credit))
-            )
-        }
+        """The base movements of DEBT_BASES, added from the Debt tab, that are as expected (see tab_base_movements)."""
+        return self.tab_base_movements(DEBT_BASES, DEBT)[0]
 
     def card_payment_base_movements(self) -> dict[str, MovementBase]:
-        """The transfers paying a credit card, added from the Credit Cards tab: those with a fixed credit card debit."""
-        return {
-            n: b for n, b in self.manual_base_movements().items()
-            if b.move_type == MovementType.TRANSFER and isinstance(b.acc_debit, CreditCardAccount)
-        }
+        """The base movement of CARD_PAYMENT, added from the Credit Cards tab, if it is as expected (see tab_base_movements)."""
+        return self.tab_base_movements(CARD_PAYMENT_BASES, CREDIT_CARD)[0]
+
+    def tab_base_movements(
+        self, expected: dict[str, LedgerSide], special: str
+    ) -> tuple[dict[str, MovementBase], list[str]]:
+        """
+        The base movements of these names that are internal transfers with this
+        special side on their side, and the descriptions of the others, missing or not.
+        """
+        found, wrong = {}, []
+        for name, side in expected.items():
+            base = self.base_movements.get(name)
+            if (
+                base is not None and base.internal and base.move_type == MovementType.TRANSFER
+                and base.side(side) == special
+            ):
+                found[name] = base
+            else:
+                wrong.append(f"{name!r} (an internal transfer with {side.value}: {special})")
+        return found, wrong
 
     def ledger_base_movements(self) -> dict[str, MovementBase]:
         """The base movements that can be picked in the Ledger tab: the manual ones but those of other tabs."""
@@ -613,67 +633,15 @@ class LedgerStore:
         tab (see _check_tab). It gets the next id of its CSV (see _appended).
         """
         snapshot = self.load()
-        try:
-            dt.date.fromisoformat(move_date)
-        except ValueError:
-            raise ValueError(f"Invalid date: {move_date!r}") from None
-        if base_movement not in snapshot.base_movements:
-            raise ValueError(f"Unknown base movement: {base_movement!r}")
-        _check_invest(snapshot, base_movement, invest, "added")
-        _check_tab(snapshot, base_movement, invest, debt, card_payment)
-        has_details = str(investment).strip() or str(quantity).strip()
-        if has_details and (not invest or base_movement in INTEREST):
-            raise ValueError("Only movements of the investments have an investment and a quantity")
-        for name in (acc_debit, acc_credit):
-            if name not in snapshot.accounts:
-                raise ValueError(f"Unknown account: {name!r}")
-        value = _parse_amount(
-            amount, "amount",
-            "The amount cannot be negative; pick the opposite base movement or swap the accounts",
+        field, new_row = _movement_row(
+            snapshot, move_date, base_movement, acc_debit, acc_credit, amount, comment,
+            invest, investment, quantity, debt, card_payment,
         )
-        if acc_debit == acc_credit:
-            raise ValueError("Debit and credit accounts must be different")
-
-        base = snapshot.base_movements[base_movement]
-        try:
-            Movement(
-                move_date=move_date,
-                move_base=base,
-                input_acc_debit=snapshot.accounts[acc_debit],
-                input_acc_credit=snapshot.accounts[acc_credit],
-                amount=value,
-            )
-        except AssertionError as e:
-            raise ValueError(str(e)) from None
-        if invest:
-            _check_free_sides(base, snapshot.accounts[acc_debit], snapshot.accounts[acc_credit])
-
-        comment = comment.replace(";", ",").strip()
-        new_row = {
-            "move_date": move_date,
-            "base_movement": base_movement,
-            "acc_debit": acc_debit,
-            "acc_credit": acc_credit,
-            "amount": f"{value:,.2f}",
-            "comment": comment,
-        }
-        if not invest:
-            path, field, what, prefix = self.settings.ledger_path, "rows", "ledger", LEDGER_ID
-        elif base_movement in INTEREST:
-            path, field, what, prefix = self.settings.interest_path, "interest", "interest", INTEREST_ID
-            gain = base.move_type == MovementType.GAIN
-            new_row = {
-                "move_date": move_date,
-                INTEREST_ACCOUNT: acc_debit if gain else acc_credit,
-                "amount": f"{'' if gain else '-'}{value:,.2f}",
-                "comment": comment,
-            }
-        else:
-            path, field, what, prefix = (
-                self.settings.investment_movements_path, "investments", "investments", INVESTMENT_ID
-            )
-            name, units = _investment_details(base, investment, quantity)
-            new_row |= {INVESTMENT_COLUMN: name, QUANTITY_COLUMN: _quantity_text(units) if units else ""}
+        path, what, prefix = {
+            "rows": (self.settings.ledger_path, "ledger", LEDGER_ID),
+            "interest": (self.settings.interest_path, "interest", INTEREST_ID),
+            "investments": (self.settings.investment_movements_path, "investments", INVESTMENT_ID),
+        }[field]
         if path is None:
             raise ValueError(f"No {what} CSV is set")
         frame = getattr(snapshot, field)
@@ -1014,12 +982,125 @@ class LedgerStore:
         del csv_file.lines[csv_file.row_lines[index]]
         self._write_file(csv_file)
 
-    def delete(self, index: int, fingerprint: str | None = None) -> None:
+    def delete(
+        self, index: int, fingerprint: str | None = None, debt: bool = False, card_payment: bool = False
+    ) -> None:
         """
         Delete a row of the ledger CSV by position, optionally checking it is the
-        expected one. Never of an internal base movement.
+        expected one. Never of an internal base movement, but a debt movement with
+        `debt` (from the Debt tab) or a card payment with `card_payment` (from the
+        Credit Cards tab), which are only deleted from there (see _check_tab).
         """
-        self._delete_row("rows", index, fingerprint)
+        self._delete_row("rows", index, fingerprint, debt, card_payment)
+
+    def edit(
+        self,
+        index: int,
+        fingerprint: str | None,
+        move_date: str,
+        base_movement: str,
+        acc_debit: str,
+        acc_credit: str,
+        amount: str | float,
+        comment: str = "",
+        debt: bool = False,
+        card_payment: bool = False,
+    ) -> None:
+        """
+        Replace a row of the ledger CSV by position with a movement of the same tab,
+        optionally checking it is the expected one, like delete: of the Ledger tab, else
+        of the Debt tab with `debt` or of the Credit Cards tab with `card_payment` (see
+        _check_tab). The row keeps its id and any other column.
+        """
+        snapshot = self.load()
+        current = self.current_row(snapshot, "rows", index, fingerprint)
+        _check_invest(snapshot, current["base_movement"], False, "edited")
+        _check_tab(snapshot, current["base_movement"], False, debt, card_payment, "edited")
+        _, new_row = _movement_row(
+            snapshot, move_date, base_movement, acc_debit, acc_credit, amount, comment,
+            False, "", "", debt, card_payment,
+        )
+        _fit_row(new_row, snapshot.rows.columns, "ledger")  # every value has a column
+        replace(snapshot, rows=_with_row(snapshot.rows, index, new_row)).ledger().check_accounts()
+        self._replace_line(snapshot, "rows", index, new_row)
+
+    def edit_investment(
+        self,
+        source: str,
+        index: int,
+        fingerprint: str | None,
+        move_date: str,
+        base_movement: str,
+        acc_debit: str,
+        acc_credit: str,
+        amount: str | float,
+        comment: str = "",
+        investment: str = "",
+        quantity: str | float = "",
+    ) -> None:
+        """
+        Replace a row of the investments CSV, or of the interest CSV with `source`
+        "interest", by position with a movement of the Investments tab, checked like
+        add. It stays in its CSV, and keeps its id and any other column.
+        """
+        snapshot = self.load()
+        self.current_row(snapshot, source, index, fingerprint)
+        field, new_row = _movement_row(
+            snapshot, move_date, base_movement, acc_debit, acc_credit, amount, comment,
+            True, investment, quantity, False, False,
+        )
+        if field != source:
+            where = {"interest": "interest on money", "investments": "investments"}
+            raise ValueError(
+                f"A movement of the {where[source]} can't become one of the {where[field]}: "
+                "delete it and add it again instead"
+            )
+        frame = getattr(snapshot, field)
+        _fit_row(new_row, frame.columns, field)  # every value has a column
+        changed = replace(snapshot, **{field: _with_row(frame, index, new_row)})
+        changed.ledger().check_accounts()
+        changed.investment_accounts()  # e.g. not selling more than is held
+        if field == "investments":
+            _check_known_investment(snapshot, acc_debit, acc_credit, new_row[INVESTMENT_COLUMN])
+        self._replace_line(snapshot, field, index, new_row)
+
+    def current_row(self, snapshot: Snapshot, field: str, index: int, fingerprint: str | None):
+        """The row of the CSV of a Snapshot `field` at this position, if it is the expected one."""
+        rows = getattr(snapshot, field)
+        what, _, fingerprint_of = self._csv_of(field)
+        if not 0 <= index < len(rows):
+            raise StaleRowError(f"Row {index} of the {what} does not exist")
+        if fingerprint is not None and fingerprint_of(rows.iloc[index]) != fingerprint:
+            raise StaleRowError(f"The {what} changed since this page was loaded; reload and try again")
+        return rows.iloc[index]
+
+    def _csv_of(self, field: str) -> tuple[str, Path, Callable]:
+        """What the CSV of a Snapshot `field` holds, its path and how its rows are fingerprinted."""
+        s = self.settings
+        return {
+            "rows": ("ledger", s.ledger_path, row_fingerprint),
+            "investments": ("investments", s.investment_movements_path, row_fingerprint),
+            "interest": ("interest on money", s.interest_path, interest_fingerprint),
+            "conversions": ("conversions", s.conversions_path, conversion_fingerprint),
+        }[field]
+
+    def _replace_line(self, snapshot: Snapshot, field: str, index: int, new_row: dict) -> None:
+        """
+        Replace the values of `new_row` in the line of a row of the CSV of a Snapshot
+        `field`, keeping its id and other columns.
+        """
+        csv_file = self._read_file(len(getattr(snapshot, field)), self._csv_of(field)[1])
+        line = csv_file.row_lines[index]
+        header = next(csv.reader([csv_file.lines[0]], delimiter=";"))
+        fields = next(csv.reader([csv_file.lines[line]], delimiter=";"))
+        fields += [""] * (len(header) - len(fields))
+        for col, value in new_row.items():
+            if col in header and col != ID_COLUMN:
+                fields[header.index(col)] = value
+        buf = io.StringIO()
+        csv.writer(buf, delimiter=";", lineterminator="").writerow(fields)
+        csv_file.lines[line] = buf.getvalue()
+        self._write_file(csv_file)
 
     def delete_investment(self, index: int, fingerprint: str | None = None) -> None:
         """Delete a row of the investments CSV by position, like delete."""
@@ -1029,26 +1110,20 @@ class LedgerStore:
         """Delete a row of the interest CSV by position, like delete."""
         self._delete_row("interest", index, fingerprint)
 
-    def _delete_row(self, field: str, index: int, fingerprint: str | None) -> None:
+    def _delete_row(
+        self, field: str, index: int, fingerprint: str | None, debt: bool = False, card_payment: bool = False
+    ) -> None:
         """
         Delete a row by position from the CSV of a Snapshot `field` ("rows",
         "investments" or "interest"), optionally checking it is the expected one.
         """
         snapshot = self.load()
         rows = getattr(snapshot, field)
-        what, path, fingerprint_of = {
-            "rows": ("ledger", self.settings.ledger_path, row_fingerprint),
-            "investments": ("investments", self.settings.investment_movements_path, row_fingerprint),
-            "interest": ("interest on money", self.settings.interest_path, interest_fingerprint),
-        }[field]
-        if not 0 <= index < len(rows):
-            raise StaleRowError(f"Row {index} of the {what} does not exist")
-        if fingerprint is not None and fingerprint_of(rows.iloc[index]) != fingerprint:
-            raise StaleRowError(
-                f"The {what} changed since this page was loaded; reload and try again"
-            )
+        path = self._csv_of(field)[1]
+        self.current_row(snapshot, field, index, fingerprint)
         if field == "rows":
             _check_invest(snapshot, rows.iloc[index]["base_movement"], False, "deleted")
+            _check_tab(snapshot, rows.iloc[index]["base_movement"], False, debt, card_payment, "deleted")
         changed = replace(snapshot, **{field: rows.drop(index=rows.index[index])})
         changed.ledger().check_accounts()
         changed.investment_accounts()  # e.g. not deleting a purchase of something sold later
@@ -1078,34 +1153,7 @@ class LedgerStore:
         if path is None:
             raise ValueError("No conversions CSV is set")
         snapshot = self.load()
-        new_row = {col: "" for col in snapshot.conversions.columns} | {
-            "move_date": move_date,
-            "base_movement": base_movement,
-            "acc_debit": acc_debit,
-            "acc_credit": acc_credit,
-            BASE_AMOUNT: str(amount_base).strip(),
-            OTHER_AMOUNT: str(amount_other).strip(),
-        }
-        if acc_debit == acc_credit:
-            raise ValueError("Debit and credit accounts must be different")
-        if base_movement not in snapshot.conversion_base_movements():
-            names = sorted(snapshot.conversion_base_movements())
-            raise ValueError(
-                f"Conversions must be of {' or '.join(map(repr, names)) or 'a conversion base movement'}, "
-                f"not {base_movement!r}"
-            )
-        other, base_value, other_value = _check_conversion(snapshot, new_row)
-        expected = (CONVERSION_BOUGHT if other.name == acc_debit else CONVERSION_SOLD).format(other.currency.name)
-        if base_movement != expected:
-            raise ValueError(f"Moving {other.currency.name} {'into' if other.name == acc_debit else 'out of'} "
-                             f"{other.name} is a {expected!r} conversion, not a {base_movement!r} one")
-        if base_value == 0:
-            raise ValueError("The amounts of a conversion must be positive")
-        new_row[BASE_AMOUNT], new_row[OTHER_AMOUNT] = f"{base_value:,.2f}", f"{other_value:,.4f}"
-        if "comment" in new_row:
-            new_row["comment"] = comment.replace(";", ",").strip()
-        elif comment.strip():
-            raise ValueError("The conversions CSV has no 'comment' column")
+        new_row = _conversion_row(snapshot, move_date, base_movement, acc_debit, acc_credit, amount_base, amount_other, comment)
         conversions = concat([snapshot.conversions, DataFrame([new_row])], ignore_index=True)
         try:
             replace(snapshot, conversions=conversions).ledger().check_accounts()
@@ -1113,6 +1161,33 @@ class LedgerStore:
             raise ValueError(str(e)) from None
 
         self._write_file(self._appended(path, CONVERSION_ID, new_row, CONVERSION_COLUMNS))
+
+    def edit_conversion(
+        self,
+        index: int,
+        fingerprint: str | None,
+        move_date: str,
+        base_movement: str,
+        acc_debit: str,
+        acc_credit: str,
+        amount_base: str | float,
+        amount_other: str | float,
+        comment: str = "",
+    ) -> None:
+        """
+        Replace a row of the conversions CSV by position with a conversion checked like
+        add_conversion, optionally checking it is the expected one. It keeps its id.
+        """
+        snapshot = self.load()
+        self.current_row(snapshot, "conversions", index, fingerprint)
+        new_row = _conversion_row(snapshot, move_date, base_movement, acc_debit, acc_credit, amount_base, amount_other, comment)
+        new_row = {col: v for col, v in new_row.items() if col in CONVERSION_COLUMNS}  # keep the other columns
+        conversions = _with_row(snapshot.conversions, index, new_row)
+        try:
+            replace(snapshot, conversions=conversions).ledger().check_accounts()
+        except AssertionError as e:
+            raise ValueError(str(e)) from None
+        self._replace_line(snapshot, "conversions", index, new_row)
 
     def add_exchange(
         self,
@@ -1131,16 +1206,30 @@ class LedgerStore:
         base movement is the one of the other currency (see exchange_base_movement),
         which is returned.
         """
-        snapshot = self.load()
-        base_movement = exchange_base_movement(snapshot, sold, bought)
-        for name, currency, side in ((acc_from, sold, "from"), (acc_to, bought, "to")):
-            account = snapshot.accounts.get(name)
-            if account is None:
-                raise ValueError(f"Unknown account: {name!r}")
-            if account.currency.name != currency:
-                raise ValueError(f"The account {side} must be in {currency}, but {name} is in {account.currency.name}")
-        amounts = (amount_sold, amount_bought) if sold == snapshot.base_currency.name else (amount_bought, amount_sold)
-        self.add_conversion(move_date, base_movement, acc_to, acc_from, *amounts, comment)
+        base_movement, *args = _exchange_args(
+            self.load(), sold, bought, acc_from, acc_to, amount_sold, amount_bought
+        )
+        self.add_conversion(move_date, base_movement, *args, comment)
+        return base_movement
+
+    def edit_exchange(
+        self,
+        index: int,
+        fingerprint: str | None,
+        move_date: str,
+        sold: str,
+        bought: str,
+        acc_from: str,
+        acc_to: str,
+        amount_sold: str | float,
+        amount_bought: str | float,
+        comment: str = "",
+    ) -> str:
+        """Replace a row of the conversions CSV with a conversion like add_exchange, returning its base movement."""
+        base_movement, *args = _exchange_args(
+            self.load(), sold, bought, acc_from, acc_to, amount_sold, amount_bought
+        )
+        self.edit_conversion(index, fingerprint, move_date, base_movement, *args, comment)
         return base_movement
 
     def add_debt_movement(
@@ -1158,19 +1247,24 @@ class LedgerStore:
         its debt account but a company (their debt comes from the work history): its
         comment names them first (prefixed if it doesn't), so the Debt tab adds it to them.
         """
-        snapshot = self.load()
-        accounts = [snapshot.accounts.get(n) for n in (acc_debit, acc_credit)]
-        debts = [a for a in accounts if isinstance(a, DebtAccount)]
-        who, comment = who.strip(), comment.replace(";", ",").strip()
-        if not who:
-            raise ValueError("Pick who the debt movement is about")
-        if debts and not any(who in a.creditors for a in debts):
-            raise ValueError(f"{who!r} is not someone of the debt account {debts[0].name}")
-        if any(a.creditors[who].kind == CreditorKind.COMPANY for a in debts if who in a.creditors):
-            raise ValueError(f"{who!r} is a company: its debt comes from the salaries of the Work tab")
-        if not debts or debts[0].creditor_in(comment) != who:
-            comment = f"{who}: {comment}" if comment else who
+        comment = _debt_comment(self.load(), acc_debit, acc_credit, who, comment)
         self.add(move_date, base_movement, acc_debit, acc_credit, amount, comment, debt=True)
+
+    def edit_debt_movement(
+        self,
+        index: int,
+        fingerprint: str | None,
+        move_date: str,
+        base_movement: str,
+        acc_debit: str,
+        acc_credit: str,
+        amount: str | float,
+        who: str,
+        comment: str = "",
+    ) -> None:
+        """Replace a debt movement of the ledger CSV by position, about `who` like add_debt_movement."""
+        comment = _debt_comment(self.load(), acc_debit, acc_credit, who, comment)
+        self.edit(index, fingerprint, move_date, base_movement, acc_debit, acc_credit, amount, comment, debt=True)
 
     def delete_conversion(self, index: int, fingerprint: str | None = None) -> None:
         """Delete a row of the conversions CSV by position, optionally checking it is the expected one."""
@@ -1262,18 +1356,189 @@ def _work_month(row, deductions: list[str]) -> WorkMonth:
     )
 
 
+def _with_row(rows: DataFrame, index: int, new_row: dict) -> DataFrame:
+    """These rows with the values of `new_row` in the one at this position, but its id."""
+    changed = rows.copy()
+    for col, value in new_row.items():
+        if col in changed.columns and col != ID_COLUMN:
+            changed.loc[rows.index[index], col] = value
+    return changed
+
+
+def _conversion_row(
+    snapshot: Snapshot,
+    move_date: str,
+    base_movement: str,
+    acc_debit: str,
+    acc_credit: str,
+    amount_base: str | float,
+    amount_other: str | float,
+    comment: str,
+) -> dict:
+    """A conversions CSV row, validated (see _check_conversion) but against the balances."""
+    new_row = {col: "" for col in snapshot.conversions.columns} | {
+        "move_date": move_date,
+        "base_movement": base_movement,
+        "acc_debit": acc_debit,
+        "acc_credit": acc_credit,
+        BASE_AMOUNT: str(amount_base).strip(),
+        OTHER_AMOUNT: str(amount_other).strip(),
+    }
+    if acc_debit == acc_credit:
+        raise ValueError("Debit and credit accounts must be different")
+    if base_movement not in snapshot.conversion_base_movements():
+        names = sorted(snapshot.conversion_base_movements())
+        raise ValueError(
+            f"Conversions must be of {' or '.join(map(repr, names)) or 'a conversion base movement'}, "
+            f"not {base_movement!r}"
+        )
+    other, base_value, other_value = _check_conversion(snapshot, new_row)
+    expected = (CONVERSION_BOUGHT if other.name == acc_debit else CONVERSION_SOLD).format(other.currency.name)
+    if base_movement != expected:
+        raise ValueError(f"Moving {other.currency.name} {'into' if other.name == acc_debit else 'out of'} "
+                         f"{other.name} is a {expected!r} conversion, not a {base_movement!r} one")
+    if base_value == 0:
+        raise ValueError("The amounts of a conversion must be positive")
+    new_row[BASE_AMOUNT], new_row[OTHER_AMOUNT] = f"{base_value:,.2f}", f"{other_value:,.4f}"
+    if "comment" in new_row:
+        new_row["comment"] = comment.replace(";", ",").strip()
+    elif comment.strip():
+        raise ValueError("The conversions CSV has no 'comment' column")
+    return new_row
+
+
+def _exchange_args(
+    snapshot: Snapshot, sold: str, bought: str, acc_from: str, acc_to: str,
+    amount_sold: str | float, amount_bought: str | float,
+) -> tuple[str, str, str, str | float, str | float]:
+    """
+    The base movement, debit and credit accounts and amounts in the base and the other
+    currency of a conversion selling one currency for another (see LedgerStore.add_exchange).
+    """
+    base_movement = exchange_base_movement(snapshot, sold, bought)
+    for name, currency, side in ((acc_from, sold, "from"), (acc_to, bought, "to")):
+        account = snapshot.accounts.get(name)
+        if account is None:
+            raise ValueError(f"Unknown account: {name!r}")
+        if account.currency.name != currency:
+            raise ValueError(f"The account {side} must be in {currency}, but {name} is in {account.currency.name}")
+    amounts = (amount_sold, amount_bought) if sold == snapshot.base_currency.name else (amount_bought, amount_sold)
+    return base_movement, acc_to, acc_from, *amounts
+
+
+def _debt_comment(snapshot: Snapshot, acc_debit: str, acc_credit: str, who: str, comment: str) -> str:
+    """
+    The comment of a debt movement about `who` (see LedgerStore.add_debt_movement), naming
+    them first.
+    """
+    accounts = [snapshot.accounts.get(n) for n in (acc_debit, acc_credit)]
+    debts = [a for a in accounts if isinstance(a, DebtAccount)]
+    who, comment = who.strip(), comment.replace(";", ",").strip()
+    if not who:
+        raise ValueError("Pick who the debt movement is about")
+    if debts and not any(who in a.creditors for a in debts):
+        raise ValueError(f"{who!r} is not someone of the debt account {debts[0].name}")
+    if any(a.creditors[who].kind == CreditorKind.COMPANY for a in debts if who in a.creditors):
+        raise ValueError(f"{who!r} is a company: its debt comes from the salaries of the Work tab")
+    if not debts or debts[0].creditor_in(comment) != who:
+        comment = f"{who}: {comment}" if comment else who
+    return comment
+
+
+def _movement_row(
+    snapshot: Snapshot,
+    move_date: str,
+    base_movement: str,
+    acc_debit: str,
+    acc_credit: str,
+    amount: str | float,
+    comment: str,
+    invest: bool,
+    investment: str,
+    quantity: str | float,
+    debt: bool,
+    card_payment: bool,
+) -> tuple[str, dict]:
+    """
+    Validate a movement (see LedgerStore.add) and give the Snapshot field of the CSV
+    it goes to ("rows", "interest" or "investments") with its row there.
+    """
+    try:
+        dt.date.fromisoformat(move_date)
+    except ValueError:
+        raise ValueError(f"Invalid date: {move_date!r}") from None
+    if base_movement not in snapshot.base_movements:
+        raise ValueError(f"Unknown base movement: {base_movement!r}")
+    _check_invest(snapshot, base_movement, invest, "added")
+    _check_tab(snapshot, base_movement, invest, debt, card_payment)
+    has_details = str(investment).strip() or str(quantity).strip()
+    if has_details and (not invest or base_movement in INTEREST):
+        raise ValueError("Only movements of the investments have an investment and a quantity")
+    for name in (acc_debit, acc_credit):
+        if name not in snapshot.accounts:
+            raise ValueError(f"Unknown account: {name!r}")
+    value = _parse_amount(
+        amount, "amount",
+        "The amount cannot be negative; pick the opposite base movement or swap the accounts",
+    )
+    if acc_debit == acc_credit:
+        raise ValueError("Debit and credit accounts must be different")
+
+    base = snapshot.base_movements[base_movement]
+    try:
+        Movement(
+            move_date=move_date,
+            move_base=base,
+            input_acc_debit=snapshot.accounts[acc_debit],
+            input_acc_credit=snapshot.accounts[acc_credit],
+            amount=value,
+        )
+    except AssertionError as e:
+        raise ValueError(str(e)) from None
+    if invest:
+        _check_free_sides(base, snapshot.accounts[acc_debit], snapshot.accounts[acc_credit])
+
+    comment = comment.replace(";", ",").strip()
+    new_row = {
+        "move_date": move_date,
+        "base_movement": base_movement,
+        "acc_debit": acc_debit,
+        "acc_credit": acc_credit,
+        "amount": f"{value:,.2f}",
+        "comment": comment,
+    }
+    if not invest:
+        field = "rows"
+    elif base_movement in INTEREST:
+        field = "interest"
+        gain = base.move_type == MovementType.GAIN
+        new_row = {
+            "move_date": move_date,
+            INTEREST_ACCOUNT: acc_debit if gain else acc_credit,
+            "amount": f"{'' if gain else '-'}{value:,.2f}",
+            "comment": comment,
+        }
+    else:
+        field = "investments"
+        name, units = _investment_details(base, investment, quantity)
+        new_row |= {INVESTMENT_COLUMN: name, QUANTITY_COLUMN: _quantity_text(units) if units else ""}
+    return field, new_row
+
+
 def _check_invest(snapshot: Snapshot, base_name: str, invest: bool, action: str) -> None:
     """
     Movements of the investment base movements are only added and deleted from the
-    Investments tab (`invest`), those of other internal ones never by hand, and the
-    GENERATED ones are never stored.
+    Investments tab (`invest`), those of other internal ones never by hand but the
+    ones of the Debt and Credit Cards tabs (see _check_tab), and the GENERATED ones
+    are never stored.
     """
     is_invest = base_name in snapshot.invest_base_movements()
     if invest and not is_invest:
         raise ValueError(f"Base movement {base_name!r} is not an investment base movement")
     if is_invest and not invest:
         raise ValueError(f"Movements of the base movement {base_name!r} are {action} from the Investments tab")
-    if snapshot.base_movements[base_name].internal and not is_invest:
+    tab_bases = snapshot.debt_base_movements().keys() | snapshot.card_payment_base_movements().keys()
+    if snapshot.base_movements[base_name].internal and not is_invest and base_name not in tab_bases:
         raise ValueError(f"Base movement {base_name!r} is internal and its movements cannot be {action} by hand")
     if base_name in GENERATED:
         raise ValueError(f"The movements of the base movement {base_name!r} are generated by pledger")
@@ -1294,12 +1559,14 @@ def _check_known_investment(snapshot: Snapshot, acc_debit: str, acc_credit: str,
         raise ValueError(f"{name!r} is not an investment of {account.name}: add it as a new investment first")
 
 
-def _check_tab(snapshot: Snapshot, base_name: str, invest: bool, debt: bool, card_payment: bool) -> None:
+def _check_tab(
+    snapshot: Snapshot, base_name: str, invest: bool, debt: bool, card_payment: bool, action: str = "added"
+) -> None:
     """
-    Each tab adds the movements of its own base movements: the conversions are only
-    added from the Currencies tab, the debt movements from the Debt tab, the card
-    payments from the Credit Cards tab, and all the others from the Ledger tab (or
-    the Investments tab, see _check_invest).
+    Each tab adds (or edits, or deletes: the `action`) the movements of its own base
+    movements: the conversions are only added from the Currencies tab, the debt
+    movements from the Debt tab, the card payments from the Credit Cards tab, and all
+    the others from the Ledger tab (or the Investments tab, see _check_invest).
     """
     if base_name in snapshot.conversion_base_names:
         raise ValueError(f"The conversions ({base_name!r}) are added from the Currencies tab")
@@ -1310,7 +1577,7 @@ def _check_tab(snapshot: Snapshot, base_name: str, invest: bool, debt: bool, car
         if wanted and base_name not in bases:
             raise ValueError(f"Base movement {base_name!r} is not a {what} base movement")
         if base_name in bases and not wanted:
-            raise ValueError(f"Movements of the base movement {base_name!r} are added from the {tab} tab")
+            raise ValueError(f"Movements of the base movement {base_name!r} are {action} from the {tab} tab")
     if invest and (debt or card_payment):
         raise ValueError("A movement of the investments is not a debt movement or a card payment")
 

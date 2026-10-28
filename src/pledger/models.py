@@ -33,10 +33,11 @@ def _load_yaml(path: str) -> dict:
     return data
 
 
-# A base movement side set to one of these (reserved names) takes any investment
-# or debt account instead of a fixed one. See SPECIAL_SIDES.
+# A base movement side set to one of these (reserved names) takes any investment,
+# debt or credit card account instead of a fixed one. See SPECIAL_SIDES.
 INVESTMENT = "INVESTMENT"
 DEBT = "DEBT"
+CREDIT_CARD = "CREDIT CARD"
 
 INFLATION_COLUMN = "monthly_inflation"  # of the base currency, in base_currency.csv
 CPI_BASE = 100.0  # the CPI at the end of the day before the first month of base_currency.csv
@@ -60,7 +61,7 @@ def _coalesce_mt_account(
         accounts["Eq"]
         if move_type == equity_side
         else accounts[base_move_d[ls_value]]
-        if base_move_d.get(ls_value) not in {None, INVESTMENT, DEBT}
+        if base_move_d.get(ls_value) not in {None, INVESTMENT, DEBT, CREDIT_CARD}
         else None
     )
     if (move_type == MovementType.TRANSFER) and (acc is not None):
@@ -75,10 +76,10 @@ def _coalesce_mt_account(
 
 def _special_side(acc: Account | None, value: str | None) -> str | None:
     """
-    INVESTMENT or DEBT if a side is set to it. Ignored on the equity side of
-    gains and losses, like fixed accounts.
+    INVESTMENT, DEBT or CREDIT_CARD if a side is set to it. Ignored on the equity
+    side of gains and losses, like fixed accounts.
     """
-    return value if acc is None and value in {INVESTMENT, DEBT} else None
+    return value if acc is None and value in {INVESTMENT, DEBT, CREDIT_CARD} else None
 
 
 # * ---------------------------------------
@@ -400,7 +401,7 @@ class Account:
             for name, acc_d in at_accounts.items():
                 if name in accounts:
                     raise ValueError(f"Duplicated account name: {name!r}")
-                if name in {INVESTMENT, DEBT}:
+                if name in {INVESTMENT, DEBT, CREDIT_CARD}:
                     raise ValueError(f"{name!r} is reserved and cannot be an account name")
                 fields = {
                     "name": name,
@@ -720,12 +721,14 @@ class DebtAccount(Account):
 
 
 # The kind of account each special side takes, with its display name.
-SPECIAL_SIDES: dict[str, type[Account]] = {INVESTMENT: InvestmentAccount, DEBT: DebtAccount}
-SPECIAL_LABELS = {INVESTMENT: "Investment", DEBT: "Debt"}
+SPECIAL_SIDES: dict[str, type[Account]] = {
+    INVESTMENT: InvestmentAccount, DEBT: DebtAccount, CREDIT_CARD: CreditCardAccount,
+}
+SPECIAL_LABELS = {INVESTMENT: "Investment", DEBT: "Debt", CREDIT_CARD: "Credit card"}
 
 
 def special_of(account: Account) -> str | None:
-    """INVESTMENT or DEBT for investment and debt accounts, else None."""
+    """INVESTMENT, DEBT or CREDIT_CARD for investment, debt and credit card accounts, else None."""
     return next((s for s, cls in SPECIAL_SIDES.items() if isinstance(account, cls)), None)
 
 
@@ -754,8 +757,8 @@ class MovementBase:
     acc_credit: Account | None
     result_type: ResultType | None
     internal: bool = False  # set by pledger itself: cannot be picked or deleted by hand
-    debit_special: str | None = None  # INVESTMENT or DEBT: the debit side takes any such account
-    credit_special: str | None = None  # INVESTMENT or DEBT: the credit side takes any such account
+    debit_special: str | None = None  # INVESTMENT, DEBT or CREDIT_CARD: the debit side takes any such account
+    credit_special: str | None = None  # INVESTMENT, DEBT or CREDIT_CARD: the credit side takes any such account
 
     def __post_init__(self):
         self.move_type = MovementType.from_accounts(

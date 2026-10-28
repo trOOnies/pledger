@@ -19,6 +19,7 @@ from pledger.web.views import (
     conversion_fields,
     debt_form_fields,
     invest_fields,
+    ledger_link,
     new_investment_fields,
     row_anchor,
 )
@@ -73,6 +74,7 @@ def static_version(path: str) -> int:
 templates.env.globals["static_version"] = static_version
 templates.env.globals["movement_sources"] = MOVEMENT_SOURCES
 templates.env.globals["row_anchor"] = row_anchor
+templates.env.globals["ledger_link"] = ledger_link
 
 
 def is_partial(request: Request) -> bool:
@@ -188,7 +190,7 @@ def render_debt_form(request: Request, snapshot: Snapshot, values: dict, **extra
 def render_card_payment_form(request: Request, snapshot: Snapshot, values: dict, **extra):
     """The new card payment form of the Credit Cards tab, for the card payment base movements."""
     values.setdefault("move_date", dt.date.today().isoformat())
-    fields = card_payment_fields(snapshot, values.get("base_movement", ""))
+    fields = card_payment_fields(snapshot)
     values["base_movement"] = fields["base_movement"]
     return templates.TemplateResponse(
         request,
