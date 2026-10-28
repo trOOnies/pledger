@@ -343,10 +343,17 @@ class TestSetupStore:
         out = _insert_yaml_entry(text, ("liability",), "Cc", {"description": ""})
         assert out == "asset:\n  Ca:\n    description: Cash\nliability:\n  Cc:\n    description: ''\n"
 
+    @pytest.mark.parametrize("empty", ["null", "~", "{}", "null  # none yet"])
+    def test_insert_yaml_entry_into_an_empty_section(self, empty):
+        text = f"internal:\n  liability:\n    De:\n      description: Debts\nliability: {empty}\n"
+        out = _insert_yaml_entry(text, ("liability",), "Lo", {"description": "Loan"})
+        comment = " # none yet" if "#" in empty else ""
+        assert out == f"internal:\n  liability:\n    De:\n      description: Debts\nliability:{comment}\n  Lo:\n    description: Loan\n"
+
     def test_insert_yaml_entry_keeps_crlf_and_indent(self):
-        text = "gain:\r\n    A:\r\n        description: a\r\nloss: {}\r\n"
+        text = "gain:\r\n    A:\r\n        description: a\r\nloss: {X: x}\r\n"
         out = _insert_yaml_entry(text, ("gain",), "B", {"description": "b"})
-        assert out == "gain:\r\n    A:\r\n        description: a\r\n    B:\r\n        description: b\r\nloss: {}\r\n"
+        assert out == "gain:\r\n    A:\r\n        description: a\r\n    B:\r\n        description: b\r\nloss: {X: x}\r\n"
         with pytest.raises(ValueError, match="edit the file by hand"):
             _insert_yaml_entry(text, ("loss",), "C", {"description": "c"})
 

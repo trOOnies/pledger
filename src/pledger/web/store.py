@@ -2395,8 +2395,12 @@ def _insert_yaml_entry(text: str, section: tuple[str, ...], name: str, fields: d
         if child_indent is None:
             child_indent = head_indent + (step or 2) if head is not None else 0
 
-        header = re.compile(rf"^ {{{child_indent}}}{re.escape(key)}:\s*(#.*)?$")
+        # An empty section (null, ~ or {}) is a header too, emptied of its value
+        header = re.compile(rf"^( {{{child_indent}}}{re.escape(key)}:)\s*(?:null|~|\{{\}})?\s*(#.*)?$")
         found = next((i for i in children if header.match(lines[i])), None)
+        if found is not None:
+            match = header.match(lines[found])
+            lines[found] = match[1] + (f" {match[2]}" if match[2] else "")
         if found is None:
             if any(lines[i].lstrip().startswith(f"{key}:") and indent_of(lines[i]) == child_indent
                    for i in children):
