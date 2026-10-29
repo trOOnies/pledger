@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 import yaml
-from conftest import INTERNAL_ACCOUNTS_YAML
+from conftest import INITIAL_YAML, INTERNAL_ACCOUNTS_YAML
 from fastapi.testclient import TestClient
 
 from pledger.enums import AccountCheck, InvestmentType
@@ -56,13 +56,6 @@ from pledger.web.views import (
 
 HTMX = {"HX-Request": "true"}
 
-# The internal base movements required to load the ledger: an empty `transfer` section
-# and the `result_types` one, with Init last (see with_internal)
-INITIAL_YAML = (
-    "internal:\n  transfer:\n  result_types:\n    Init:\n      id: 3\n      long_name: Initial\n      description: d\n"
-    "      base_movements:\n        gain:\n          Initial (G): Initial balance\n"
-    "        loss:\n          Initial (L): Initial balance\n"
-)
 # The internal base movements of the results of the accounts in other currencies,
 # required once one is revalued; appended to the internal `result_types` of INITIAL_YAML
 RESULT_YAML = (
@@ -78,17 +71,6 @@ def with_internal(path: Path, result_types: str = "", transfers: str = "") -> No
     text = path.read_text()
     text = text.replace("  result_types:\n", "  result_types:\n" + result_types, 1)
     path.write_text(text.replace("  transfer:\n", "  transfer:\n" + transfers, 1))
-
-
-@pytest.fixture
-def settings(accounts_yaml, base_movements_yaml, ledger_csv, currencies_yaml) -> Settings:
-    # At the top, so that later appends extend the `transfer` section
-    path = Path(base_movements_yaml)
-    path.write_text(INITIAL_YAML + path.read_text())
-    return Settings(
-        Path(accounts_yaml), Path(base_movements_yaml), Path(ledger_csv), Path(currencies_yaml),
-        allowed_hosts=(*LOCAL_HOSTS, "testserver"),  # the host of the TestClient
-    )
 
 
 PRICES_HEADER = "date;account;investment;price\n"
@@ -107,11 +89,6 @@ def revalued(settings) -> Settings:
     path = settings.base_movements_path
     path.write_text(path.read_text().replace(INITIAL_YAML, INITIAL_YAML + RESULT_YAML, 1))
     return settings
-
-
-@pytest.fixture
-def client(settings) -> TestClient:
-    return TestClient(create_app(settings))
 
 
 def movement_ids(text: str) -> list[str]:

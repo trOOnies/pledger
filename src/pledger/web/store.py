@@ -206,6 +206,7 @@ class Settings:
     interest_path: Path | None = None  # missing: no interest on money yet (created when adding some)
     prices_path: Path | None = None  # missing: no prices of the investments yet (created when adding one)
     services_path: Path | None = None  # missing: no monthly values of the services yet (created when adding one)
+    recurring_path: Path | None = None  # None or missing: no recurring movements
     currency: str = "$"
     allowed_hosts: tuple[str, ...] | None = LOCAL_HOSTS  # None: any host
 
@@ -230,6 +231,7 @@ class Settings:
             interest_path=Path(os.environ.get("PLEDGER_INTEREST", "info/movements/interest.csv")),
             prices_path=Path(os.environ.get("PLEDGER_PRICES", "info/movements/prices.csv")),
             services_path=Path(os.environ.get("PLEDGER_SERVICES", "info/services.csv")),
+            recurring_path=Path(os.environ.get("PLEDGER_RECURRING", "info/recurring.yaml")),
             currency=os.environ.get("PLEDGER_CURRENCY", "$"),
             allowed_hosts=allowed_hosts(os.environ.get("PLEDGER_ALLOWED_HOSTS", "")),
         )
@@ -256,6 +258,7 @@ class Settings:
             self.interest_path: _header([*INTEREST_COLUMNS, ID_COLUMN]),
             self.prices_path: _header(PRICE_COLUMNS),
             self.services_path: _header([SERVICE_MONTH]),
+            self.recurring_path: "",
         }
         return {path: text for path, text in files.items() if path is not None}
 

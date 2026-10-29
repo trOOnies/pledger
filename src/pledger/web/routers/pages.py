@@ -6,6 +6,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 
 from pledger.web.dependencies import StoreDep
+from pledger.web.recurring import build_due
 from pledger.web.templating import (
     is_partial,
     remember_month,
@@ -47,7 +48,9 @@ def index(
 ):
     snapshot = store.load()
     month = remembered_month(request, month, months_of(snapshot))
-    view = build_view(snapshot, month, account, initial, base, q)
+    view = build_view(snapshot, month, account, initial, base, q) | build_due(
+        store.settings.recurring_path, snapshot
+    )
     if is_partial(request):
         return remember_month(templates.TemplateResponse(request, "_view.html", view), month)
     form = render_form(request, snapshot, {}).body.decode()

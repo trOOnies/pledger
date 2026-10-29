@@ -109,9 +109,16 @@ def create_movement(
 
 
 @router.get("/form/movement")
-def movement_form(request: Request, store: StoreDep):
-    """A new movement form, e.g. to cancel editing one."""
-    return render_form(request, store.load(), {})
+def movement_form(
+    request: Request, store: StoreDep, move_date: str = "", base_movement: str = "",
+    acc_debit: str = "", acc_credit: str = "", amount: str = "", comment: str = "",
+):
+    """A new movement form, e.g. to cancel editing one, or filled in with a due recurring movement."""
+    values = {
+        "move_date": move_date, "base_movement": base_movement, "acc_debit": acc_debit,
+        "acc_credit": acc_credit, "amount": amount, "comment": comment,
+    }
+    return render_form(request, store.load(), {k: v for k, v in values.items() if v})
 
 
 # The rows of the movements each CSV gives the ledger, in its order: they have the ids.

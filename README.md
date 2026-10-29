@@ -37,6 +37,7 @@ web app.
   - [Debt](#debt)
   - [Services](#services)
   - [Credit cards](#credit-cards)
+  - [Recurring movements](#recurring-movements)
   - [Work](#work)
 - [Development](#-development)
 
@@ -120,6 +121,7 @@ with an environment variable:
 | `credit_cards.yaml` | | `PLEDGER_CREDIT_CARDS` | The credit card accounts |
 | `work.csv` | | `PLEDGER_WORK` | The work history, one row per month |
 | `services.csv` | | `PLEDGER_SERVICES` | The monthly values of the services of the debt account, a column each |
+| `recurring.yaml` | | `PLEDGER_RECURRING` | The movements that repeat every month or week, suggested when due |
 
 On startup, `pledger-web` checks that every one of these files (and `base_currency.csv` and
 `currencies.csv`) exists. Any missing ones are created, the YAMLs empty and the CSVs with just
@@ -631,6 +633,32 @@ by service; each month's ✎ button loads it into the form. `PUT /api/services` 
 New months go in month order, and a column missing from the file is added with its first value. It
 also lists the movements owed to the services, filtered by service, each with what we owe that
 service after it. The file is created with the first month.
+
+### Recurring movements
+
+`recurring.yaml` lists the movements that repeat (rent, subscriptions, an allowance...). pledger
+never writes them: the Ledger tab shows each one in a **Due** panel from the date it is due on
+(and up to 7 days before, faded), until a movement of its base movement, debit and credit
+accounts is in `ledger.csv` in its period, whatever its amount and day. The period is the month,
+or the week from Monday to Sunday. **Add** adds it as it is, and **Fill in** puts it in the
+movement form to change it first. The due ones are also at `/api/recurring/due`.
+
+```yaml
+Rent:
+  base_movement: Housing - Rent
+  credit: Bk          # the sides the base movement doesn't fix
+  amount: 150000.00   # optional: without one, it can only be filled in
+  day: 5              # monthly, on this day (the last one of the shorter months)
+  start: 2026-01      # the first month, this month by default
+  end: 2026-12        # optional: the last month
+  comment: Flat
+Allowance:
+  base_movement: Withdraw
+  weekday: monday     # weekly, on this day, instead of a day of the month
+```
+
+Only the base movements of the Ledger tab can recur. If the file is invalid, the Due panel
+says why, and the rest of the tab works as usual.
 
 ### Work
 

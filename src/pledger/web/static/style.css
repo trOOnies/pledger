@@ -288,6 +288,9 @@ tr:target > td { background: color-mix(in srgb, var(--accent) 18%, transparent);
 .msg.error { background: var(--loss-bg); color: var(--loss); }
 .msg.success { background: var(--gain-bg); color: var(--gain); }
 .msg.warn { background: var(--transfer-bg); color: var(--warn); }
+.due { margin-bottom: 1rem; }
+.due tr.upcoming td { opacity: .65; }
+.due small.warn { color: var(--warn); }
 .msg.alert summary { cursor: pointer; }
 .msg.alert ul { margin: .5rem 0 0; padding-left: 1.25rem; color: var(--text); }
 .msg.alert p { margin: .5rem 0 0; color: var(--text); }

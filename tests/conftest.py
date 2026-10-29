@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
 import pytest
+from fastapi.testclient import TestClient
 
 from pledger.enums import AccountType
 from pledger.models import Account, Currency, MovementBase, ResultType
+from pledger.web.app import create_app
+from pledger.web.store import LOCAL_HOSTS, Settings
 
 CURRENCIES_YAML = """\
 base_currency:
@@ -167,3 +172,28 @@ def ledger_csv(tmp_path):
     path = tmp_path / "ledger.csv"
     path.write_text(LEDGER_CSV, encoding="utf-8")
     return str(path)
+
+
+# The internal base movements required to load the ledger: an empty `transfer` section
+# and the `result_types` one, with Init last (see with_internal)
+INITIAL_YAML = (
+    "internal:\n  transfer:\n  result_types:\n    Init:\n      id: 3\n      long_name: Initial\n      description: d\n"
+    "      base_movements:\n        gain:\n          Initial (G): Initial balance\n"
+    "        loss:\n          Initial (L): Initial balance\n"
+)
+
+
+@pytest.fixture
+def settings(accounts_yaml, base_movements_yaml, ledger_csv, currencies_yaml) -> Settings:
+    # At the top, so that later appends extend the `transfer` section
+    path = Path(base_movements_yaml)
+    path.write_text(INITIAL_YAML + path.read_text())
+    return Settings(
+        Path(accounts_yaml), Path(base_movements_yaml), Path(ledger_csv), Path(currencies_yaml),
+        allowed_hosts=(*LOCAL_HOSTS, "testserver"),  # the host of the TestClient
+    )
+
+
+@pytest.fixture
+def client(settings) -> TestClient:
+    return TestClient(create_app(settings))

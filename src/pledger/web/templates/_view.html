@@ -1,5 +1,44 @@
 {% from "_id.html" import id_cell, id_header %}
 {% from "_edit.html" import edit_button %}
+{# The recurring movements due and not in the ledger yet (see recurring.py): added in one click,
+   or filled in the movement form to change them first. #}
+{% if due or due_error %}
+<div class="panel due">
+  <h2>Due <small>{{ due | length }}</small></h2>
+  {% if due_error %}<p class="msg error">Recurring movements: {{ due_error }}</p>{% endif %}
+  {% if due %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr><th>Date</th><th>Recurring</th><th>Base movement</th><th>Debit</th><th class="num">Amount</th><th>Credit</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for d in due %}
+        <tr class="{{ 'upcoming' if d.in_days > 0 }}">
+          <td class="nowrap">{{ d.date }}
+            <small class="{{ 'warn' if d.in_days < 0 else 'muted' }}">{% if d.in_days > 0 %}in {{ d.in_days }} day{{ 's' if d.in_days > 1 }}{% elif d.in_days < 0 %}{{ -d.in_days }} day{{ 's' if d.in_days < -1 }} late{% else %}today{% endif %}</small></td>
+          <td>{{ d.name }} <small class="muted">every {{ d.every }}</small></td>
+          <td>{{ d["values"].base_movement }}</td>
+          <td>{{ d["values"].acc_debit }}</td>
+          <td class="num money">{{ d["values"].amount | float | money if d["values"].amount else "—" }}</td>
+          <td>{{ d["values"].acc_credit }}</td>
+          <td class="nowrap">
+            {% if d["values"].amount %}
+            <button class="secondary" hx-post="/movements" hx-vals='{{ d["values"] | tojson }}'
+              hx-target="#movement-form" hx-swap="outerHTML">Add</button>
+            {% endif %}
+            <button class="secondary" title="Fill in the movement form with it, to change it before adding it"
+              hx-get="/form/movement" hx-vals='{{ d["values"] | tojson }}' hx-target="#movement-form" hx-swap="outerHTML"
+              hx-on::after-request="document.getElementById('movement-form')?.scrollIntoView({block: 'nearest', behavior: 'smooth'})">Fill in</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endif %}
 <div class="panel">
   <h2>Movements <small>{{ movements | length }}</small></h2>
   <div class="table-wrap">
