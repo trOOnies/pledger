@@ -183,6 +183,16 @@ INITIAL_YAML = (
 )
 
 
+# The internal base movements of the results of the accounts in other currencies,
+# required once one is revalued; appended to the internal `result_types` of INITIAL_YAML
+RESULT_YAML = (
+    "    Expo:\n      id: 4\n      long_name: Exposition\n      description: d\n"
+    "      base_movements:\n        gain:\n          Foreign currency (G):\n            description: d\n"
+    "            debit: FOREIGN CURRENCY\n        loss:\n          Foreign currency (L):\n"
+    "            description: d\n            credit: FOREIGN CURRENCY\n"
+)
+
+
 @pytest.fixture
 def settings(accounts_yaml, base_movements_yaml, ledger_csv, currencies_yaml) -> Settings:
     # At the top, so that later appends extend the `transfer` section
@@ -197,3 +207,11 @@ def settings(accounts_yaml, base_movements_yaml, ledger_csv, currencies_yaml) ->
 @pytest.fixture
 def client(settings) -> TestClient:
     return TestClient(create_app(settings))
+
+
+@pytest.fixture
+def revalued(settings) -> Settings:
+    """The settings, with the base movements to revalue the accounts in other currencies."""
+    path = settings.base_movements_path
+    path.write_text(path.read_text().replace(INITIAL_YAML, INITIAL_YAML + RESULT_YAML, 1))
+    return settings

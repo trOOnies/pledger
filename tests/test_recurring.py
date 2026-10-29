@@ -25,7 +25,7 @@ Allowance:
 
 @pytest.fixture(autouse=True)
 def frozen_today(monkeypatch):
-    monkeypatch.setattr("pledger.web.store.today", lambda: dt.date(2026, 2, 15))  # a Sunday
+    monkeypatch.setattr("pledger.web.store.common.today", lambda: dt.date(2026, 2, 15))  # a Sunday
 
 
 @pytest.fixture

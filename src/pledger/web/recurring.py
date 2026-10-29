@@ -10,8 +10,7 @@ from pathlib import Path
 import yaml
 
 from pledger.enums import LedgerSide
-from pledger.web import store
-from pledger.web.store import Snapshot, _parse_amount
+from pledger.web.store import Snapshot, _parse_amount, common
 
 # The recurring movements are never written by pledger: each one is suggested in the Ledger tab
 # from the date it is due on, until a movement of its base movement and accounts is in the
@@ -103,7 +102,7 @@ def _recurring(name: str, fields: dict, snapshot: Snapshot) -> Recurring:
         if str(weekday).lower() not in WEEKDAYS:
             raise ValueError(f"{what} needs a weekday like 'monday', not {weekday!r}")
         weekday = WEEKDAYS.index(str(weekday).lower())
-    start = _month(fields.get("start"), f"{what}: start") or store.today().strftime("%Y-%m")
+    start = _month(fields.get("start"), f"{what}: start") or common.today().strftime("%Y-%m")
     end = _month(fields.get("end"), f"{what}: end")
     if end and end < start:
         raise ValueError(f"{what} ends before it starts")
@@ -132,7 +131,7 @@ def due_movements(snapshot: Snapshot, recurring: list[Recurring]) -> list[dict]:
     The movements of the recurring ones that are due (or upcoming, see UPCOMING) and not yet in
     the ledger CSV in their period, oldest first, with the values of the movement form.
     """
-    now = store.today()
+    now = common.today()
     booked: dict[tuple, set] = {}  # (base movement, debit, credit) -> the dates booked
     for row in snapshot.rows.itertuples():
         key = (row.base_movement, row.acc_debit, row.acc_credit)
