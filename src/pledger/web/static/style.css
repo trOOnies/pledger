@@ -160,9 +160,11 @@ main { padding: 1rem 1.5rem 3rem; max-width: 1400px; width: 100%; margin: 0 auto
 
 .filters { display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
 .filters label { display: flex; align-items: center; gap: .5rem; color: var(--muted); }
-/* A filter in use (not on its "All ..." option, or checked) stands out in the accent color */
-.filters label:has(option:checked:not([value=""])), .filters label:has(input:checked) { color: var(--accent); font-weight: 600; }
-.filters label:has(option:checked:not([value=""])) select {
+/* A filter in use (not on its "All ..." option, checked, or filled in) stands out in the accent color */
+.filters label:has(option:checked:not([value=""])), .filters label:has(input:checked),
+.filters label:has(input[type="search"]:not(:placeholder-shown)) { color: var(--accent); font-weight: 600; }
+.filters label:has(option:checked:not([value=""])) select,
+.filters input[type="search"]:not(:placeholder-shown) {
   border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); font-weight: normal;
 }
 .layout { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 1rem; align-items: start; }
@@ -234,6 +236,7 @@ input, select, button {
   min-width: 0; width: 100%;
 }
 .filters select { width: auto; }
+.filters input[type="search"] { width: 14rem; }
 .stack label.check, .pair label.check {
   display: flex; align-items: center; gap: .4rem; align-self: end;
   padding-bottom: .45rem; font-size: 14px; color: var(--text); cursor: pointer;

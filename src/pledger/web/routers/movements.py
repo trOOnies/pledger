@@ -15,8 +15,11 @@ router = APIRouter(prefix="/api/movements", tags=["movements"])
 
 
 @router.get("")
-def list_movements(store: StoreDep, month: str = "", account: str = "", initial: bool = False):
-    return build_view(store.load(), month, account, initial)["movements"]
+def list_movements(
+    store: StoreDep, month: str = "", account: str = "", initial: bool = False, base: str = "",
+    q: str = "",
+):
+    return build_view(store.load(), month, account, initial, base, q)["movements"]
 
 
 @router.post("", status_code=201)

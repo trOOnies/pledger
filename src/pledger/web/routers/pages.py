@@ -43,11 +43,11 @@ router = APIRouter(tags=["pages"], default_response_class=HTMLResponse)
 @router.get("/")
 def index(
     request: Request, store: StoreDep, month: str | None = None, account: str = "",
-    initial: bool = False, base: str = "",
+    initial: bool = False, base: str = "", q: str = "",
 ):
     snapshot = store.load()
     month = remembered_month(request, month, months_of(snapshot))
-    view = build_view(snapshot, month, account, initial, base)
+    view = build_view(snapshot, month, account, initial, base, q)
     if is_partial(request):
         return remember_month(templates.TemplateResponse(request, "_view.html", view), month)
     form = render_form(request, snapshot, {}).body.decode()

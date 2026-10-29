@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% block content %}
-<form id="filters" class="filters" hx-get="/" hx-target="#view" hx-push-url="true" hx-trigger="change">
+<form id="filters" class="filters" hx-get="/" hx-target="#view" hx-push-url="true"
+  hx-trigger="change, submit, input changed delay:300ms from:#search">
   <label>Month
     <select name="month">
       <option value="">All time</option>
@@ -18,6 +19,9 @@
       <option value="">All base movements</option>
       {% for b in bases %}<option value="{{ b }}" {% if b == base %}selected{% endif %}>{{ b }}</option>{% endfor %}
     </select>
+  </label>
+  <label title="Words that must all be in the id, date, base movement, accounts, comment or amount; &quot;quote&quot; a phrase to search it whole">Search
+    <input type="search" id="search" name="q" value="{{ q }}" placeholder="e.g. rent 1,500" autocomplete="off">
   </label>
   <label class="check" title="Movements that set the initial amounts of the accounts; they are left out of results by default">
     <input type="checkbox" name="initial" value="true" {% if initial %}checked{% endif %}> Initial movements

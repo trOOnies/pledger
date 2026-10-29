@@ -3949,6 +3949,46 @@ class TestLedgerBalances:
         assert '<td class="num money balance " data-sort="159.75">$159.75</td>' in table
 
 
+class TestLedgerSearch:
+    def bases(self, settings, q, **filters) -> list[str]:
+        return [m["base"] for m in build_view(LedgerStore(settings).load(), q=q, **filters)["movements"]]
+
+    def test_matches_every_field(self, settings):
+        LedgerStore(settings).add("2026-01-05", "Food", "Eq", "Ca", "12", "Rent of the garage")
+        assert self.bases(settings, "garage") == ["Food"]  # the comment, case-folded
+        assert self.bases(settings, "GIFT") == ["Gift"]  # the base movement
+        assert self.bases(settings, "2026-01-02") == ["Withdraw"]  # the date
+        assert self.bases(settings, "L-1") == ["Salary"]  # the id
+        assert self.bases(settings, "1,000.50") == self.bases(settings, "1000.5") == ["Salary"]
+        assert self.bases(settings, "bk") == ["Withdraw", "Salary"]  # the accounts
+
+    def test_every_term_must_match(self, settings):
+        LedgerStore(settings).add("2026-01-05", "Food", "Eq", "Ca", "12", "Rent of the garage")
+        assert self.bases(settings, "food garage") == ["Food"]
+        assert self.bases(settings, "food") == ["Food", "Food"]
+        assert self.bases(settings, '"garage rent"') == []  # a quoted phrase is one term
+        assert self.bases(settings, '"rent of"') == ["Food"]
+        assert self.bases(settings, '"rent of') == ["Food"]  # an unclosed quote is ignored
+        LedgerStore(settings).add("2026-01-06", "Gift", "Ca", "Eq", "5", "From O'Brien")
+        assert self.bases(settings, "o'brien") == ["Gift"]
+        assert self.bases(settings, "  ") == ["Gift", "Food", "Gift", "Food", "Withdraw", "Salary"]
+
+    def test_with_the_other_filters_and_totals(self, settings):
+        assert self.bases(settings, "ca", account="Bk") == ["Withdraw"]
+        view = build_view(LedgerStore(settings).load(), q="eq")
+        assert view["gains"] == pytest.approx(1010.5) and view["losses"] == pytest.approx(-50.25)
+        assert view["movements"][0]["credit_balance"] == pytest.approx(1060.75)  # of the whole ledger
+
+    def test_page_and_api(self, client):
+        r = client.get("/", params={"q": "withdraw"})
+        assert 'name="q" value="withdraw"' in r.text
+        table = r.text.split('data-sortable="movements"')[1].split("</table>")[0]
+        assert "Withdraw" in table and "Salary" not in table
+        partial = client.get("/", params={"q": "nothing like this"}, headers={"HX-Request": "true"})
+        assert "No movements." in partial.text
+        assert [m["base"] for m in client.get("/api/movements", params={"q": "food"}).json()] == ["Food"]
+
+
 class TestResultProfits:
     def test_profit_by_result_type(self, settings):
         profits = build_results(LedgerStore(settings).load())["profits"]
