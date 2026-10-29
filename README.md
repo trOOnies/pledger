@@ -54,7 +54,11 @@ pledger reads its files from `info/` in the current directory (see
 movement.
 
 > [!WARNING]
-> The app has no authentication, so keep it bound to `127.0.0.1`.
+> The app has no authentication, so keep it bound to `127.0.0.1`. It only answers to the
+> loopback hosts (`127.0.0.1`, `localhost`, `::1`), so no other site can reach it through a
+> name of its own, and it refuses changes sent by pages of another origin. Set
+> `PLEDGER_ALLOWED_HOSTS` (comma-separated, or `*` for any) to change the hosts; binding
+> `--host` beyond loopback allows any host unless it is set.
 
 ---
 

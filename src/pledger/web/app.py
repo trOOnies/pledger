@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from pledger.web.routers import (
@@ -36,6 +37,33 @@ async def content_language(request: Request, call_next):
     return response
 
 
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+
+def _forbidden(request: Request, detail: str):
+    if request.url.path.startswith("/api/"):
+        return JSONResponse({"detail": detail}, status_code=403)
+    return PlainTextResponse(detail, status_code=403)
+
+
+async def same_site_only(request: Request, call_next):
+    """
+    Keep other sites out, since the app has no authentication: refuse a Host header that isn't
+    one of the allowed hosts (DNS rebinding), and a change sent by a page of another origin (a
+    form of a malicious site posting to 127.0.0.1). Requests without an Origin or Referer, like
+    those of curl or scripts, are let through.
+    """
+    host = request.headers.get("host", "")
+    allowed = request.app.state.store.settings.allowed_hosts
+    if allowed is not None and (urlsplit(f"//{host}").hostname or "") not in allowed:
+        return _forbidden(request, f"Host not allowed: {host}")
+    if request.method not in SAFE_METHODS:
+        source = request.headers.get("origin") or request.headers.get("referer")
+        if source and urlsplit(source).netloc.lower() != host.lower():
+            return _forbidden(request, "Cross-origin request refused")
+    return await call_next(request)
+
+
 async def ledger_data_error(request: Request, exc: LedgerDataError):
     if request.url.path.startswith("/api/"):
         return JSONResponse({"detail": str(exc)}, status_code=500)
@@ -61,6 +89,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     app.add_exception_handler(LedgerDataError, ledger_data_error)
     app.middleware("http")(content_language)
+    app.middleware("http")(same_site_only)
 
     # HTML
     app.include_router(pages.router)

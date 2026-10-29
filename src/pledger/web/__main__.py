@@ -1,10 +1,11 @@
 """Run the pledger web app: `pledger-web` or `python -m pledger.web`."""
 
 import argparse
+import os
 
 import uvicorn
 
-from pledger.web.store import Settings
+from pledger.web.store import LOCAL_HOSTS, Settings
 
 
 def main() -> None:
@@ -21,6 +22,10 @@ def main() -> None:
             "Fill them in (accounts.yaml, result_types.yaml and currencies.yaml can't be left empty; "
             "see 'Your data files' in the README) and start pledger again."
         )
+    if args.host.strip("[]") not in LOCAL_HOSTS:
+        # Bound beyond loopback on purpose: answer to any host, unless told otherwise. The env
+        # var also reaches the app under the reloader, which runs it in another process.
+        os.environ.setdefault("PLEDGER_ALLOWED_HOSTS", "*")
     uvicorn.run("pledger.web.app:app", host=args.host, port=args.port, reload=args.reload)
 
 

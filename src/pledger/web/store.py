@@ -168,6 +168,17 @@ BEFORE_COLUMN = "before"
 SERVICE_MONTH = "month"
 # The service and the column of the services CSV of each of their generated movements
 SERVICE_COLUMN, LINE_COLUMN = "service", "column"
+# The hosts the app answers to by default: only the loopback ones, so that no other site can
+# reach it through a name of its own (DNS rebinding). PLEDGER_ALLOWED_HOSTS overrides them.
+LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")
+
+
+def allowed_hosts(text: str) -> tuple[str, ...] | None:
+    """The comma-separated hosts of PLEDGER_ALLOWED_HOSTS: LOCAL_HOSTS if empty, None (any) if `*`."""
+    hosts = tuple(h.strip().lower().strip("[]") for h in text.split(",") if h.strip())
+    if "*" in hosts:
+        return None
+    return hosts or LOCAL_HOSTS
 
 
 class LedgerDataError(Exception):
@@ -196,6 +207,7 @@ class Settings:
     prices_path: Path | None = None  # missing: no prices of the investments yet (created when adding one)
     services_path: Path | None = None  # missing: no monthly values of the services yet (created when adding one)
     currency: str = "$"
+    allowed_hosts: tuple[str, ...] | None = LOCAL_HOSTS  # None: any host
 
     @classmethod
     def from_env(cls) -> Settings:
@@ -219,6 +231,7 @@ class Settings:
             prices_path=Path(os.environ.get("PLEDGER_PRICES", "info/movements/prices.csv")),
             services_path=Path(os.environ.get("PLEDGER_SERVICES", "info/services.csv")),
             currency=os.environ.get("PLEDGER_CURRENCY", "$"),
+            allowed_hosts=allowed_hosts(os.environ.get("PLEDGER_ALLOWED_HOSTS", "")),
         )
 
     def expected_files(self) -> dict[Path, str]:
