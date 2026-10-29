@@ -1,0 +1,41 @@
+{# The services month form: a new month, or with `editing` one of the services CSV, a field per column. #}
+<form id="service-form" class="stack" hx-post="/services/months" hx-swap="outerHTML">
+  {% if editing %}
+  <div class="form-head">
+    <h2>Edit {{ month }}</h2>
+    <button type="button" class="secondary" hx-get="/services/form" hx-target="#service-form" hx-swap="outerHTML">Cancel</button>
+  </div>
+  {% else %}
+  <h2>New month</h2>
+  {% endif %}
+  {% if error %}<p class="msg error">{{ error }}</p>{% endif %}
+  {% if success %}<p class="msg success">{{ success }}</p>{% endif %}
+  {% if columns_by_service %}
+  {% if autofill and not editing %}
+  <button type="button" class="secondary" data-autofill='{{ autofill.fields | tojson }}'
+    title="Fill in the values of {{ autofill.month }}; the month is left as it is">Fill in from {{ autofill.month }}</button>
+  {% endif %}
+  <label>Month
+    <input type="month" name="month" value="{{ month }}" placeholder="YYYY-MM" required
+      hx-get="/services/form" hx-trigger="change" hx-target="#service-form" hx-swap="outerHTML">
+  </label>
+  {% for service, columns in columns_by_service.items() %}
+  <fieldset class="stack">
+    <legend>{{ service }}</legend>
+    {% for c in columns %}
+    <label>{{ c }}
+      <span class="money-input">
+        <span class="prefix">{{ currency }}</span>
+        <input name="column:{{ c }}" inputmode="decimal" value="{{ values.get(c, '') }}" placeholder="0.00" autocomplete="off" data-money>
+      </span>
+    </label>
+    {% endfor %}
+  </fieldset>
+  {% endfor %}
+  <p class="muted small">Saved in <code>{{ path }}</code>; leave a value empty for none.
+    {% if editing %}Saving replaces this month.{% else %}New months go in month order.{% endif %}</p>
+  <button type="submit">{% if editing %}Save {{ month }}{% else %}Add month{% endif %}</button>
+  {% else %}
+  <p class="muted">No columns yet: add them under the <code>columns</code> of a service in the creditors file.</p>
+  {% endif %}
+</form>

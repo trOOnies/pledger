@@ -29,6 +29,12 @@ class InvestmentIn(BaseModel):
     price: float | None = None  # initial, required with an initial quantity
 
 
+class ServiceValueIn(BaseModel):
+    month: str  # YYYY-MM
+    column: str  # of the services CSV: one of a service of the debt account
+    amount: float | None = None  # None clears it
+
+
 class PriceIn(BaseModel):
     date: str
     account: str  # an investment account

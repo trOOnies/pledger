@@ -677,6 +677,9 @@ class Creditor:
     amount: float
     kind: CreditorKind = CreditorKind.PERSON
     expected: DebtRole | None = None  # the role they should have, if any
+    # Of a service: the columns of the services CSV owed to it, each with its `base_movement`
+    # and the `day` of the month it is owed on (None: prorated weekly)
+    columns: dict[str, dict] = field(default_factory=dict)
 
     @property
     def is_creditor(self) -> bool:
@@ -767,6 +770,32 @@ class DebtAccount(Account):
                 f"(must be {[r.value for r in DebtRole]} or null)"
             ) from None
 
+    @staticmethod
+    def _columns_of(acc_name: str, name: str, value) -> dict[str, dict]:
+        """
+        The columns of the services CSV owed to a service, from the creditors YAML: column
+        name to its base movement, or to a dict of its `base_movement` and the `day` of the
+        month it is owed on whole (prorated weekly without one).
+        """
+        what = f"The columns of the service {name!r} of the account {acc_name!r}"
+        if value is None:
+            return {}
+        if not isinstance(value, dict):
+            raise ValueError(f"{what} must be a mapping of column: base movement")  # noqa: TRY004 (a bad config value)
+        columns = {}
+        for column, spec in value.items():
+            spec = {"base_movement": spec} if isinstance(spec, str) else spec
+            if not isinstance(spec, dict) or not isinstance(spec.get("base_movement"), str):
+                raise ValueError(f"{what} must name the base movement of {column!r}")  # noqa: TRY004 (a bad config value)
+            extra = sorted(str(k) for k in set(spec) - {"base_movement", "day"})
+            if extra:
+                raise ValueError(f"{what} have unknown keys {extra} in {column!r}")
+            day = spec.get("day")
+            if day is not None and (isinstance(day, bool) or not isinstance(day, int) or not 1 <= day <= 31):
+                raise ValueError(f"{what}: the day of {column!r} must be a day of the month, from 1 to 31: {day!r}")
+            columns[str(column)] = {"base_movement": spec["base_movement"], "day": day}
+        return columns
+
     def get_kind(self, kind: CreditorKind) -> dict[str, Creditor]:
         """The people, services or companies."""
         return {n: c for n, c in self.creditors.items() if c.kind == kind}
@@ -779,8 +808,9 @@ class DebtAccount(Account):
         Creditors of an account from its creditors YAML dict, a section per kind
         (`people`, `services`, `companies`) of name: initial debt, or name: a dict
         of `amount` and `expected` (`creditor`, `debtor` or null for none; the
-        kind's default if missing). The `companies` missing from its section are
-        added with no initial debt.
+        kind's default if missing), and for a service its `columns` (see
+        _columns_of). The `companies` missing from its section are added with no
+        initial debt.
         """
         if not isinstance(data, dict):
             raise ValueError(f"The creditors of the account {acc_name!r} must be a mapping")  # noqa: TRY004 (a bad config value)
@@ -797,14 +827,21 @@ class DebtAccount(Account):
                 raise ValueError(f"The {kind.value} of the account {acc_name!r} must be a mapping of name: amount")  # noqa: TRY004 (a bad config value)
             for name, value in section.items():
                 name = str(name)  # YAML keys may be numbers
-                amount, expected = value, DEFAULT_EXPECTED[kind]
+                amount, expected, columns = value, DEFAULT_EXPECTED[kind], {}
                 if isinstance(value, dict):
-                    extra = sorted(str(k) for k in set(value) - {"amount", "expected"})
+                    keys = {"amount", "expected"} | ({"columns"} if kind == CreditorKind.SERVICE else set())
+                    extra = sorted(str(k) for k in set(value) - keys)
                     if extra:
                         raise ValueError(f"Creditor {name!r} of the account {acc_name!r} has unknown keys {extra}")
-                    amount = value.get("amount")
+                    amount = value.get("amount", 0.0 if "columns" in value else None)
                     if "expected" in value:
                         expected = DebtAccount._expected_of(acc_name, name, value["expected"])
+                    columns = DebtAccount._columns_of(acc_name, name, value.get("columns"))
+                    both = sorted(set(columns) & {c for other in creditors.values() for c in other.columns})
+                    if both:
+                        raise ValueError(
+                            f"The columns {both} of the services CSV are owed to more than one service of {acc_name!r}"
+                        )
                 if isinstance(amount, bool) or not isinstance(amount, (int, float)):
                     raise ValueError(  # noqa: TRY004 (a bad config value)
                         f"Creditor {name!r} of the account {acc_name!r} amount must be a number: {amount!r}"
@@ -814,7 +851,9 @@ class DebtAccount(Account):
                         f"Creditor {name!r} of the account {acc_name!r} is in both "
                         f"{creditors[name].kind.value} and {kind.value}"
                     )
-                creditors[name] = Creditor(name=name, amount=float(amount), kind=kind, expected=expected)
+                creditors[name] = Creditor(
+                    name=name, amount=float(amount), kind=kind, expected=expected, columns=columns,
+                )
         for name in companies or []:
             if name not in creditors:
                 creditors[name] = Creditor(

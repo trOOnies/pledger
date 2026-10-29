@@ -35,6 +35,7 @@ web app.
   - [Currencies and inflation](#currencies-and-inflation)
   - [Investments](#investments)
   - [Debt](#debt)
+  - [Services](#services)
   - [Credit cards](#credit-cards)
   - [Work](#work)
 - [Development](#-development)
@@ -70,6 +71,7 @@ A FastAPI + HTMX UI, one tab per area:
 | 💼 **Work** | The company, job position and salary of each month, from gross to net through its deductions (taxes, contributions...), with a chart of both salaries (0 for the months without a job). |
 | 📈 **Investments** | The investments of the investment accounts with their price (amount over quantity), their composition by type or by account, the results of each one, the interest on money of regular accounts, and charts of the total invested and the total result. The broker fees of each investment are shown over its amount. The **Investment account**, **Investment** and **Base movement** filters narrow the movements down (an investment shows all its movements, whatever their accounts), each with the total of its account and the amount and quantity of its investment after it. The internal `Invest` movements are added, edited and deleted here, and so are new prices of the investments, from which their capital gains and losses are generated. |
 | 🤝 **Debt** | Who we owe and who owes us in the debt account `De` (people, services and companies), with alerts and the movements of the month, each with what we owe whoever it names after it. The debt movements are added and edited here. |
+| 🧾 **Services** | The services of the debt account with their columns of monthly values, how each is owed (week by week, or on a day of each month), what was owed to them this month and in all, and what we owe them now, with the table of monthly values and the movements owed to each one. The monthly values are set here. |
 | 💳 **Credit Cards** | What we owe on each card, what was charged and paid in the month, a chart of the monthly charges, the net owed over equity, and the movements of the month, each with what we owe on its card after it. The card payments are added and edited here. |
 | ❓ **Help** | The concepts, explained for everyday users. |
 
@@ -113,6 +115,7 @@ with an environment variable:
 | `creditors.yaml` | | `PLEDGER_CREDITORS` | Who each debt account is owed by or owes to |
 | `credit_cards.yaml` | | `PLEDGER_CREDIT_CARDS` | The credit card accounts |
 | `work.csv` | | `PLEDGER_WORK` | The work history, one row per month |
+| `services.csv` | | `PLEDGER_SERVICES` | The monthly values of the services of the debt account, a column each |
 
 On startup, `pledger-web` checks that every one of these files (and `base_currency.csv` and
 `currencies.csv`) exists. Any missing ones are created, the YAMLs empty and the CSVs with just
@@ -131,7 +134,8 @@ rows of the four CSVs of movements keep theirs in a last `id` column: `L-1`, `L-
 CSV, every row without a valid id (one added by hand, or copied with another row's id) gets
 the next number, appended to its line, and the column is added if missing. Leave the `id`
 empty when adding rows by hand. The generated movements get theirs from what they come from:
-`A-<account>` (initial amounts), `W-<month>-<week>` (salaries), `R-<account>-<date>`
+`A-<account>` (initial amounts), `W-<month>-<week>` (salaries), `S-<column>-<month>` and
+`S-<column>-<month>-<week>` (services), `R-<account>-<date>`
 (results of the accounts in other currencies) and `P-<account>-<investment>-<date>` (capital gains
 and losses of a price of `prices.csv`, with `-<n>` for the n-th investment bought or sold that
 date). `prices.csv` has no ids.
@@ -572,6 +576,57 @@ The Credit Cards tab warns about the cards with a negative balance (more paid th
 which is rare and may be an error. It also charts what was charged to them in each month (their
 credits, without the payments) and the net owed on them over equity at each month end. It lists
 the movements of the cards in the month picked, the initial ones included.
+
+### Services
+
+The services of the debt account (its `services` section in `creditors.yaml`) can be owed
+**monthly values**, kept in `services.csv`: a row per month, and a column per thing a service
+costs. Each column belongs to one service, under its `columns` in `creditors.yaml`, with the base
+movement it is owed with: a loss of one's own (not internal) whose credit side is free or `De`.
+
+```yaml
+De:
+  services:
+    Rent:
+      amount: 0.00
+      columns:
+        Rent: Rent - Base
+        Expenses: Rent - Expenses
+    Gas:
+      amount: 0.00
+      columns:
+        Gas:
+          base_movement: Rent - Basic services
+          day: 10
+```
+
+```csv
+month;Rent;Expenses;Gas
+2026-02;800,000.00;169,260.07;13,504.61
+2026-03;800,000.00;173,355.07;
+```
+
+- Each value is that month's. An empty cell is nothing, and a month has one row at most.
+- **Prorated**, by default: the value is split equally between the weeks of its month, on their
+  Mondays, like the salaries (see [Work](#work)).
+- **Calendarized**, with a `day` (1 to 31): the whole value is owed on that day of its month, or on
+  the month's last day if it has fewer days.
+
+Each one is a generated movement of its column's base movement, from equity crediting `De`, its
+comment naming the service first (and the column, if named otherwise), so it adds to what we owe
+the service in the Debt tab. They are owed **up to today** (none dated after it, so future months
+can be filled in ahead), never before the first date of the ledger or in the previous month, and
+can't be edited by hand: the Ledger tab shows them with a 🟡 linking to the Services tab. Pay a
+service with a `Debt - Paid` movement naming it, from the Debt tab.
+
+The Services tab lists the services and their columns, with each one's value this month, how it is
+owed, what was owed this month and in all, and what we owe each service now, and shows the monthly
+values as a table. Its form adds a month (by default the one after the last, with a *Fill in from*
+button for the last month's values) or, for an existing month, replaces it, with a field per column
+by service; each month's ✎ button loads it into the form. `PUT /api/services` sets a single value.
+New months go in month order, and a column missing from the file is added with its first value. It
+also lists the movements owed to the services, filtered by service, each with what we owe that
+service after it. The file is created with the first month.
 
 ### Work
 

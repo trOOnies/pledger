@@ -23,6 +23,7 @@ from pledger.web.views import (
     new_investment_fields,
     price_fields,
     row_anchor,
+    service_form,
 )
 
 HERE = Path(__file__).parent
@@ -174,6 +175,23 @@ def render_price_form(request: Request, snapshot: Snapshot, values: dict, **extr
             "path": settings.prices_path.name if settings.prices_path else "prices.csv",
             "values": values,
             **fields,
+            **extra,
+        },
+    )
+
+
+def render_service_form(
+    request: Request, snapshot: Snapshot, month: str = "", values: dict | None = None, **extra
+):
+    """The month form of the Services tab, for the services CSV (see views.service_form)."""
+    settings = request.app.state.store.settings
+    return templates.TemplateResponse(
+        request,
+        "_service_form.html",
+        {
+            "currency": settings.currency,
+            "path": settings.services_path.name if settings.services_path else "services.csv",
+            **service_form(snapshot, month, values),
             **extra,
         },
     )

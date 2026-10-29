@@ -20,6 +20,7 @@ from pledger.web.templating import (
     render_invest_form,
     render_new_investment_form,
     render_price_form,
+    render_service_form,
     templates,
 )
 from pledger.web.views import (
@@ -288,6 +289,27 @@ def create_investment(
         success=f"Added {name.strip()} to {account}",
     )
     response.headers["HX-Trigger"] = "investment-added"
+    return response
+
+
+@router.get("/services/form")
+def services_month_form(request: Request, store: StoreDep, month: str = ""):
+    """The services month form, filled with a month's values to edit it."""
+    return render_service_form(request, store.load(), month.strip())
+
+
+@router.post("/services/months")
+async def save_service_month(request: Request, store: StoreDep, month: Annotated[str, Form()] = ""):
+    # One "column:<column>" field per column of the services CSV
+    values = {
+        k.removeprefix("column:"): str(v) for k, v in (await request.form()).items() if k.startswith("column:")
+    }
+    try:
+        store.save_service_month(month, values)
+    except ValueError as e:
+        return render_service_form(request, store.load(), month.strip(), values, error=str(e))
+    response = render_service_form(request, store.load(), month, success=f"Saved {month}")
+    response.headers["HX-Trigger"] = "services-changed"
     return response
 
 

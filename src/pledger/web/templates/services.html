@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Services · pledger{% endblock %}
+{% block content %}
+{% if not has_debt or not services %}
+<div class="panel">
+  <h2>Services</h2>
+  <p class="muted">No services yet. List them under <code>services</code> of the debt account <code>De</code> in
+    <code>{{ settings.creditors_path or "creditors.yaml" }}</code>, each with the <code>columns</code> of
+    <code>{{ settings.services_path.name if settings.services_path else "services.csv" }}</code> owed to it.</p>
+</div>
+{% else %}
+<div class="layout">
+  <aside class="panel">
+    {{ service_form | safe }}
+  </aside>
+  <section id="services-view" hx-get="/services" hx-include="#service-filter" hx-trigger="services-changed from:body">
+    {% include "_services.html" %}
+  </section>
+</div>
+{% endif %}
+{% endblock %}

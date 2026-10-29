@@ -82,7 +82,7 @@ GENERATED = [INITIAL_GAIN, INITIAL_LOSS, RESULT_GAIN, RESULT_LOSS, SALARY, CAPIT
 # what they are generated from, so they never change either.
 ID_COLUMN = "id"
 LEDGER_ID, CONVERSION_ID, INVESTMENT_ID, INTEREST_ID = "L", "C", "I", "M"
-INITIAL_ID, SALARY_ID, RESULT_ID, PRICE_ID = "A", "W", "R", "P"
+INITIAL_ID, SALARY_ID, RESULT_ID, PRICE_ID, SERVICE_ID = "A", "W", "R", "P", "S"
 
 # Columns of the ledger CSV.
 LEDGER_CSV_COLUMNS = ["move_date", "base_movement", "acc_debit", "amount", "acc_credit", "comment"]
@@ -159,6 +159,15 @@ INITIAL_PRICE = PREVIOUS_MONTH
 # The order of the generated capital gains and losses among the movements of the
 # investments CSV: the row they come right before, or empty at the end of their date.
 BEFORE_COLUMN = "before"
+# The services CSV has the monthly values of the services of the debt account: a row per
+# month, and a column per thing a service costs (e.g. its rent, or the expenses of the
+# building), each one a column of a service in the creditors YAML (see Creditor.columns).
+# Each value is owed to the service as a movement of its column's loss base movement
+# crediting the debt account (see _service_rows): whole on the column's day of the month
+# (calendarized), else split between the weeks of the month (prorated weekly).
+SERVICE_MONTH = "month"
+# The service and the column of the services CSV of each of their generated movements
+SERVICE_COLUMN, LINE_COLUMN = "service", "column"
 
 
 class LedgerDataError(Exception):
@@ -185,6 +194,7 @@ class Settings:
     investment_movements_path: Path | None = None  # missing: none yet (created when adding one)
     interest_path: Path | None = None  # missing: no interest on money yet (created when adding some)
     prices_path: Path | None = None  # missing: no prices of the investments yet (created when adding one)
+    services_path: Path | None = None  # missing: no monthly values of the services yet (created when adding one)
     currency: str = "$"
 
     @classmethod
@@ -207,6 +217,7 @@ class Settings:
             ),
             interest_path=Path(os.environ.get("PLEDGER_INTEREST", "info/movements/interest.csv")),
             prices_path=Path(os.environ.get("PLEDGER_PRICES", "info/movements/prices.csv")),
+            services_path=Path(os.environ.get("PLEDGER_SERVICES", "info/services.csv")),
             currency=os.environ.get("PLEDGER_CURRENCY", "$"),
         )
 
@@ -231,6 +242,7 @@ class Settings:
             self.investment_movements_path: _header([*INVESTMENT_COLUMNS, ID_COLUMN]),
             self.interest_path: _header([*INTEREST_COLUMNS, ID_COLUMN]),
             self.prices_path: _header(PRICE_COLUMNS),
+            self.services_path: _header([SERVICE_MONTH]),
         }
         return {path: text for path, text in files.items() if path is not None}
 
@@ -258,6 +270,7 @@ class Snapshot:
     investments: DataFrame  # raw investments CSV rows, all columns as strings
     interest: DataFrame  # raw interest CSV rows, all columns as strings
     prices: DataFrame  # raw prices CSV rows, all columns as strings
+    services: DataFrame  # raw services CSV rows, all columns as strings
     work: Work
     # The top-level previous month of the accounts YAML, if any (see Account.load_yaml)
     previous_month: str | None = None
@@ -265,6 +278,7 @@ class Snapshot:
     # the first date of the movements of the CSVs, else the first initial date of the
     # accounts, else today.
     start_date: str = field(init=False)
+    today: dt.date = field(init=False)  # up to which the services are owed (see _service_rows)
     # Generated movements, like ledger CSV rows, indexed -1, -2, ...: the initial ones,
     # those of the investments, interest and conversions CSVs, the salaries and the
     # results of the accounts in other currencies, and the capital gains and losses of the
@@ -274,6 +288,7 @@ class Snapshot:
     interest_rows: DataFrame = field(init=False)
     conversion_rows: DataFrame = field(init=False)
     salary_rows: DataFrame = field(init=False)
+    service_rows: DataFrame = field(init=False)  # with their SERVICE_COLUMN and LINE_COLUMN
     result_rows: DataFrame = field(init=False)
     capital_rows: DataFrame = field(init=False)
     # The balance of each account in another currency in that currency, and its movements
@@ -285,6 +300,7 @@ class Snapshot:
     ids: dict[int, str | None] = field(init=False)
 
     def __post_init__(self):
+        self.today = today()
         dates = [
             *self.rows["move_date"], *self.investments["move_date"],
             *self.interest["move_date"], *self.conversions["move_date"],
@@ -310,6 +326,7 @@ class Snapshot:
             ("interest_rows", _interest_rows),
             ("conversion_rows", _conversion_rows),
             ("salary_rows", _salary_rows),
+            ("service_rows", _service_rows),
         ):
             setattr(self, name, generate(self, start))
             start -= len(getattr(self, name))
@@ -323,7 +340,7 @@ class Snapshot:
             (self.conversion_rows, self.conversions, CONVERSION_ID),
         ):
             self.ids |= zip(generated.index, stored_ids(stored, prefix))
-        for generated in (self.initial_rows, self.salary_rows, self.result_rows, self.capital_rows):
+        for generated in (self.initial_rows, self.salary_rows, self.service_rows, self.result_rows, self.capital_rows):
             self.ids |= zip(generated.index, generated[ID_COLUMN])
 
     @property
@@ -338,11 +355,12 @@ class Snapshot:
     @property
     def booked_rows(self) -> DataFrame:
         """
-        The movements of the CSVs and the salaries: all but the initial ones and the
-        results of the accounts in other currencies.
+        The movements of the CSVs, the salaries and the services: all but the initial
+        ones and the results of the accounts in other currencies and the investments.
         """
+        services = self.service_rows.drop(columns=[SERVICE_COLUMN, LINE_COLUMN])
         return _concat(
-            [self.rows, self.investment_rows, self.interest_rows, self.conversion_rows, self.salary_rows],
+            [self.rows, self.investment_rows, self.interest_rows, self.conversion_rows, self.salary_rows, services],
             self.rows.columns,
         )
 
@@ -617,6 +635,7 @@ class LedgerStore:
             currencies = {base_currency.name: base_currency, **other_currencies}
             work = self.load_work()
             prices = _load_movements(s.prices_path, PRICE_COLUMNS, "prices")
+            services = _load_movements(s.services_path, [SERVICE_MONTH], "services")
             accounts = Account.load_yaml(
                 str(s.accounts_path), base_currency, other_currencies,
                 _existing(s.investments_path), _existing(s.creditors_path),
@@ -640,7 +659,7 @@ class LedgerStore:
                 accounts, base_movements, result_types, rows, currencies, self.load_conversions(),
                 _load_movements(s.investment_movements_path, INVESTMENT_COLUMNS, "investments"),
                 _load_movements(s.interest_path, INTEREST_COLUMNS, "interest"),
-                prices, work, load_previous_month(str(s.accounts_path)),
+                prices, services, work, load_previous_month(str(s.accounts_path)),
             )
             misplaced = sorted(set(rows["base_movement"]) & set(snapshot.invest_base_movements()))
             if misplaced:
@@ -1325,6 +1344,57 @@ class LedgerStore:
         """Delete a row of the investments CSV by position, like delete."""
         self._delete_row("investments", index, fingerprint)
 
+    def set_service_value(self, month: str, column: str, amount: str | float = "") -> None:
+        """Set the value of a column of the services CSV in a month, keeping the others (see save_service_month)."""
+        snapshot = self.load()
+        month = parse_month(month, "month")
+        values = dict(service_months(snapshot)).get(month, {})
+        self.save_service_month(month, {**{c: f"{v:,.2f}" for c, v in values.items()}, column.strip(): amount})
+
+    def save_service_month(self, month: str, values: dict[str, str | float]) -> None:
+        """
+        Save the row of a month of the services CSV (see _service_rows), replacing it, with
+        the value of each column of a service (an empty one is none); the columns left out
+        are emptied. A month not in the CSV yet gets its row, in month order, and a column
+        not in it yet with a value gets its column. The CSV is created if missing.
+        """
+        snapshot = self.load()
+        path = self.settings.services_path
+        if path is None:
+            raise ValueError("No services CSV is set")
+        month = parse_month(month, "month")
+        known = service_columns(snapshot)
+        values = {c.strip(): str(v).strip() for c, v in values.items()}
+        unknown = [c for c in values if c not in known]
+        if unknown:
+            raise ValueError(f"{unknown[0]!r} is not a column of a service of {DEBT_ACCOUNT} in the creditors YAML")
+        cells = {
+            c: f"{_parse_amount(v, f'value of {c}'):,.2f}" for c, v in values.items() if v
+        }
+        rows = snapshot.services
+        months = [m.strip() for m in rows[SERVICE_MONTH]]
+        new_row = {SERVICE_MONTH: month, **cells}
+        others = rows[[m != month for m in months]]
+        changed = concat([others, DataFrame([new_row])], ignore_index=True).fillna("")
+        replace(snapshot, services=changed).ledger().check_accounts()
+
+        csv_file = self._read_file(len(rows), path, header=[SERVICE_MONTH])
+        lines = csv_file.lines
+        header = next(csv.reader([lines[0]], delimiter=";"))
+        for column in cells:
+            if column not in header:
+                header.append(column)
+                lines[0] += f";{column}"
+        buf = io.StringIO()
+        csv.writer(buf, delimiter=";", lineterminator="").writerow([new_row.get(c, "") for c in header])
+        if month in months:
+            lines[csv_file.row_lines[months.index(month)]] = buf.getvalue()
+        else:
+            # Right after the last earlier month, else before the first row
+            earlier = [i for i, m in zip(csv_file.row_lines, months) if m < month]
+            lines.insert(max(earlier) + 1 if earlier else min(csv_file.row_lines, default=1), buf.getvalue())
+        self._write_file(csv_file)
+
     def delete_interest(self, index: int, fingerprint: str | None = None) -> None:
         """Delete a row of the interest CSV by position, like delete."""
         self._delete_row("interest", index, fingerprint)
@@ -1335,7 +1405,7 @@ class LedgerStore:
     ) -> None:
         """
         Delete a row by position from the CSV of a Snapshot `field` ("rows",
-        "investments" or "interest"), optionally checking it is the expected one.
+        "investments", "interest" or "services"), optionally checking it is the expected one.
         """
         snapshot = self.load()
         rows = getattr(snapshot, field)
@@ -2143,6 +2213,101 @@ def _salary_rows(snapshot: Snapshot, start: int) -> DataFrame:
             credit = base.acc_credit or salary.acc_debit
             row |= {"acc_debit": base.acc_debit.name, "acc_credit": credit.name}
     return _generated_rows(new_rows, snapshot.rows.columns, start)
+
+
+def today() -> dt.date:
+    """Today, up to which the services are owed (see _service_rows)."""
+    return dt.date.today()
+
+
+def service_columns(snapshot: Snapshot) -> dict[str, dict]:
+    """
+    The columns of the services of the debt account (see Creditor.columns), each with its
+    `service`, its `base` movement, a loss of one's own (not internal) that may credit
+    the debt account, and its `day` (None if prorated weekly).
+    """
+    debt = snapshot.accounts.get(DEBT_ACCOUNT)
+    services = debt.get_kind(CreditorKind.SERVICE) if isinstance(debt, DebtAccount) else {}
+    columns = {}
+    for service in services.values():
+        for column, spec in service.columns.items():
+            base = snapshot.base_movements.get(spec["base_movement"])
+            if (
+                base is None or base.internal or base.move_type != MovementType.LOSS
+                or base.side(LedgerSide.CREDIT) not in {None, DEBT_ACCOUNT}
+            ):
+                raise ValueError(
+                    f"The base movement of a column of a service must be a loss, not internal, that may "
+                    f"credit {DEBT_ACCOUNT}: not {spec['base_movement']!r} ({service.name}, {column})"
+                )
+            columns[column] = {"service": service.name, "base": base, "day": spec["day"]}
+    return columns
+
+
+def service_months(snapshot: Snapshot) -> list[tuple[str, dict[str, float]]]:
+    """
+    The rows of the services CSV: each month, once, with the value of each column with
+    one (empty ones are none). Every column is one of a service (see service_columns).
+    """
+    columns = service_columns(snapshot)
+    unknown = [c for c in snapshot.services.columns if c != SERVICE_MONTH and c not in columns]
+    if unknown:
+        raise ValueError(
+            f"The services CSV columns {unknown} aren't columns of any service of {DEBT_ACCOUNT}: add them "
+            "under the `columns` of their service in the creditors YAML"
+        )
+    found, seen = [], set()
+    for row in snapshot.services.to_dict("records"):
+        month = parse_month(row[SERVICE_MONTH], "month of the services CSV")
+        if month in seen:
+            raise ValueError(f"The services CSV has more than one row of {month}")
+        seen.add(month)
+        values = {
+            c: _parse_amount(text, f"value of {c} in {month} of the services CSV")
+            for c, text in row.items() if c != SERVICE_MONTH and str(text).strip()
+        }
+        found.append((month, values))
+    return found
+
+
+def _service_rows(snapshot: Snapshot, start: int) -> DataFrame:
+    """
+    What is owed to the services, as CSV rows indexed from `start` down, with their
+    SERVICE_COLUMN and LINE_COLUMN: each value of the services CSV, up to today, as a
+    movement of its column's base movement crediting the debt account, its comment
+    naming the service first (see DebtAccount.creditor_in). With a day, it is owed whole
+    on that day of the month (or its last one); without one, split between the weeks of
+    the month, on their Mondays (see weeks.prorate_by_week), like the salaries. Never
+    before the first date of the ledger or in the previous month.
+    """
+    columns, new_rows, now = service_columns(snapshot), [], snapshot.today
+
+    def add(date: dt.date, column: str, value: float, move_id: str, when: str) -> None:
+        day = date.isoformat()
+        if value == 0 or date > now or day < snapshot.start_date:
+            return
+        spec = columns[column]
+        base, service = spec["base"], spec["service"]
+        new_rows.append({
+            "move_date": day, "base_movement": base.name, "acc_debit": base.acc_debit.name,
+            "acc_credit": DEBT_ACCOUNT, "amount": f"{value:,.2f}",
+            "comment": f"{service}: {'' if column == service else column + ', '}{when}",
+            ID_COLUMN: f"{SERVICE_ID}-{column}-{move_id}", SERVICE_COLUMN: service, LINE_COLUMN: column,
+        })
+
+    for month, values in sorted(service_months(snapshot)):
+        if snapshot.previous_month and month <= snapshot.previous_month:
+            continue
+        for column, amount in values.items():
+            if columns[column]["day"] is None:
+                weeks = prorate_by_week(month, amount)
+                for n, (week, value) in enumerate(weeks, 1):
+                    add(week.start, column, value, f"{month}-{n}", f"week {n}/{len(weeks)} of {month}")
+            else:
+                first = dt.date.fromisoformat(f"{month}-01")
+                days = (dt.date.fromisoformat(f"{next_month(month)}-01") - first).days
+                add(first.replace(day=min(columns[column]["day"], days)), column, amount, month, month)
+    return _generated_rows(new_rows, [*snapshot.rows.columns, SERVICE_COLUMN, LINE_COLUMN], start)
 
 
 def deduction_id(name: str) -> str:

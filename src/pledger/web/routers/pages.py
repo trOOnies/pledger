@@ -17,6 +17,7 @@ from pledger.web.templating import (
     render_invest_form,
     render_new_investment_form,
     render_price_form,
+    render_service_form,
     templates,
 )
 from pledger.web.views import (
@@ -27,6 +28,7 @@ from pledger.web.views import (
     build_invest_movements,
     build_investments,
     build_results,
+    build_services,
     build_view,
     build_work,
     conversion_filter,
@@ -61,6 +63,16 @@ def accounts(request: Request, store: StoreDep, month: str | None = None):
     context = build_accounts(snapshot, month)
     template = "_accounts.html" if is_partial(request) else "accounts.html"
     return remember_month(templates.TemplateResponse(request, template, context), month)
+
+
+@router.get("/services")
+def services(request: Request, store: StoreDep, service: str = ""):
+    snapshot = store.load()
+    context = {**build_services(snapshot, service), "settings": store.settings}
+    if is_partial(request):
+        return templates.TemplateResponse(request, "_services.html", context)
+    context["service_form"] = render_service_form(request, snapshot).body.decode()
+    return templates.TemplateResponse(request, "services.html", context)
 
 
 @router.get("/investments")
