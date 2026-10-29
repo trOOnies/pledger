@@ -16,6 +16,7 @@ from pledger.web.templating import (
     render_form,
     render_invest_form,
     render_new_investment_form,
+    render_price_form,
     templates,
 )
 from pledger.web.views import (
@@ -74,6 +75,7 @@ def investments(request: Request, store: StoreDep, account: str = "", investment
             if snapshot.invest_base_movements() else None
         ),
         "new_investment_form": render_new_investment_form(request, snapshot, {}).body.decode(),
+        "price_form": render_price_form(request, snapshot, {}).body.decode(),
     }
     return templates.TemplateResponse(request, "investments.html", context)
 

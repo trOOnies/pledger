@@ -1,0 +1,41 @@
+{# The new price form of the Investments tab: a price of an investment on a date, for the prices CSV. #}
+<form id="price-form" class="stack" hx-post="/investments/prices" hx-swap="outerHTML">
+  {% if error %}<p class="msg error">{{ error }}</p>{% endif %}
+  {% if success %}<p class="msg success">{{ success }}</p>{% endif %}
+  {% if investments_by_account %}
+  <label>Date
+    <input type="date" name="date" value="{{ values.date }}" required data-future-warning>
+    <span class="hint warn" hidden>⚠️ This date is in the future.</span>
+  </label>
+  {# The account narrows down the investments to pick from (see data-narrows in base.html). #}
+  <div class="pair">
+    <label>Account
+      <select name="account" data-narrows="investment" required>
+        {% for account in investments_by_account %}<option {% if account == values.account %}selected{% endif %}>{{ account }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Investment
+      <select name="investment" required>
+        <option value="">Choose…</option>
+        {% for account, names in investments_by_account.items() %}
+        {% set other = account != values.account %}
+        <optgroup label="{{ account }}"{% if other %} hidden disabled{% endif %}>
+          {% for n in names %}<option {% if n == values.investment and not other %}selected{% endif %}>{{ n }}</option>{% endfor %}
+        </optgroup>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
+  <label>Price
+    <span class="money-input">
+      <span class="prefix">{{ currency }}</span>
+      <input name="price" inputmode="decimal" min="0" value="{{ values.price }}" placeholder="0.00" required autocomplete="off" data-money>
+    </span>
+  </label>
+  <p class="muted small">The price of one unit, added to <code>{{ path }}</code>. At the end of that date, the investment
+    is revalued at it: its quantity at this price, the difference a capital gain or loss.</p>
+  <button type="submit">Add price</button>
+  {% else %}
+  <p class="muted">No investments yet: add one in <strong>New investment</strong> first.</p>
+  {% endif %}
+</form>

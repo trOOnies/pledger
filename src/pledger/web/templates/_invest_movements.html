@@ -28,6 +28,9 @@
           {% if m.investment_quantity is none %}<td class="num muted balance">-</td>{% else %}<td class="num balance" data-sort="{{ m.investment_quantity }}">{{ m.investment_quantity | quantity }}</td>{% endif %}
           <td class="muted">{{ m.comment }}</td>
           <td class="nowrap">
+            {% if not m.editable %}
+            <span class="muted" title="{{ movement_sources[m.source][1] }}">{{ movement_sources[m.source][0] }}</span>
+            {% else %}
             {{ edit_button("/investments/%s/%d/edit" % ("interest" if m.source == "interest" else "movements", m.index), m.fingerprint, "invest-form") }}
             <button class="icon" title="Delete" aria-label="Delete movement"
               hx-post="/investments/{{ 'interest' if m.source == 'interest' else 'movements' }}/{{ m.index }}/delete"
@@ -35,6 +38,7 @@
               hx-confirm="Delete {{ m.date }} {{ m.base }} ({{ m.amount | money }})?"
               data-confirm-money="{{ m.amount | money }}"
               hx-swap="none">&times;</button>
+            {% endif %}
           </td>
         </tr>
         {% else %}

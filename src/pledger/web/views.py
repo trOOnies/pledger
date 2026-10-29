@@ -35,6 +35,7 @@ from pledger.models import (
 )
 from pledger.web.store import (
     BASE_AMOUNT,
+    BEFORE_COLUMN,
     CARD_PAYMENT,
     CARD_PAYMENT_BASES,
     CARD_SURPLUS,
@@ -43,6 +44,7 @@ from pledger.web.store import (
     DEBT_BASES,
     DEBT_INCURRED,
     DEBT_PAID,
+    GENERATED,
     INITIAL_GAIN,
     INTEREST,
     INVESTMENT_COLUMN,
@@ -71,6 +73,7 @@ ACCOUNT_TYPE_ORDER = list(AccountType)
 # that tab (see source_link).
 MOVEMENT_SOURCES = {
     "investments": ("🟢", "Added, edited and deleted from the Investments tab"),
+    "prices": ("🟢", "Generated from the prices of the investments and the ones bought and sold, in the Investments tab"),
     "currencies": ("🔵", "Added, edited and deleted from the Currencies tab"),
     "revaluation": ("🔵", "Generated from the values of the Currencies tab"),
     "work": ("🟠", "Generated each week from the salary of the Work tab"),
@@ -101,7 +104,7 @@ def source_link(source: str, move, move_id: str | None) -> str:
     if source == "work":
         return f"/work#{row_anchor('month', move_id[2:9])}"  # W-<month>-<week>
     tab = {
-        "investments": "/investments", "currencies": "/currencies",
+        "investments": "/investments", "prices": "/investments", "currencies": "/currencies",
         "debt": f"/debt?month={move.move_date[:7]}", "credit-cards": f"/credit-cards?month={move.move_date[:7]}",
     }[source]
     return f"{tab}#{row_anchor('movement', move_id)}" if move_id else tab
@@ -126,12 +129,15 @@ def movement_rows(snapshot: Snapshot, rows: DataFrame, ledger: Ledger) -> list[d
     conversions = set(snapshot.conversion_rows.index)
     salaries = set(snapshot.salary_rows.index)
     revaluations = set(snapshot.result_rows.index)
+    capital = set(snapshot.capital_rows.index)
     initials = set(snapshot.initial_rows.index)
     ledger_bases = snapshot.ledger_base_movements()
     debt_bases, card_bases = snapshot.debt_base_movements(), snapshot.card_payment_base_movements()
     corrections = snapshot.correction_base_movements()
 
     def source(ix, move) -> str | None:
+        if ix in capital:
+            return "prices"
         if move.move_base.name in invest:
             return "investments"
         if ix in conversions:
@@ -766,14 +772,31 @@ def owed_charts(snapshot: Snapshot, cards: list[str], month: str = "") -> dict:
 def build_invest_movements(snapshot: Snapshot) -> list[dict]:
     """
     The movements of the investment base movements, newest first: those of the
-    investments CSV, with their investment and quantity, and those of the interest
-    CSV. Their `index` is their row in the CSV of their `source`. Their `account` is the
+    investments CSV, with their investment and quantity, their capital gains and losses
+    (see store._capital_rows), right before the movement they come from or at the end of
+    the date of their price, and those of the interest CSV. The `index` of the ones of a
+    CSV is their row in the CSV of their `source`. Their `account` is the
     investment account on a side, else, like for their results (e.g. broker fees),
     the first one with an investment of their name, if any. Each one has the total amount
     of its investment account, and the amount and quantity of its investment, right after
     it, all the movements counted (see _apply_investments), or None without them.
     """
     holders = [a for a in snapshot.investment_accounts() if a.investments]
+
+    def account_of(m: dict, investment: str) -> str | None:
+        return next(
+            (n for n in (m["debit"], m["credit"]) if isinstance(snapshot.accounts[n], InvestmentAccount)),
+            next((a.name for a in holders if investment and investment in a.investments), None),
+        )
+
+    # The capital gains and losses by the row of the investments CSV they come right before
+    capital, before = snapshot.capital_rows, {}
+    generated = capital.drop(columns=[INVESTMENT_COLUMN, BEFORE_COLUMN])
+    for m, (_, row) in zip(movement_rows(snapshot, generated, snapshot.ledger(generated))[::-1], capital.iterrows()):
+        before.setdefault(row[BEFORE_COLUMN], []).append({
+            **m, "fingerprint": "", "editable": False,
+            "account": account_of(m, row[INVESTMENT_COLUMN]), "investment": row[INVESTMENT_COLUMN], "quantity": "",
+        })
     movements = []
     for source, rows, generated, fingerprint in (
         ("investments", snapshot.investments, snapshot.investment_rows, row_fingerprint),
@@ -783,15 +806,15 @@ def build_invest_movements(snapshot: Snapshot) -> list[dict]:
         moves = movement_rows(snapshot, generated, snapshot.ledger(generated))[::-1]
         for i, (m, (_, row)) in enumerate(zip(moves, rows.iterrows())):
             investment = row.get(INVESTMENT_COLUMN, "")
-            account = next(
-                (n for n in (m["debit"], m["credit"]) if isinstance(snapshot.accounts[n], InvestmentAccount)),
-                next((a.name for a in holders if investment and investment in a.investments), None),
-            )
+            if source == "investments":
+                movements.extend(before.pop(str(i), []))
             movements.append({
                 **m, "index": i, "fingerprint": fingerprint(row), "source": source, "editable": True,
-                "account": account,  # the investment account, if any
+                "account": account_of(m, investment),  # the investment account, if any
                 "investment": investment, "quantity": row.get(QUANTITY_COLUMN, ""),
             })
+        if source == "investments":
+            movements.extend(before.pop("", []))  # of the prices, at the end of their date
     movements.sort(key=lambda m: m["date"])  # stable: in their order on each date
     # From the initial amounts and quantities of the investments file
     totals = {a.name: sum(h["total_amount"] for h in a.investments.values())
@@ -987,7 +1010,8 @@ def invest_fields(snapshot: Snapshot, base_movement: str = "", move_type: str = 
     known investments to pick from.
     """
     bases = {
-        n: b for n, b in snapshot.invest_base_movements().items() if n not in snapshot.conversion_base_names
+        n: b for n, b in snapshot.invest_base_movements().items()
+        if n not in snapshot.conversion_base_names and n not in GENERATED
     }
     by_type = {t: [n for n in bases if bases[n].move_type.value == t] for t in bases_by_type(bases)}
     if move_type not in by_type:
@@ -1009,6 +1033,18 @@ def invest_fields(snapshot: Snapshot, base_movement: str = "", move_type: str = 
             else None
         ),
         # Those of the investments YAML and those only in the ledger, by account
+        "investments_by_account": {
+            a.name: sorted(a.investments) for a in snapshot.investment_accounts() if a.investments
+        },
+    }
+
+
+def price_fields(snapshot: Snapshot) -> dict:
+    """
+    The investments to pick from for a new price, by investment account: those of the
+    investments YAML and those only in the ledger.
+    """
+    return {
         "investments_by_account": {
             a.name: sorted(a.investments) for a in snapshot.investment_accounts() if a.investments
         },

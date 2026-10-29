@@ -19,17 +19,17 @@
     <input name="name" value="{{ values.name }}" required autocomplete="off" placeholder="e.g. SPY">
   </label>
   <div class="pair">
-    <label><span>Initial amount <em class="optional">(optional)</em></span>
-      <span class="money-input">
-        <span class="prefix">{{ currency }}</span>
-        <input name="amount" inputmode="decimal" value="{{ values.amount }}" placeholder="0.00" autocomplete="off" data-money>
-      </span>
-    </label>
     <label><span>Initial quantity <em class="optional">(optional)</em></span>
       <input name="quantity" inputmode="decimal" value="{{ values.quantity }}" placeholder="0" autocomplete="off">
     </label>
+    <label><span>Initial price <em class="optional">(optional)</em></span>
+      <span class="money-input">
+        <span class="prefix">{{ currency }}</span>
+        <input name="price" inputmode="decimal" value="{{ values.price }}" placeholder="0.00" autocomplete="off" data-money>
+      </span>
+    </label>
   </div>
-  <p class="muted small">Added to <code>{{ path }}</code>. Leave the initial amount and quantity empty for one you
-    are about to buy; set them for one already held when the account starts.</p>
+  <p class="muted small">Added to <code>{{ path }}</code>, its initial price to <code>{{ prices_path }}</code>. Leave
+    them empty for one you are about to buy; set them for one already held when the account starts.</p>
   <button type="submit">Add investment</button>
 </form>

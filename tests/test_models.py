@@ -367,14 +367,14 @@ INVESTMENTS_YAML = """\
 Br:
   BOND:
     type: private_bond
-    amount: 1000.5
     quantity: 10
   T:
     type: stock
-    amount: 200
     quantity: 2.5
   EUR: forex
 """
+# The initial prices of the investments, of the prices CSV
+INITIAL_PRICES = {"Br": {"BOND": 100.05, "T": 80.0}}
 
 
 class TestInvestmentAccount:
@@ -398,7 +398,9 @@ class TestInvestmentAccount:
 
     def test_load_yaml(self, paths):
         accounts_yaml, currencies_yaml, investments_yaml = paths
-        accounts = Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml), investments_yaml)
+        accounts = Account.load_yaml(
+            accounts_yaml, *Currency.load_yaml(currencies_yaml), investments_yaml, initial_prices=INITIAL_PRICES
+        )
         br = accounts["Br"]
         assert isinstance(br, InvestmentAccount) and br.acc_type == AccountType.ASSET
         assert br.initial_amount == 1200.5
@@ -423,7 +425,9 @@ class TestInvestmentAccount:
             ("  EUR: forex\n", "  EUR: forex\nCc: {}\n", "'Cc' must be an asset account"),
             ("    quantity: 10\n", "    quantity: -1\n", "cannot be negative"),
             ("    quantity: 10\n", "    quantity: ten\n", "quantity must be a number"),
-            ("    amount: 200\n", "", "amount must be a number"),
+            ("    quantity: 2.5\n", "    quantity: 2.5\n    amount: 200\n", "'T' of the account 'Br' has an amount"),
+            ("    quantity: 2.5\n", "    quantity: 2.5\n    price: 80\n", r"unknown keys \['price'\]"),
+            ("  EUR: forex\n", "  EUR:\n    type: forex\n    quantity: 1\n", "'EUR' of the account 'Br' has an initial quantity but no initial price"),
             ("    type: stock\n", "", "'T' of the account 'Br' must have a type"),
             ("    type: stock\n", "    type: crypto\n", "'T' of the account 'Br' has an unknown type: 'crypto'"),
             ("  EUR: forex\n", "  EUR: cash\n", "'EUR' of the account 'Br' has an unknown type: 'cash'"),
@@ -435,7 +439,9 @@ class TestInvestmentAccount:
         assert old in text
         Path(investments_yaml).write_text(text.replace(old, new, 1), encoding="utf-8")
         with pytest.raises(ValueError, match=message):
-            Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml), investments_yaml)
+            Account.load_yaml(
+                accounts_yaml, *Currency.load_yaml(currencies_yaml), investments_yaml, initial_prices=INITIAL_PRICES
+            )
 
     def test_load_yaml_rejects_initial_amount(self, paths):
         accounts_yaml, currencies_yaml, investments_yaml = paths

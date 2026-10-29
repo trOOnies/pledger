@@ -68,7 +68,7 @@ A FastAPI + HTMX UI, one tab per area:
 | 💱 **Currencies** | Balances per currency, the balance of each account in other currencies in its own currency, the daily CPI of the base currency, its monthly inflation, the nominal and real value of each other currency, and the share of each currency in the assets at each month end. The conversions are added (picking the currency sold and the one bought), edited and deleted here, filtered by currency and account, each with the account's balance in its own currency after it. |
 | 📊 **Results** | The nominal and real change of equity in the period and the months of expenses it covers, gains, losses and profit by result type (also cumulative), a waterfall of the result by type (with its result statement as a table, both also as a share of the gains of the first result type, e.g. *Operative*) and equity over time. Result types and base movements are listed and added here. |
 | 💼 **Work** | The company, job position and salary of each month, from gross to net through its deductions (taxes, contributions...), with a chart of both salaries (0 for the months without a job). |
-| 📈 **Investments** | The investments of the investment accounts with their price (amount over quantity), their composition by type or by account, the results of each one, the interest on money of regular accounts, and charts of the total invested and the total result. The broker fees of each investment are shown over its amount. The **Investment account**, **Investment** and **Base movement** filters narrow the movements down (an investment shows all its movements, whatever their accounts), each with the total of its account and the amount and quantity of its investment after it. The internal `Invest` movements are added, edited and deleted here. |
+| 📈 **Investments** | The investments of the investment accounts with their price (amount over quantity), their composition by type or by account, the results of each one, the interest on money of regular accounts, and charts of the total invested and the total result. The broker fees of each investment are shown over its amount. The **Investment account**, **Investment** and **Base movement** filters narrow the movements down (an investment shows all its movements, whatever their accounts), each with the total of its account and the amount and quantity of its investment after it. The internal `Invest` movements are added, edited and deleted here, and so are new prices of the investments, from which their capital gains and losses are generated. |
 | 🤝 **Debt** | Who we owe and who owes us in the debt account `De` (people, services and companies), with alerts and the movements of the month, each with what we owe whoever it names after it. The debt movements are added and edited here. |
 | 💳 **Credit Cards** | What we owe on each card, what was charged and paid in the month, a chart of the monthly charges, the net owed over equity, and the movements of the month, each with what we owe on its card after it. The card payments are added and edited here. |
 | ❓ **Help** | The concepts, explained for everyday users. |
@@ -107,6 +107,7 @@ with an environment variable:
 | `movements/conversion.csv` | | `PLEDGER_CONVERSIONS` | The conversions between the base currency and the other ones |
 | `movements/investment.csv` | | `PLEDGER_INVESTMENT_MOVEMENTS` | The movements of the investments |
 | `movements/interest.csv` | | `PLEDGER_INTEREST` | The interest on money of the regular accounts |
+| `movements/prices.csv` | | `PLEDGER_PRICES` | The prices of the investments |
 | `currencies.yaml` | ✅ | `PLEDGER_CURRENCIES` | Base and other currencies (with `base_currency.csv` and `currencies.csv` next to it) |
 | `investment.yaml` | | `PLEDGER_INVESTMENTS` | The investments of each investment account |
 | `creditors.yaml` | | `PLEDGER_CREDITORS` | Who each debt account is owed by or owes to |
@@ -130,8 +131,10 @@ rows of the four CSVs of movements keep theirs in a last `id` column: `L-1`, `L-
 CSV, every row without a valid id (one added by hand, or copied with another row's id) gets
 the next number, appended to its line, and the column is added if missing. Leave the `id`
 empty when adding rows by hand. The generated movements get theirs from what they come from:
-`A-<account>` (initial amounts), `W-<month>-<week>` (salaries) and `R-<account>-<date>`
-(results of the accounts in other currencies).
+`A-<account>` (initial amounts), `W-<month>-<week>` (salaries), `R-<account>-<date>`
+(results of the accounts in other currencies) and `P-<account>-<investment>-<date>` (capital gains
+and losses of a price of `prices.csv`, with `-<n>` for the n-th investment bought or sold that
+date). `prices.csv` has no ids.
 
 ---
 
@@ -247,17 +250,20 @@ by hand (but those of the Investments, Debt and Credit Cards tabs, from there), 
 types can't get new base movements.
 
 > [!NOTE]
-> **Exception: investments.** The base movements of the internal `Invest` result type (capital
-> gains and losses, interest, broker fees...) and the internal transfers with an `INVESTMENT`
-> side (buying and selling investments...) can't be added or deleted from the Ledger tab or
-> `/api/movements`, but they can from the Investments tab and `/api/investments/movements`.
+> **Exception: investments.** The base movements of the internal `Invest` result type (interest,
+> broker fees...) and the internal transfers with an `INVESTMENT` side (buying and selling
+> investments...) can't be added or deleted from the Ledger tab or `/api/movements`, but they can
+> from the Investments tab and `/api/investments/movements`. But for `Capital gains` and
+> `Capital losses`: those are generated from the prices (see [Investments](#investments)).
 > Their movements are kept in `movements/investment.csv` and `movements/interest.csv` (see
 > [Investments](#investments)), never in `ledger.csv`.
 
 The internal gain `Foreign currency (G)` and loss `Foreign currency (L)` are required in the same way
 (their side may also be `FOREIGN CURRENCY`) once an account in another currency has to be revalued (see
 [Currencies and inflation](#currencies-and-inflation)). Their movements are generated, and
-can't be in `ledger.csv`, just like the initial ones below, but they aren't hidden.
+can't be in `ledger.csv`, just like the initial ones below, but they aren't hidden. So are the
+internal gain `Capital gains` and loss `Capital losses` (their side may also be `INVESTMENT`) once
+an investment has to be revalued at a new price (see [Investments](#investments)).
 
 The internal gain `Initial (G)` and loss `Initial (L)` are required (with no fixed debit or
 credit account, respectively). Every account with a non-zero initial amount gets one such
@@ -358,9 +364,18 @@ are left out: their capital gains and losses already do that.
 ### Investments
 
 Investment accounts are the asset accounts listed as top-level keys in `investment.yaml`. Each
-one maps its investments to their `type`, initial `amount` and initial `quantity`, or just to
-their type (with both at 0). The account's initial amount is the sum of those amounts, and a
-quantity can't go below 0.
+one maps its investments to their `type` and initial `quantity`, or just to their type (with no
+initial quantity). An initial quantity needs an initial price, in `movements/prices.csv` with
+`previous_month` as its date: the initial amount of the investment is its quantity at that price,
+and the account's initial amount is the sum of those amounts. A quantity can't go below 0.
+
+```yaml
+BMI:
+  T:
+    type: stock
+    quantity: 65.00
+  GOOGL: stock
+```
 
 The type is one of `public_bond`, `private_bond`, `mutual_fund`, `etf`, `forex`, `stock`,
 `derivative` and `fixed_term`.
@@ -382,13 +397,37 @@ quantity on a debit, and loses them on a credit. The file is created when adding
 - The quantity is required for `Investment - Bought`, `Investment - Sold`, `Stock split (More)`
   and `Stock split (Less)`. `Capital repayments` may have one, and no other base movement can.
 - A movement of an investment account names one of its investments: one in `investment.yaml`
-  or only in the ledger. Add a new one first, with its type (and optionally its initial amount
-  and quantity), in the *New investment* form of the Investments tab (or `POST /api/investments`).
+  or only in the ledger. Add a new one first, with its type (and optionally its initial quantity
+  and price), in the *New investment* form of the Investments tab (or `POST /api/investments`).
 - An investment that is only in the ledger has no type until it is added to `investment.yaml`.
   The Investments tab warns about these, and its *New investment* form gives them their type.
-- The tab lists the investments held, with their price (amount over quantity), their results,
-  the `Broker fees` as a share of their total result (when positive) and a totals row, and lists
-  the ones no longer held apart.
+- The tab lists the investments held, with their last price (amount over quantity), their
+  results, the `Broker fees` as a share of their total result (when positive) and a totals row,
+  and lists the ones no longer held apart.
+
+**Prices and capital gains.** An investment is held at its last price, and its capital gains and
+losses are never written by hand: pledger generates them (`Capital gains` debiting the investment
+account, `Capital losses` crediting it, against equity) whenever an investment gets a new price:
+
+- **From `movements/prices.csv`**, with the price of one unit of an investment of an investment
+  account on some dates, as often as you like, for some or all of them. At the end of that date
+  (after its movements), the investment is revalued at it: its quantity at that price minus its
+  amount, to the cent. Rows with `previous_month` as their date are the initial prices instead.
+
+  ```csv
+  date;account;investment;price
+  previous_month;BMI;T;12,490.00
+  2026-03-16;BMI;T;13,560.00
+  ```
+
+- **From `Investment - Bought` and `Investment - Sold`**: their amount over their quantity is a
+  price too. Right before the movement, the quantity held is revalued at it, so what is left after
+  a partial sale has that price as well.
+
+A revaluation with no quantity held, or that changes nothing, generates no movement. The
+Investments tab lists the generated ones among the investment movements (not editable), and its
+*New price* form (or `POST /api/investments/prices`) adds a price, one per investment and date at
+most. `prices.csv` is created with the first one.
 
 A free side (neither fixed nor `INVESTMENT`) of an investment base movement can't be an
 investment account, in the form or in `investment.csv`. What pays for an investment bought, gets

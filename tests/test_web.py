@@ -87,6 +87,16 @@ def settings(accounts_yaml, base_movements_yaml, ledger_csv, currencies_yaml) ->
     )
 
 
+PRICES_HEADER = "date;account;investment;price\n"
+
+
+def with_prices(settings: Settings, text: str) -> Settings:
+    """The settings, with a prices CSV of these rows next to the accounts YAML."""
+    path = settings.accounts_path.parent / "prices.csv"
+    path.write_text(PRICES_HEADER + text, encoding="utf-8")
+    return replace(settings, prices_path=path)
+
+
 @pytest.fixture
 def revalued(settings) -> Settings:
     """The settings, with the base movements to revalue the accounts in other currencies."""
@@ -1553,7 +1563,8 @@ class TestInvestments:
             text.replace("liability:\n", "  Br:\n    description: Broker\nliability:\n"), encoding="utf-8"
         )
         path = tmp_path / "investment.yaml"
-        path.write_text("Br:\n  T:\n    type: stock\n    amount: 10\n    quantity: 1\n", encoding="utf-8")
+        path.write_text("Br:\n  T:\n    type: stock\n    quantity: 1\n", encoding="utf-8")
+        settings = with_prices(settings, "previous_month;Br;T;10\n")
         accounts = LedgerStore(replace(settings, investments_path=path)).load().accounts
         assert accounts["Br"].investments["T"]["total_quantity"] == 1.0
         assert accounts["Br"].initial_amount == 10.0
@@ -1991,12 +2002,13 @@ class TestInvestmentsPage:
         )
         path = tmp_path / "investment.yaml"
         path.write_text(
-            "Br:\n  T:\n    type: stock\n    amount: 300\n    quantity: 1.5\n"
-            "  AL30:\n    type: public_bond\n    amount: 100\n    quantity: 1000\n"
-            "Br2:\n  T:\n    type: stock\n    amount: 100\n    quantity: 0.25\n"
+            "Br:\n  T:\n    type: stock\n    quantity: 1.5\n"
+            "  AL30:\n    type: public_bond\n    quantity: 1000\n"
+            "Br2:\n  T:\n    type: stock\n    quantity: 0.25\n"
             "  QQQ: etf\n",
             encoding="utf-8",
         )
+        settings = with_prices(settings, "previous_month;Br;T;200\nprevious_month;Br;AL30;0.1\nprevious_month;Br2;T;400\n")
         return replace(settings, investments_path=path)
 
     @pytest.fixture
@@ -2018,7 +2030,7 @@ class TestInvestmentsPage:
 
     def test_price_is_amount_over_quantity(self, client):
         r = client.get("/investments")
-        assert '<th class="num" title="Amount over quantity">Price</th>' in r.text
+        assert '<th class="num" title="Its last price: amount over quantity">Price</th>' in r.text
         assert 'data-sort="200.0">$200.00</td>' in r.text  # T in Br: 300 for 1.5
         assert 'data-sort="0.1">$0.10</td>' in r.text  # AL30: 100 for 1,000
 
@@ -2691,27 +2703,42 @@ class TestNewInvestment:
         )
         path = tmp_path / "investment.yaml"
         path.write_text("Br:\n  T: stock\n", encoding="utf-8")
-        return replace(settings, investments_path=path)
+        # No prices yet: created when adding the first one
+        return replace(settings, investments_path=path, prices_path=tmp_path / "prices.csv")
 
     def test_add_investment(self, settings):
         store = LedgerStore(settings)
         store.add_investment("Br", " SPY ", "etf")
-        store.add_investment("Br", "AL30", "public_bond", "1,500", "10")
+        assert not settings.prices_path.exists()
+        # Its initial quantity at its initial price, in the prices CSV
+        store.add_investment("Br", "AL30", "public_bond", "10", "1,500")
         assert settings.investments_path.read_text() == (
-            "Br:\n  T: stock\n  SPY: etf\n  AL30:\n    type: public_bond\n    amount: 1500.0\n    quantity: 10.0\n"
+            "Br:\n  T: stock\n  SPY: etf\n  AL30:\n    type: public_bond\n    quantity: 10.0\n"
         )
+        assert settings.prices_path.read_text() == "date;account;investment;price\nprevious_month;Br;AL30;1,500.00\n"
         held = store.load().accounts["Br"]
-        assert held.investments["AL30"]["total_amount"] == 1500 and held.initial_amount == 1500
+        assert held.investments["AL30"]["total_amount"] == 15000 and held.initial_amount == 15000
         for args, error in [
             (("Br", "T", "etf"), "Investment 'T' already exists"),
             (("Ca", "X", "etf"), "'Ca' is not an investment account"),
             (("Br", "X", "gold"), "Unknown investment type: 'gold'"),
             (("Br", " ", "etf"), "name is required"),
             (("Br", "X", "etf", "-1"), "cannot be negative"),
+            (("Br", "X", "etf", "1"), "An initial quantity needs its initial price"),
+            (("Br", "X", "etf", "1", "-5"), "cannot be negative"),
         ]:
             with pytest.raises(ValueError, match=re.escape(error)):
                 store.add_investment(*args)
-        assert "X" not in settings.investments_path.read_text()
+        assert "X" not in settings.investments_path.read_text() and "X" not in settings.prices_path.read_text()
+
+    def test_add_investment_rolls_back_both_files(self, settings):
+        # The initial price can't be appended to a prices CSV with multi-line fields
+        prices = 'date;account;investment;price\nprevious_month;Br;T;"1\n"\n'
+        settings.prices_path.write_text(prices)
+        with pytest.raises(ValueError, match="multi-line fields"):
+            LedgerStore(settings).add_investment("Br", "X", "etf", "1", "2")
+        assert settings.investments_path.read_text() == "Br:\n  T: stock\n"
+        assert settings.prices_path.read_text() == prices
 
     def test_new_investment_form(self, settings):
         client = TestClient(create_app(settings))
@@ -2720,7 +2747,7 @@ class TestNewInvestment:
         assert "<h2>New investment movement</h2>" not in r.text
         form = r.text.split('id="new-investment-form"')[1].split("</form>")[0]
         assert "<option selected>Br</option>" in form or "<option >Br</option>" in form
-        assert '<option value="etf"' in form and 'name="amount"' in form and 'name="quantity"' in form
+        assert '<option value="etf"' in form and 'name="price"' in form and 'name="quantity"' in form
         r = client.post("/investments/new", data={"account": "Br", "name": "T", "investment_type": "etf"})
         assert 'class="msg error"' in r.text and 'value="T"' in r.text  # kept in the form
         assert client.post("/api/investments", json={"account": "Br", "name": "SPY", "type": "etf"}).status_code == 201
@@ -2743,11 +2770,13 @@ class TestInvestMovements:
         )
         path = settings.base_movements_path
         with_internal(path, INVEST_YAML, INVEST_TRANSFERS_YAML)
-        # A capital gain of T
+        # Dividends of T
         movements = tmp_path / "investment.csv"
-        movements.write_text(INVESTMENT_HEADER + "2026-01-05;Capital gains;Br;5;Eq;;T;\n")
+        movements.write_text(INVESTMENT_HEADER + "2026-01-05;Dividends;Ca;5;Eq;;T;\n")
         investments = tmp_path / "investment.yaml"
-        investments.write_text("Br:\n  T:\n    type: stock\n    amount: 100\n    quantity: 10\n", encoding="utf-8")
+        investments.write_text("Br:\n  T:\n    type: stock\n    quantity: 10\n", encoding="utf-8")
+        # T at 10 initially, then at 10.5: a capital gain of 5
+        settings = with_prices(settings, "previous_month;Br;T;10\n2026-01-05;Br;T;10.5\n")
         return replace(
             settings, investments_path=investments, investment_movements_path=movements,
             interest_path=tmp_path / "interest.csv",
@@ -2762,6 +2791,13 @@ class TestInvestMovements:
         with settings.investment_movements_path.open("a") as f:
             f.write(text)
 
+    @staticmethod
+    def add_u(settings):
+        """Another investment of Br: 1 of U, at 50."""
+        settings.investments_path.write_text(settings.investments_path.read_text() + "  U:\n    type: etf\n    quantity: 1\n")
+        with settings.prices_path.open("a") as f:
+            f.write("previous_month;Br;U;50\n")
+
     def test_edit_investment_movement(self, settings, client):
         LedgerStore(settings).freeze_ids()
         fp = row_fingerprint(LedgerStore(settings).load().investments.iloc[0])
@@ -2770,28 +2806,36 @@ class TestInvestMovements:
         assert "Edit investment movement" in r.text and "<small>I-1</small>" in r.text
         assert 'hx-post="/investments/movements/0/edit"' in r.text and 'value="5.00"' in r.text
         r = client.post("/investments/movements/0/edit", data={
-            "fingerprint": fp, "move_date": "2026-01-05", "move_type": "gain", "base_movement": "Capital gains",
-            "acc_debit": "Br", "acc_credit": "Eq", "amount": "7", "investment": "T",
+            "fingerprint": fp, "move_date": "2026-01-05", "move_type": "gain", "base_movement": "Dividends",
+            "acc_debit": "Ca", "acc_credit": "Eq", "amount": "7", "investment": "T",
         })
-        assert "Updated I-1 Capital gains of T: $7.00" in r.text and r.headers["HX-Trigger"] == "investments-changed"
-        assert settings.investment_movements_path.read_text().splitlines()[-1] == "2026-01-05;Capital gains;Br;7.00;Eq;;T;;I-1"
+        assert "Updated I-1 Dividends of T: $7.00" in r.text and r.headers["HX-Trigger"] == "investments-changed"
+        assert settings.investment_movements_path.read_text().splitlines()[-1] == "2026-01-05;Dividends;Ca;7.00;Eq;;T;;I-1"
         assert client.get("/investments/movements/0/edit", params={"fingerprint": fp}).status_code == 409
         r = client.post("/investments/movements/0/edit", data={
             "fingerprint": row_fingerprint(LedgerStore(settings).load().investments.iloc[0]), "move_date": "2026-01-05",
-            "base_movement": "Capital gains", "acc_debit": "Br", "acc_credit": "Eq", "amount": "7", "investment": "Nope",
+            "base_movement": "Investment - Bought", "acc_debit": "Br", "acc_credit": "Ca", "amount": "7",
+            "investment": "Nope", "quantity": "1",
         })
         assert 'class="msg error"' in r.text and "Edit investment movement" in r.text
+        # The capital gains are generated from the prices: they can't be edited
+        assert "Capital gains" not in client.get("/form/invest-bases", params={"move_type": "gain"}).text
+        r = client.post("/investments/movements/0/edit", data={
+            "fingerprint": row_fingerprint(LedgerStore(settings).load().investments.iloc[0]), "move_date": "2026-01-05",
+            "base_movement": "Capital gains", "acc_debit": "Br", "acc_credit": "Eq", "amount": "7", "investment": "T",
+        })
+        assert "are generated by pledger" in r.text
 
     def test_investment_filter(self, settings, client):
-        settings.investments_path.write_text(settings.investments_path.read_text() + "  U:\n    type: etf\n    amount: 50\n    quantity: 1\n")
-        self.append(settings, "2026-01-06;Capital gains;Br;3;Eq;;U;\n")
+        self.add_u(settings)
+        self.append(settings, "2026-01-06;Dividends;Ca;3;Eq;;U;\n")
         r = client.get("/investments")
         assert '<form id="invest-filter"' in r.text and 'name="account"' in r.text
         assert "<option >Br</option>" in r.text and "<option >U</option>" in r.text
         r = client.get("/investments/movements", params={"investment": "U"})
         assert "<h2>Investment movements <small>1</small></h2>" in r.text and "$3.00" in r.text
         assert "<option selected>U</option>" in r.text and 'hx-swap-oob="true"' in r.text  # the filter, out of band
-        for params, n in (({"account": "Br"}, 2), ({"account": "Nope"}, 2), ({"investment": "Nope"}, 2), ({}, 2)):
+        for params, n in (({"account": "Br"}, 3), ({"account": "Nope"}, 3), ({"investment": "Nope"}, 3), ({}, 3)):
             assert f"<h2>Investment movements <small>{n}</small></h2>" in client.get("/investments/movements", params=params).text
         # The movements reload with the investment picked
         assert 'hx-include="#invest-filter"' in client.get("/investments").text
@@ -2809,14 +2853,18 @@ class TestInvestMovements:
         assert f"<h2>Investment movements <small>{len(moves)}</small></h2>" in r.text and "<option selected>Br</option>" in r.text and "<option >T</option>" in r.text
 
     def test_running_totals(self, settings, client):
-        self.append(settings, "2026-01-06;Investment - Bought;Br;30;Ca;1;T;\n2026-01-07;Broker fees;Eq;1;Ca;;T;\n")
+        self.append(settings, "2026-01-06;Investment - Bought;Br;11;Ca;1;T;\n2026-01-07;Broker fees;Eq;1;Ca;;T;\n")
         moves = build_invest_movements(LedgerStore(settings).load())
-        # T: 100 and 10 initially, 5 of capital gains, then 30 more for 1 more
+        # T: 10 at 10 initially, at 10.5 at the end of 2026-01-05, at 11 right before buying 1 more at 11
         assert [(m["base"], m["account_total"], m["investment_amount"], m["investment_quantity"]) for m in moves] == [
-            ("Broker fees", pytest.approx(135), pytest.approx(135), pytest.approx(11)),
-            ("Investment - Bought", pytest.approx(135), pytest.approx(135), pytest.approx(11)),
+            ("Broker fees", pytest.approx(121), pytest.approx(121), pytest.approx(11)),
+            ("Investment - Bought", pytest.approx(121), pytest.approx(121), pytest.approx(11)),
+            ("Capital gains", pytest.approx(110), pytest.approx(110), pytest.approx(10)),
             ("Capital gains", pytest.approx(105), pytest.approx(105), pytest.approx(10)),
+            ("Dividends", pytest.approx(100), pytest.approx(100), pytest.approx(10)),
         ]
+        assert [m["id"] for m in moves if m["source"] == "prices"] == ["P-Br-T-2026-01-06-1", "P-Br-T-2026-01-05"]
+        assert [m["comment"] for m in moves if m["source"] == "prices"] == ["10.00 T at 11.00", "10.00 T at 10.50"]
         table = client.get("/investments/movements").text
         assert "Account total</th>" in table and "Investment quantity</th>" in table and ">11</td>" in table
 
@@ -2825,7 +2873,7 @@ class TestInvestMovements:
         r = client.get("/investments/movements", params={"base": "Broker fees"})
         assert "<h2>Investment movements <small>1</small></h2>" in r.text and "<option selected>Broker fees</option>" in r.text
         r = client.get("/investments/movements", params={"base": "Nope"})
-        assert "<h2>Investment movements <small>2</small></h2>" in r.text
+        assert "<h2>Investment movements <small>3</small></h2>" in r.text
 
     def test_form_narrows_the_investments_by_account(self, client):
         f = client.get("/form/invest-fields", params={"base_movement": "Capital gains"}).text
@@ -2833,7 +2881,7 @@ class TestInvestMovements:
         assert '<optgroup label="Br">' in f
 
     def test_broker_fees_over_amount_and_totals_row(self, settings, client):
-        settings.investments_path.write_text(settings.investments_path.read_text() + "  U:\n    type: etf\n    amount: 50\n    quantity: 1\n")
+        self.add_u(settings)
         # T: 1 of fees, of its 105 of amount; U: 2 of fees, of its 50
         self.append(settings, "2026-01-06;Broker fees;Eq;1;Ca;;T;\n2026-01-06;Broker fees;Eq;2;Ca;;U;\n")
         data = build_investments(LedgerStore(settings).load())
@@ -2857,15 +2905,19 @@ class TestInvestMovements:
                 "acc_debit": "Eq", "acc_credit": "Ca", "amount": "1.5"}
         r = client.post("/investments/movements", data=data, headers=HTMX)
         assert "Added Broker fees: $1.50" in r.text and r.headers["HX-Trigger"] == "investments-changed"
-        body = {**data, "base_movement": "Capital gains", "acc_debit": "Br", "acc_credit": "Eq", "amount": 2,
+        body = {**data, "base_movement": "Dividends", "acc_debit": "Ca", "acc_credit": "Eq", "amount": 2,
                 "investment": "T"}
         assert client.post("/api/investments/movements", json=body).status_code == 201
         assert client.post("/api/movements", json=body).status_code == 422
-        assert list(investment_rows(settings).base_movement) == ["Capital gains", "Broker fees", "Capital gains"]
+        # The capital gains and losses are generated from the prices
+        r = client.post("/api/investments/movements", json={**body, "base_movement": "Capital gains", "acc_debit": "Br"})
+        assert r.status_code == 422 and "are generated by pledger" in r.json()["detail"]
+        assert list(investment_rows(settings).base_movement) == ["Dividends", "Broker fees", "Dividends"]
         assert len(rows(settings)) == 4  # the ledger CSV is left as is
         # The INVESTMENT side still takes only investment accounts
-        r = client.post("/investments/movements", data={**data, "base_movement": "Capital gains",
-                                                         "acc_debit": "Ca", "acc_credit": "Eq", "investment": "T"})
+        r = client.post("/investments/movements", data={**data, "base_movement": "Investment - Bought",
+                                                         "acc_debit": "Ca", "acc_credit": "Bk", "investment": "T",
+                                                         "quantity": "1"})
         assert "must be an investment account" in r.text
 
     def test_are_deleted_only_from_the_investments_tab(self, settings, client):
@@ -2901,24 +2953,29 @@ class TestInvestMovements:
         bases = r.text.split('id="invest-bases"')[1].split("</select>")[0]
         assert "Broker fees" in bases and "Capital gains" not in bases
         bases = client.get("/form/invest-bases", params={"move_type": "gain"}, headers=HTMX).text
-        assert "<option selected>Capital gains</option>" in bases and "Broker fees" not in bases
+        assert "<option selected>Dividends</option>" in bases and "Broker fees" not in bases
+        assert "Capital gains" not in bases  # generated from the prices
         assert 'id="invest-fields"' in bases
-        assert "<h2>Investment movements <small>1</small></h2>" in r.text
-        assert client.get("/api/investments/movements").json()[0]["id"] is None  # until frozen
+        assert "<h2>Investment movements <small>2</small></h2>" in r.text
+        # The capital gain of the price of 2026-01-05, at the end of that date
+        moves = client.get("/api/investments/movements").json()
+        assert [(m["base"], m["source"], m["id"]) for m in moves] == [
+            ("Capital gains", "prices", "P-Br-T-2026-01-05"), ("Dividends", "investments", None),  # until frozen
+        ]
         LedgerStore(client.app.state.store.settings).freeze_ids()
-        assert movement_ids(client.get("/investments").text) == ["I-1"]
-        assert "I-1" in movement_ids(client.get("/").text)
+        assert movement_ids(client.get("/investments").text) == ["P-Br-T-2026-01-05", "I-1"]
+        assert {"I-1", "P-Br-T-2026-01-05"} <= set(movement_ids(client.get("/").text))
         assert 'hx-post="/investments/movements/0/delete"' in r.text
-        assert client.get("/api/investments/movements").json()[0]["base"] == "Capital gains"
-        assert client.get("/api/investments/movements").json()[0]["source"] == "investments"
+        assert r.text.count('aria-label="Delete movement"') == 1  # never the generated ones
         # The ledger shows them with a lock that leads to the Investments tab
         index = client.get("/").text
         assert 'href="/investments#movement-I-1" title="Added, edited and deleted from the Investments tab" aria-label="Added, edited and deleted from the Investments tab">🟢</a>' in index
+        assert 'href="/investments#movement-P-Br-T-2026-01-05" title="Generated from the prices' in index
         assert '<tr id="movement-I-1">' in client.get("/investments").text
         assert index.count('aria-label="Delete movement"') == 4
 
     def test_interest_on_money(self, settings, client):
-        assert card_labels(client.get("/investments").text) == ["Invested", "Net capital gains", "Total result"]
+        assert card_labels(client.get("/investments").text) == ["Invested", "Net capital gains", "Dividends", "Total result"]
         path = settings.base_movements_path
         path.write_text(
             path.read_text()
@@ -2926,7 +2983,7 @@ class TestInvestMovements:
             .replace("Broker fees: d\n", "Broker fees: d\n          Interest on Money (L): d\n", 1)
         )
         r = client.get("/investments")
-        assert card_labels(r.text) == ["Invested", "Net interest on money", "Net capital gains", "Total result"]
+        assert card_labels(r.text) == ["Invested", "Net interest on money", "Net capital gains", "Dividends", "Total result"]
         assert "No interest on money yet." in r.text
         # Added to the interest CSV, created if missing: interest paid is negative
         f = client.get("/form/invest-fields", params={"base_movement": "Interest on Money (L)"}).text
@@ -2952,10 +3009,10 @@ class TestInvestMovements:
         assert [(p["month"], p["value"]) for p in context["interest_series"]] == [
             ("2025-12", 0), ("2026-01", 3), ("2026-02", 1),
         ]
-        # Capital gains of 5, the 7 of T and the net interest of 4
+        # Capital gains of 5, the 5 and 7 of dividends of T and the net interest of 4
         assert context["result_totals"]["interest"] == 4
-        assert context["result_totals"]["total"] == 16
-        assert [p["value"] for p in context["result_series"]] == [0, 8, 16]
+        assert context["result_totals"]["total"] == 21
+        assert [p["value"] for p in context["result_series"]] == [0, 13, 21]
         r = client.get("/investments")
         assert "<h2>Interest on money <small>all time</small></h2>" in r.text
         assert 'data-sortable="interest-accounts"' in r.text and 'data-sortable="interest-over-time"' in r.text
@@ -2986,11 +3043,11 @@ class TestInvestMovements:
     def test_invested_and_result_over_time(self, settings, client):
         snapshot = LedgerStore(settings).load()
         charts = investment_charts(snapshot)
-        # T starts at 100 on the first ledger date, then gains 5 in 2026-01
+        # T starts at 100 on the first ledger date, then gains 5 in 2026-01, with 5 of dividends
         assert [(p["month"], p["value"], p["change"]) for p in charts["invested_series"]] == [
             ("2025-12", 100.0, 100.0), ("2026-01", 105.0, 5.0)
         ]
-        assert [(p["month"], p["value"]) for p in charts["result_series"]] == [("2025-12", 0.0), ("2026-01", 5.0)]
+        assert [(p["month"], p["value"]) for p in charts["result_series"]] == [("2025-12", 0.0), ("2026-01", 10.0)]
         # The real total invested, at the CPI of each month end
         assert charts["invested_chart"]["real_date"] == "2026-01-31"
         assert [p["real"] for p in charts["invested_series"]] == [pytest.approx(103.0), pytest.approx(105.0)]
@@ -3013,7 +3070,7 @@ class TestInvestMovements:
         assert "added from the Investments tab" in r.text
         with pytest.raises(ValueError, match="'Adjust' is not an investment base movement"):
             LedgerStore(settings).add("2026-02-01", "Adjust", "Bk", "Ca", "1", invest=True)
-        assert list(investment_rows(settings).base_movement) == ["Capital gains", "Investment - Bought"]
+        assert list(investment_rows(settings).base_movement) == ["Dividends", "Investment - Bought"]
 
     def holding(self, settings, name="T"):
         br = LedgerStore(settings).load().investment_accounts()[0]
@@ -3026,7 +3083,8 @@ class TestInvestMovements:
                               "2026-01-07;Investment - Sold;Ca;300;Br;4;T;\n"
                               "2026-01-08;Broker fees;Eq;1;Ca;;T;\n"  # no investment account: no change
                               "2026-01-09;Investment - Bought;Br;50;Ca;1;NEW;\n")
-        assert self.holding(settings) == (InvestmentType.STOCK, 805, 8.5)
+        # Bought at 400 (12.5 held), sold at 75: the 8.5 left at 75 too
+        assert self.holding(settings) == (InvestmentType.STOCK, 637.5, 8.5)
         assert self.holding(settings, "NEW") == (None, 50, 1)
 
     @pytest.mark.parametrize(
@@ -3035,7 +3093,8 @@ class TestInvestMovements:
             ("2026-01-06;Investment - Sold;Ca;1;Br;11;T;", r"quantity of 'T' .* cannot be negative"),
             ("2026-01-06;Investment - Bought;Br;1;Ca;;T;", "must have a quantity"),
             ("2026-01-06;Investment - Bought;Br;1;Ca;1;;", "must name their investment"),
-            ("2026-01-06;Capital gains;Br;1;Eq;1;T;", "cannot have a quantity"),
+            ("2026-01-06;Dividends;Ca;1;Eq;1;T;", "cannot have a quantity"),
+            ("2026-01-06;Capital gains;Br;1;Eq;;T;", "cannot have movements of 'Capital gains' .* generated from the prices"),
             ("2026-01-06;Investment - Bought;Br;1;Ca;x;T;", "Invalid quantity"),
             ("2026-01-06;Broker fees;Eq;1;Br;;T;", "credit account of 'Broker fees' cannot be an investment account"),
             ("2026-01-06;Dividends;Br;1;Eq;;T;", "debit account of 'Dividends' cannot be an investment account"),
@@ -3104,23 +3163,115 @@ class TestInvestMovements:
         self.append(settings, "2026-01-06;Dividends;Ca;10;Eq;;T;\n"
                               "2026-01-07;Dividends;Bk;2.5;Eq;;T;\n"
                               "2026-01-08;Broker fees;Eq;1;Ca;;T;\n"
-                              "2026-01-09;Capital losses;Eq;2;Br;;T;\n"
                               "2026-01-10;Investment - Sold;Ca;103;Br;10;T;\n"  # all of it
                               "2026-01-10;Broker fees;Eq;4;Ca;;;\n"  # names no investment
                               "2026-01-11;Dividends;Ca;7;Eq;;GHOST;\n")
+        with settings.prices_path.open("a") as f:
+            f.write("2026-01-09;Br;T;10.3\n")  # a capital loss of 2
         unattributed = []
         br = LedgerStore(settings).load().investment_accounts(unattributed)[0]
-        assert br.results == {"T": {"Capital gains": 5.0, "Dividends": 12.5, "Broker fees": 1.0, "Capital losses": 2.0}}
-        assert br.investments["T"]["total_amount"] == 0  # 100 + 5 - 2 - 103
+        assert br.results == {"T": {"Dividends": 17.5, "Capital gains": 5.0, "Broker fees": 1.0, "Capital losses": 2.0}}
+        assert br.investments["T"]["total_amount"] == pytest.approx(0)  # 100 + 5 - 2 - 103
         assert [(u["investment"], u["amount"]) for u in unattributed] == [("GHOST", 7.0)]
         r = client.get("/investments")
         assert card_labels(r.text)[-4:] == ["Net capital gains", "Dividends", "Broker fees", "Total result"]
         closed = r.text.split("<h2>No longer held")[1].split("</table>")[0]
         assert ">Net capital gains</th>" in closed and ">Total result</th>" in closed
-        # Sold, but its capital gains (5 - 2) and total result (3 + 12.50 - 1) stay
-        for value in ("3.0\">$3.00", "12.5\">$12.50", "1.0\">$1.00", "14.5\">$14.50"):
+        # Sold, but its capital gains (5 - 2) and total result (3 + 17.50 - 1) stay
+        for value in ("3.0\">$3.00", "17.5\">$17.50", "1.0\">$1.00", "19.5\">$19.50"):
             assert f'data-sort="{value}</td>' in closed
         assert "⚠ 1 movement names an investment of no investment account:\n      GHOST." in r.text
+
+    def test_prices_revalue_at_the_end_of_their_date(self, settings):
+        # A price on the date of a purchase comes after it: what was bought is revalued too
+        self.append(settings, "2026-01-08;Investment - Bought;Br;24;Ca;2;T;\n")
+        with settings.prices_path.open("a") as f:
+            f.write("2026-01-08;Br;T;12.5\n2026-01-20;Br;T;12.5\n")
+        snapshot = LedgerStore(settings).load()
+        assert [(r.id, r.base_movement, r.amount, r.comment) for r in snapshot.capital_rows.itertuples()] == [
+            ("P-Br-T-2026-01-05", "Capital gains", "5.00", "10.00 T at 10.50"),
+            ("P-Br-T-2026-01-08-1", "Capital gains", "15.00", "10.00 T at 12.00"),
+            ("P-Br-T-2026-01-08", "Capital gains", "6.00", "12.00 T at 12.50"),
+            # none at the same price
+        ]
+        assert self.holding(settings) == (InvestmentType.STOCK, 150, 12)
+        # In the ledger, against equity
+        assert snapshot.ledger().balances()["Br"] == pytest.approx(150)
+
+    def test_prices_without_quantity_change_nothing(self, settings):
+        self.add_u(settings)
+        self.append(settings, "2026-01-06;Investment - Sold;Ca;60;Br;1;U;\n")  # a gain of 10 right before
+        with settings.prices_path.open("a") as f:
+            f.write("2026-01-07;Br;U;70\n")
+        assert list(LedgerStore(settings).load().capital_rows.id) == ["P-Br-T-2026-01-05", "P-Br-U-2026-01-06-1"]
+        assert self.holding(settings, "U") == (InvestmentType.ETF, 0, 0)
+
+    def test_capital_losses_are_required_for_a_loss(self, settings):
+        path = settings.base_movements_path
+        path.write_text(path.read_text().replace("          Capital losses:\n            description: d\n            credit: INVESTMENT\n", ""))
+        LedgerStore(settings).load()  # no loss yet
+        with settings.prices_path.open("a") as f:
+            f.write("2026-01-06;Br;T;9\n")
+        with pytest.raises(LedgerDataError, match="'Capital losses' is required to update the prices of the investments"):
+            LedgerStore(settings).load()
+
+    @pytest.mark.parametrize(
+        ("row", "message"),
+        [
+            ("2026-01-06;Ca;T;1", "prices of 'Ca', which is not an investment account"),
+            ("2026-01-06;Br;NOPE;1", "prices of 'NOPE', which is not an investment of Br"),
+            ("2026-13-06;Br;T;1", "Invalid date of the prices CSV"),
+            ("2026-01-05;Br;T;11", "more than one price of T of Br on 2026-01-05"),
+            ("previous_month;Br;T;11", "more than one price of T of Br on previous_month"),
+            ("2026-01-06;Br;T;-1", "price of T of Br on 2026-01-06 cannot be negative"),
+            ("2026-01-06;Br;T;x", "Invalid price of T of Br on 2026-01-06"),
+            ("2026-01-06;;T;1", "must have their account and investment"),
+        ],
+    )
+    def test_invalid_prices(self, settings, row, message):
+        with settings.prices_path.open("a") as f:
+            f.write(row + "\n")
+        with pytest.raises(LedgerDataError, match=message):
+            LedgerStore(settings).load()
+
+    def test_add_price(self, settings, client):
+        store = LedgerStore(settings)
+        settings.prices_path.write_text(settings.prices_path.read_text().rstrip("\n"))  # no line break at the end
+        store.add_price("2026-01-06", "Br", " T ", "11")
+        assert settings.prices_path.read_text().endswith("2026-01-05;Br;T;10.5\n2026-01-06;Br;T;11.00")
+        assert self.holding(settings) == (InvestmentType.STOCK, 110, 10)
+        for args, error in [
+            (("2026-01-06", "Br", "T", "12"), "T of Br already has a price on 2026-01-06"),
+            (("2026-01-06", "Ca", "T", "12"), "'Ca' is not an investment account"),
+            (("2026-01-06", "Br", "NOPE", "12"), "'NOPE' is not an investment of Br"),
+            (("2026-01-06", "Br", "T", "-1"), "The price cannot be negative"),
+            (("", "Br", "T", "12"), "The date is required"),
+        ]:
+            with pytest.raises(ValueError, match=re.escape(error)):
+                store.add_price(*args)
+        assert settings.prices_path.read_text().count("\n") == 3
+
+        # From the Investments tab, and the API
+        r = client.get("/investments")
+        form = r.text.split('id="price-form"')[1].split("</form>")[0]
+        assert "<h2>New price</h2>" in r.text and 'name="price"' in form and '<optgroup label="Br">' in form
+        assert 'hx-get="/form/price" hx-trigger="investment-added from:body"' in r.text
+        data = {"date": "2026-01-07", "account": "Br", "investment": "T", "price": "11.5"}
+        r = client.post("/investments/prices", data=data)
+        assert "Added the price of T on 2026-01-07: $11.50" in r.text and r.headers["HX-Trigger"] == "investments-changed"
+        assert 'value="2026-01-07"' in r.text and "<option selected>Br</option>" in r.text  # kept
+        r = client.post("/investments/prices", data=data)
+        assert 'class="msg error"' in r.text and "already has a price on 2026-01-07" in r.text
+        body = {**data, "date": "2026-01-08", "price": 12}
+        assert client.post("/api/investments/prices", json=body).status_code == 201
+        assert client.post("/api/investments/prices", json=body).status_code == 422
+        assert self.holding(settings) == (InvestmentType.STOCK, 120, 10)
+
+    def test_add_price_creates_the_csv(self, settings):
+        settings.prices_path.unlink()
+        settings.investments_path.write_text("Br:\n  T: stock\n")
+        LedgerStore(settings).add_price("2026-01-06", "Br", "T", "11")
+        assert settings.prices_path.read_text() == "date;account;investment;price\n2026-01-06;Br;T;11.00\n"
 
     def test_free_sides_never_take_investment_accounts(self, settings, client):
         f = client.get("/form/invest-fields", params={"base_movement": "Investment - Bought"}).text

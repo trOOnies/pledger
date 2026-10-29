@@ -35,6 +35,7 @@ from pledger.models import (
     INTERMEDIARY,
     INTERNAL,
     INVESTMENT,
+    PREVIOUS_MONTH,
     SPECIAL_SIDES,
     Account,
     Company,
@@ -70,7 +71,10 @@ RESULT_LOSS = "Foreign currency (L)"
 # Its movements are generated each week from the gross salary of its month (see
 # _salary_rows), never stored in the CSV, like those of the deductions of the salary.
 SALARY = "Work - Salary Main"
-GENERATED = [INITIAL_GAIN, INITIAL_LOSS, RESULT_GAIN, RESULT_LOSS, SALARY]
+# Internal base movements of the change in the value of the investments: their capital
+# gains and losses, generated from their prices (see _capital_rows), never stored.
+CAPITAL_GAIN, CAPITAL_LOSS = "Capital gains", "Capital losses"
+GENERATED = [INITIAL_GAIN, INITIAL_LOSS, RESULT_GAIN, RESULT_LOSS, SALARY, CAPITAL_GAIN, CAPITAL_LOSS]
 
 # The id of each movement of the ledger: unique and unchanging. The rows of the CSVs of
 # movements keep theirs in an ID_COLUMN, the prefix of their CSV and a number, given by
@@ -78,7 +82,7 @@ GENERATED = [INITIAL_GAIN, INITIAL_LOSS, RESULT_GAIN, RESULT_LOSS, SALARY]
 # what they are generated from, so they never change either.
 ID_COLUMN = "id"
 LEDGER_ID, CONVERSION_ID, INVESTMENT_ID, INTEREST_ID = "L", "C", "I", "M"
-INITIAL_ID, SALARY_ID, RESULT_ID = "A", "W", "R"
+INITIAL_ID, SALARY_ID, RESULT_ID, PRICE_ID = "A", "W", "R", "P"
 
 # Columns of the ledger CSV.
 LEDGER_CSV_COLUMNS = ["move_date", "base_movement", "acc_debit", "amount", "acc_credit", "comment"]
@@ -144,6 +148,17 @@ INTEREST_COLUMNS = ["move_date", INTEREST_ACCOUNT, "amount", "comment"]
 # required to buy, sell and split, and optional for capital repayments.
 QUANTITY_REQUIRED = {"Investment - Bought", "Investment - Sold", "Stock split (More)", "Stock split (Less)"}
 QUANTITY_OPTIONAL = {"Capital repayments"}
+# Investment base movements whose amount over their quantity is a price of their
+# investment: it is revalued at it right before them (see _capital_rows).
+PRICED = {"Investment - Bought", "Investment - Sold"}
+# Columns of the prices CSV, of the prices of the investments: the price of one unit of
+# an investment of an investment account on a date, or its initial price with
+# INITIAL_PRICE as its date (see Account.load_yaml).
+PRICE_COLUMNS = ["date", "account", INVESTMENT_COLUMN, "price"]
+INITIAL_PRICE = PREVIOUS_MONTH
+# The order of the generated capital gains and losses among the movements of the
+# investments CSV: the row they come right before, or empty at the end of their date.
+BEFORE_COLUMN = "before"
 
 
 class LedgerDataError(Exception):
@@ -169,6 +184,7 @@ class Settings:
     conversions_path: Path | None = None  # missing: no conversions yet (created when adding one)
     investment_movements_path: Path | None = None  # missing: none yet (created when adding one)
     interest_path: Path | None = None  # missing: no interest on money yet (created when adding some)
+    prices_path: Path | None = None  # missing: no prices of the investments yet (created when adding one)
     currency: str = "$"
 
     @classmethod
@@ -190,6 +206,7 @@ class Settings:
                 os.environ.get("PLEDGER_INVESTMENT_MOVEMENTS", "info/movements/investment.csv")
             ),
             interest_path=Path(os.environ.get("PLEDGER_INTEREST", "info/movements/interest.csv")),
+            prices_path=Path(os.environ.get("PLEDGER_PRICES", "info/movements/prices.csv")),
             currency=os.environ.get("PLEDGER_CURRENCY", "$"),
         )
 
@@ -213,6 +230,7 @@ class Settings:
             self.conversions_path: _header([*CONVERSION_COLUMNS, ID_COLUMN]),
             self.investment_movements_path: _header([*INVESTMENT_COLUMNS, ID_COLUMN]),
             self.interest_path: _header([*INTEREST_COLUMNS, ID_COLUMN]),
+            self.prices_path: _header(PRICE_COLUMNS),
         }
         return {path: text for path, text in files.items() if path is not None}
 
@@ -239,6 +257,7 @@ class Snapshot:
     conversions: DataFrame  # raw conversions CSV rows, all columns as strings
     investments: DataFrame  # raw investments CSV rows, all columns as strings
     interest: DataFrame  # raw interest CSV rows, all columns as strings
+    prices: DataFrame  # raw prices CSV rows, all columns as strings
     work: Work
     # The top-level previous month of the accounts YAML, if any (see Account.load_yaml)
     previous_month: str | None = None
@@ -248,13 +267,15 @@ class Snapshot:
     start_date: str = field(init=False)
     # Generated movements, like ledger CSV rows, indexed -1, -2, ...: the initial ones,
     # those of the investments, interest and conversions CSVs, the salaries and the
-    # results of the accounts in other currencies.
+    # results of the accounts in other currencies, and the capital gains and losses of the
+    # investments (see _capital_rows), which also have their INVESTMENT_COLUMN and BEFORE_COLUMN.
     initial_rows: DataFrame = field(init=False)
     investment_rows: DataFrame = field(init=False)
     interest_rows: DataFrame = field(init=False)
     conversion_rows: DataFrame = field(init=False)
     salary_rows: DataFrame = field(init=False)
     result_rows: DataFrame = field(init=False)
+    capital_rows: DataFrame = field(init=False)
     # The balance of each account in another currency in that currency, and its movements
     # (see _result_rows)
     other_balances: dict[str, float] = field(init=False)
@@ -267,6 +288,7 @@ class Snapshot:
         dates = [
             *self.rows["move_date"], *self.investments["move_date"],
             *self.interest["move_date"], *self.conversions["move_date"],
+            *(d for d in self.prices["date"] if d != INITIAL_PRICE),
         ]
         initial_dates = [a.initial_date.isoformat() for a in self.accounts.values() if a.initial_date]
         week = self.initial_week
@@ -292,6 +314,7 @@ class Snapshot:
             setattr(self, name, generate(self, start))
             start -= len(getattr(self, name))
         self.result_rows, self.other_balances, self.currency_moves = _result_rows(self, start)
+        self.capital_rows = _capital_rows(self, start - len(self.result_rows))
         self.ids = {}
         for generated, stored, prefix in (
             (self.rows, self.rows, LEDGER_ID),
@@ -300,7 +323,7 @@ class Snapshot:
             (self.conversion_rows, self.conversions, CONVERSION_ID),
         ):
             self.ids |= zip(generated.index, stored_ids(stored, prefix))
-        for generated in (self.initial_rows, self.salary_rows, self.result_rows):
+        for generated in (self.initial_rows, self.salary_rows, self.result_rows, self.capital_rows):
             self.ids |= zip(generated.index, generated[ID_COLUMN])
 
     @property
@@ -327,10 +350,11 @@ class Snapshot:
     def all_rows(self) -> DataFrame:
         """
         The initial movements of the accounts, the CSV rows, the investments, the
-        interest on money, the conversions, the salaries and the results of the accounts
-        in other currencies, in date order (each date in that order).
+        interest on money, the conversions, the salaries, the results of the accounts in
+        other currencies and the capital gains and losses, in date order (each date in that order).
         """
-        rows = _concat([self.initial_rows, self.booked_rows, self.result_rows], self.rows.columns)
+        capital = self.capital_rows.drop(columns=[INVESTMENT_COLUMN, BEFORE_COLUMN])
+        rows = _concat([self.initial_rows, self.booked_rows, self.result_rows, capital], self.rows.columns)
         return rows.assign(**{ID_COLUMN: [self.ids[ix] for ix in rows.index]}).sort_values("move_date", kind="stable")
 
     def own_balance(self, name: str, date: str) -> float:
@@ -412,8 +436,8 @@ class Snapshot:
     ) -> list[InvestmentAccount]:
         """
         Copies of the investment accounts as of the end of `month` (all the ledger by
-        default), with the movements of the investments CSV up to then applied to their
-        investments (see _apply_investments). Their initial amounts
+        default), with the movements of the investments CSV and their capital gains and
+        losses up to then applied to their investments (see _apply_investments). Their initial amounts
         and quantities count once they start. The results that can't be attributed
         to an investment are added to `unattributed`.
         """
@@ -432,7 +456,7 @@ class Snapshot:
             for a in self.accounts.values()
             if isinstance(a, InvestmentAccount)
         }
-        rows = self.investments
+        rows = _concat([self.investments, self.capital_rows], INVESTMENT_COLUMNS).fillna("")
         rows = rows[rows.move_date.str[:7] <= month] if month else rows
         found = _apply_investments(self, {**self.accounts, **accounts}, rows)
         if unattributed is not None:
@@ -592,10 +616,11 @@ class LedgerStore:
             base_currency, other_currencies = Currency.load_yaml(str(s.currencies_path))
             currencies = {base_currency.name: base_currency, **other_currencies}
             work = self.load_work()
+            prices = _load_movements(s.prices_path, PRICE_COLUMNS, "prices")
             accounts = Account.load_yaml(
                 str(s.accounts_path), base_currency, other_currencies,
                 _existing(s.investments_path), _existing(s.creditors_path),
-                list(work.companies), _existing(s.credit_cards_path),
+                list(work.companies), _existing(s.credit_cards_path), initial_prices(prices),
             )
             base_movements, result_types = MovementBase.load_yaml(
                 str(s.base_movements_path), accounts
@@ -615,7 +640,7 @@ class LedgerStore:
                 accounts, base_movements, result_types, rows, currencies, self.load_conversions(),
                 _load_movements(s.investment_movements_path, INVESTMENT_COLUMNS, "investments"),
                 _load_movements(s.interest_path, INTEREST_COLUMNS, "interest"),
-                work, load_previous_month(str(s.accounts_path)),
+                prices, work, load_previous_month(str(s.accounts_path)),
             )
             misplaced = sorted(set(rows["base_movement"]) & set(snapshot.invest_base_movements()))
             if misplaced:
@@ -723,16 +748,16 @@ class LedgerStore:
         self._write_file(self._appended(path, prefix, new_row, list(frame.columns)))
 
     def add_investment(
-        self, account: str, name: str, investment_type: str, amount: str | float = "", quantity: str | float = ""
+        self, account: str, name: str, investment_type: str, quantity: str | float = "", price: str | float = ""
     ) -> None:
         """
         Add an investment to an investment account in the investments YAML, with its
-        type and, optionally, its initial amount and quantity (0 by default). An
-        investment only in the ledger gets its type this way; one in the YAML already
-        has it.
+        type and, optionally, its initial quantity (0 by default), which needs its
+        initial price, added to the prices CSV (see Account.load_yaml). An investment
+        only in the ledger gets its type this way; one in the YAML already has it.
         """
         snapshot = self.load()
-        path = self.settings.investments_path
+        path, prices_path = self.settings.investments_path, self.settings.prices_path
         if path is None:
             raise ValueError("No investments YAML is set")
         accounts = {a.name: a for a in snapshot.accounts.values() if isinstance(a, InvestmentAccount)}
@@ -743,23 +768,69 @@ class LedgerStore:
             inv_type = InvestmentType(investment_type)
         except ValueError:
             raise ValueError(f"Unknown investment type: {investment_type!r}") from None
-        fields: str | dict = inv_type.value
-        if str(amount).strip() or str(quantity).strip():
-            fields = {
-                "type": inv_type.value,
-                "amount": _parse_amount(amount or 0, "initial amount"),
-                "quantity": _parse_amount(quantity or 0, "initial quantity"),
-            }
+        units = _parse_amount(quantity, "initial quantity") if str(quantity).strip() else 0.0
+        value = _parse_amount(price, "initial price") if str(price).strip() else None
+        if units and value is None:
+            raise ValueError("An initial quantity needs its initial price")
+        if value is not None and prices_path is None:
+            raise ValueError("No prices CSV is set")
+        fields: str | dict = {"type": inv_type.value, "quantity": units} if units else inv_type.value
         before = path.read_bytes().decode("utf-8") if path.exists() else None
+        prices_before = prices_path.read_bytes() if prices_path is not None and prices_path.exists() else None
         _atomic_write(path, _insert_yaml_entry(before or "", (account,), name, fields))
         try:
+            if value is not None:
+                self._append_price(snapshot, INITIAL_PRICE, account, name, value)
             self.load()
-        except LedgerDataError as e:
+        except (LedgerDataError, ValueError) as e:
             if before is None:
                 path.unlink()
             else:
                 _atomic_write(path, before)
+            if value is not None and prices_before is None:
+                prices_path.unlink(missing_ok=True)
+            elif value is not None:
+                _atomic_write(prices_path, prices_before.decode("utf-8"))
             raise ValueError(f"Could not add {name!r}: {e}") from None
+
+    def add_price(self, date: str, account: str, investment: str, price: str | float) -> None:
+        """
+        Add a price of an investment of an investment account on a date to the prices
+        CSV: it is revalued at it at the end of that date (see _capital_rows). An
+        investment has one price on each date at most.
+        """
+        snapshot = self.load()
+        if _parse_date(date, "date") is None:
+            raise ValueError("The date is required")
+        accounts = {a.name: a for a in snapshot.investment_accounts()}
+        if account not in accounts:
+            raise ValueError(f"{account!r} is not an investment account")
+        investment = investment.strip()
+        if investment not in accounts[account].investments:
+            raise ValueError(f"{investment!r} is not an investment of {account}: add it as a new investment first")
+        value = _parse_amount(price, "price")
+        date = date.strip()
+        taken = zip(snapshot.prices["date"], snapshot.prices["account"], snapshot.prices[INVESTMENT_COLUMN])
+        if (date, account, investment) in {(d.strip(), a.strip(), n.strip()) for d, a, n in taken}:
+            raise ValueError(f"{investment} of {account} already has a price on {date}: change it in the prices CSV")
+        new_row = {"date": date, "account": account, INVESTMENT_COLUMN: investment, "price": _quantity_text(value)}
+        changed = replace(snapshot, prices=concat([snapshot.prices, DataFrame([new_row])], ignore_index=True))
+        changed.ledger().check_accounts()
+        changed.investment_accounts()
+        self._append_price(snapshot, date, account, investment, value)
+
+    def _append_price(self, snapshot: Snapshot, date: str, account: str, investment: str, price: float) -> None:
+        """Append a price to the prices CSV, created with its header if missing."""
+        path = self.settings.prices_path
+        if path is None:
+            raise ValueError("No prices CSV is set")
+        csv_file = self._read_file(len(snapshot.prices), path, header=PRICE_COLUMNS)
+        header = next(csv.reader([csv_file.lines[0]], delimiter=";"))
+        values = {"date": date, "account": account, INVESTMENT_COLUMN: investment, "price": _quantity_text(price)}
+        buf = io.StringIO()
+        csv.writer(buf, delimiter=";", lineterminator="").writerow([values.get(c, "") for c in header])
+        csv_file.lines.append(buf.getvalue())
+        self._write_file(csv_file)
 
     def add_account(
         self,
@@ -1980,6 +2051,12 @@ def _investment_rows(snapshot: Snapshot, start: int) -> DataFrame:
                 "The investments CSV can only have movements of the investment base movements but the "
                 f"interest on money, not of {row['base_movement']!r} ({row['move_date']})"
             )
+        if row["base_movement"] in (CAPITAL_GAIN, CAPITAL_LOSS):
+            raise ValueError(
+                f"The investments CSV cannot have movements of {row['base_movement']!r} ({row['move_date']}): "
+                "they are generated from the prices of the investments (see the prices CSV) and the "
+                "investments bought and sold"
+            )
         new_rows.append({col: row[col] for col in snapshot.rows.columns if col in row.index})
     return _generated_rows(new_rows, snapshot.rows.columns, start)
 
@@ -2390,6 +2467,122 @@ def _apply_investments(snapshot: Snapshot, accounts: dict[str, Account], rows: D
         else:
             acc.add_result(r["investment"], r["base"], r["amount"])
     return unattributed
+
+
+def _price_rows(prices: DataFrame) -> list[tuple[str, str, str, float]]:
+    """
+    The rows of the prices CSV: (date, account, investment, price), the date an ISO one
+    or INITIAL_PRICE. An investment of an account has one price on each date at most.
+    """
+    found, seen = [], set()
+    for date, account, name, text in zip(prices["date"], prices["account"], prices[INVESTMENT_COLUMN], prices["price"]):
+        date, account, name = date.strip(), account.strip(), name.strip()
+        if date != INITIAL_PRICE and _parse_date(date, f"date of the prices CSV (or {INITIAL_PRICE!r})") is None:
+            raise ValueError(f"The prices CSV rows must have their date ({account}, {name})")
+        if not account or not name:
+            raise ValueError(f"The prices CSV rows must have their account and investment ({date})")
+        if (date, account, name) in seen:
+            raise ValueError(f"The prices CSV has more than one price of {name} of {account} on {date}")
+        seen.add((date, account, name))
+        found.append((date, account, name, _parse_amount(text, f"price of {name} of {account} on {date}")))
+    return found
+
+
+def initial_prices(prices: DataFrame) -> dict[str, dict[str, float]]:
+    """
+    The initial prices of the investments: those of the prices CSV with INITIAL_PRICE as
+    their date, by account and investment (see Account.load_yaml).
+    """
+    found: dict[str, dict[str, float]] = {}
+    for date, account, name, price in _price_rows(prices):
+        if date == INITIAL_PRICE:
+            found.setdefault(account, {})[name] = price
+    return found
+
+
+def _capital_rows(snapshot: Snapshot, start: int) -> DataFrame:
+    """
+    The capital gains and losses of the investments, as CSV rows indexed from `start`
+    down, with their INVESTMENT_COLUMN and their BEFORE_COLUMN.
+
+    Each investment of an investment account is held at its last price: from its
+    initial amount and quantity, once its account starts (see Account.load_yaml), it
+    follows the movements of the investments CSV (see _apply_investments), and is
+    revalued at each new price of it. Right before each PRICED movement, at its amount
+    over its quantity, so what is left after a sale gets that price too, and at the end
+    of each date of the prices CSV, at that price. The result is a CAPITAL_GAIN or
+    CAPITAL_LOSS movement against the equity account, of the difference between its
+    quantity at that price and its amount, to the cent.
+    """
+    accounts = {n: a for n, a in snapshot.accounts.items() if isinstance(a, InvestmentAccount)}
+    bases = snapshot.invest_base_movements()
+    # The investments of each account: those of the investments YAML and the CSV
+    known = {n: set(a.investments) for n, a in accounts.items()}
+    # (date, order on the date, position, what): each account starting, each movement
+    # of the investments CSV and each price
+    events: list[tuple[str, int, int, object]] = [
+        (a.initial_date.isoformat() if a.initial_date else snapshot.start_date, 0, i, n)
+        for i, (n, a) in enumerate(accounts.items())
+    ]
+    for i, row in enumerate(snapshot.investments.to_dict("records")):
+        for name in (row["acc_debit"], row["acc_credit"]):
+            if name in known and row[INVESTMENT_COLUMN].strip():
+                known[name].add(row[INVESTMENT_COLUMN].strip())
+        events.append((row["move_date"], 1, i, row))
+    for i, (date, account, name, price) in enumerate(_price_rows(snapshot.prices)):
+        if account not in accounts:
+            raise ValueError(f"The prices CSV has prices of {account!r}, which is not an investment account ({date})")
+        if name not in known[account]:
+            raise ValueError(f"The prices CSV has prices of {name!r}, which is not an investment of {account} ({date})")
+        if date != INITIAL_PRICE:
+            events.append((date, 2, i, (account, name, price)))
+
+    holdings: dict[tuple[str, str], list[float]] = {}  # (account, investment) to [amount, quantity]
+    priced: dict[tuple[str, str, str], int] = {}  # the PRICED movements of each investment on each date
+    new_rows = []
+
+    def revalue(date: str, account: str, name: str, price: float, move_id: str, before: str) -> None:
+        amount, quantity = holdings.get((account, name), (0.0, 0.0))
+        result = round(quantity * price - amount, 2)
+        if quantity <= 0 or abs(result) < 0.005:
+            return
+        gain = result > 0
+        base = _required_base(
+            snapshot.base_movements, CAPITAL_GAIN if gain else CAPITAL_LOSS, gain,
+            "to update the prices of the investments", INVESTMENT,
+        )
+        sides = (account, base.acc_credit.name) if gain else (base.acc_debit.name, account)
+        new_rows.append({
+            "move_date": date, "base_movement": base.name, "acc_debit": sides[0], "acc_credit": sides[1],
+            "amount": f"{abs(result):.2f}", "comment": f"{_quantity_text(quantity)} {name} at {_quantity_text(price)}",
+            ID_COLUMN: move_id, INVESTMENT_COLUMN: name, BEFORE_COLUMN: before,
+        })
+        holdings[(account, name)][0] += result
+
+    for date, order, i, item in sorted(events, key=lambda e: e[:3]):
+        if order == 0:
+            for name, h in accounts[item].investments.items():
+                holdings[(item, name)] = [h["total_amount"], h["total_quantity"]]
+        elif order == 2:
+            account, name, price = item
+            revalue(date, account, name, price, f"{PRICE_ID}-{account}-{name}-{date}", "")
+        else:
+            base = bases[item["base_movement"]]
+            try:
+                name, units = _investment_details(base, item[INVESTMENT_COLUMN], item[QUANTITY_COLUMN])
+            except ValueError as e:
+                raise ValueError(f"{e} ({date}, {base.name})") from None
+            amount = float(item["amount"].replace(",", "").replace(" ", "") or 0)
+            for account, sign in ((item["acc_debit"], 1), (item["acc_credit"], -1)):
+                if account not in accounts or not name:
+                    continue
+                if base.name in PRICED and units:
+                    k = priced[(account, name, date)] = priced.get((account, name, date), 0) + 1
+                    revalue(date, account, name, amount / units, f"{PRICE_ID}-{account}-{name}-{date}-{k}", str(i))
+                holding = holdings.setdefault((account, name), [0.0, 0.0])
+                holding[0] += sign * amount
+                holding[1] += sign * (units or 0.0)
+    return _generated_rows(new_rows, [*snapshot.rows.columns, INVESTMENT_COLUMN, BEFORE_COLUMN], start)
 
 
 def _header(columns: list[str]) -> str:

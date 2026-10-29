@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query
 
 from pledger.web.dependencies import StoreDep
-from pledger.web.schemas import InvestmentIn, InvestMovementIn
+from pledger.web.schemas import InvestmentIn, InvestMovementIn, PriceIn
 from pledger.web.store import StaleRowError
 from pledger.web.views import build_invest_movements
 
@@ -20,9 +20,19 @@ def create_investment(store: StoreDep, investment: InvestmentIn):
     try:
         store.add_investment(
             investment.account, investment.name, investment.type.value,
-            "" if investment.amount is None else investment.amount,
             "" if investment.quantity is None else investment.quantity,
+            "" if investment.price is None else investment.price,
         )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
+    return {"ok": True}
+
+
+@router.post("/prices", status_code=201)
+def create_price(store: StoreDep, price: PriceIn):
+    """A price of an investment on a date, added to the prices CSV: its capital gains and losses follow."""
+    try:
+        store.add_price(price.date, price.account, price.investment, price.price)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from None
     return {"ok": True}

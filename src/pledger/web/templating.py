@@ -21,6 +21,7 @@ from pledger.web.views import (
     invest_fields,
     ledger_link,
     new_investment_fields,
+    price_fields,
     row_anchor,
 )
 
@@ -150,8 +151,29 @@ def render_new_investment_form(request: Request, snapshot: Snapshot, values: dic
         {
             "currency": settings.currency,
             "path": settings.investments_path.name if settings.investments_path else "investment.yaml",
+            "prices_path": settings.prices_path.name if settings.prices_path else "prices.csv",
             "values": values,
             **new_investment_fields(snapshot),
+            **extra,
+        },
+    )
+
+
+def render_price_form(request: Request, snapshot: Snapshot, values: dict, **extra):
+    """The new price form of the Investments tab, for the prices CSV."""
+    settings = request.app.state.store.settings
+    values.setdefault("date", dt.date.today().isoformat())
+    fields = price_fields(snapshot)
+    if values.get("account") not in fields["investments_by_account"]:
+        values["account"] = next(iter(fields["investments_by_account"]), "")
+    return templates.TemplateResponse(
+        request,
+        "_price_form.html",
+        {
+            "currency": settings.currency,
+            "path": settings.prices_path.name if settings.prices_path else "prices.csv",
+            "values": values,
+            **fields,
             **extra,
         },
     )

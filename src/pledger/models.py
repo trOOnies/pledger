@@ -321,6 +321,7 @@ class Account:
         creditors_path: str | None = None,
         companies: list[str] | None = None,
         credit_cards_path: str | None = None,
+        initial_prices: dict[str, dict[str, float]] | None = None,
     ) -> dict[str, Account]:
         """
         Load Accounts from YAML path. An account without a `currency` is in the
@@ -337,8 +338,9 @@ class Account:
         Investment accounts are the asset accounts listed in the investments YAML
         (if given), and De is the debt account, with its creditors in the creditors
         YAML (if given, with no other account). They must not set an `initial_amount`
-        either: theirs is the sum of the initial amounts of their investments or
-        creditors. De has the `companies` (of the work history), with no initial debt
+        either: theirs is the sum of the initial amounts of their investments (their
+        initial quantity at their initial price, of `initial_prices`: account name to
+        investment name to price) or creditors. De has the `companies` (of the work history), with no initial debt
         unless its `companies` section sets one.
 
         Credit card accounts are the ones in the credit cards YAML (if given), set
@@ -471,7 +473,7 @@ class Account:
                     raise ValueError(f"The internal account {name!r} must be in the base currency")
                 if name in investments_data:
                     investments = InvestmentAccount.investments_from_dict(
-                        name, investments_data[name] or {}
+                        name, investments_data[name] or {}, (initial_prices or {}).get(name, {})
                     )
                     fields["initial_amount"] = sum(i["total_amount"] for i in investments.values())
                     accounts[name] = InvestmentAccount(**fields, investments=investments)
@@ -612,38 +614,49 @@ class InvestmentAccount(Account):
         totals[base_movement] = totals.get(base_movement, 0.0) + amount
 
     @staticmethod
-    def investments_from_dict(acc_name: str, data: dict) -> dict[str, dict]:
+    def investments_from_dict(acc_name: str, data: dict, prices: dict[str, float] | None = None) -> dict[str, dict]:
         """
         Investments of an account from its investments YAML dict. An investment is
-        either a dict or just its type (a str), with no initial amount or quantity.
+        either a dict, with its type and initial `quantity`, or just its type (a str),
+        with no initial quantity. Its initial amount is that quantity at its initial
+        price (of `prices`, investment name to price), required with a quantity.
         """
-
-        def number_of(inv_name: str, inv_d: dict, key: str) -> float:
-            value = inv_d.get(key)
-            if isinstance(value, bool) or not isinstance(value, (int, float)):
-                raise ValueError(  # noqa: TRY004 (a bad config value)
-                    f"Investment {inv_name!r} of the account {acc_name!r} {key} must be a number: {value!r}"
-                )
-            return float(value)
-
+        prices = prices or {}
         investments = {}
         for inv_name, inv_d in data.items():
             inv_name = str(inv_name)  # YAML keys may be numbers
             if isinstance(inv_d, str):
-                inv_d = {"type": inv_d, "amount": 0.0, "quantity": 0.0}
+                inv_d = {"type": inv_d}
             if not isinstance(inv_d, dict) or not inv_d.get("type"):
                 raise ValueError(f"Investment {inv_name!r} of the account {acc_name!r} must have a type")
+            what = f"Investment {inv_name!r} of the account {acc_name!r}"
+            unknown = sorted(set(inv_d) - {"type", "quantity"})
+            if "amount" in unknown:
+                raise ValueError(
+                    f"{what} has an amount: its initial amount is its quantity at its initial price, "
+                    f"in the prices CSV ({PREVIOUS_MONTH!r} as its date)"
+                )
+            if unknown:
+                raise ValueError(f"{what} has unknown keys {unknown}")
             try:
                 inv_type = InvestmentType(inv_d["type"])
             except ValueError:
                 raise ValueError(
-                    f"Investment {inv_name!r} of the account {acc_name!r} has an unknown type: "
+                    f"{what} has an unknown type: "
                     f"{inv_d['type']!r} (must be one of {[t.value for t in InvestmentType]})"
                 ) from None
+            quantity = inv_d.get("quantity", 0.0)
+            if isinstance(quantity, bool) or not isinstance(quantity, (int, float)):
+                raise ValueError(f"{what} quantity must be a number: {quantity!r}")  # noqa: TRY004 (a bad config value)
+            if quantity and inv_name not in prices:
+                raise ValueError(
+                    f"{what} has an initial quantity but no initial price: add it to the prices CSV "
+                    f"({PREVIOUS_MONTH!r} as its date)"
+                )
             investments[inv_name] = {
                 "investment": Investment(name=inv_name, type=inv_type),
-                "total_amount": number_of(inv_name, inv_d, "amount"),
-                "total_quantity": number_of(inv_name, inv_d, "quantity"),
+                "total_amount": round(float(quantity) * prices.get(inv_name, 0.0), 2),
+                "total_quantity": float(quantity),
             }
         return investments
 

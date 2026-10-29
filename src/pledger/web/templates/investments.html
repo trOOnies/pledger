@@ -5,7 +5,7 @@
 {# The results of an investment: net capital gains, the other results by base movement and their total. #}
 {% macro signed(value) %}<td class="num money {{ 'gain' if value > 0 else 'loss' if value < 0 }}" data-sort="{{ value }}">{{ value | money }}</td>{% endmacro %}
 {% macro result_heads() %}
-{% if has_capital %}<th class="num" title="Capital gains minus capital losses, whatever was bought or sold since">Net capital gains</th>{% endif %}
+{% if has_capital %}<th class="num" title="Capital gains minus capital losses, from its prices and the prices it was bought and sold at, whatever was bought or sold since">Net capital gains</th>{% endif %}
 {% for base in result_bases %}<th class="num">{{ base }}</th>{% endfor %}
 {% if has_results %}<th class="num" title="Net capital gains, plus the gains and minus the losses of the other columns">Total result</th>{% endif %}
 {% endmacro %}
@@ -26,7 +26,8 @@
   <h2>Investments</h2>
   <p class="muted">No investment accounts yet. List asset accounts in
     <code>{{ settings.investments_path or "investment.yaml" }}</code>, each with its investments
-    and their type, initial amount and quantity.</p>
+    and their type and initial quantity, with their initial price in
+    <code>{{ settings.prices_path or "prices.csv" }}</code>.</p>
 </div>
 {% else %}
   {% if unattributed %}
@@ -138,7 +139,7 @@
   <div class="panel">
     <h2>Investments</h2>
     <table data-sortable="investments">
-      <thead><tr><th>Investment</th><th>Type</th><th>Account</th><th class="num">Quantity</th><th class="num" title="Amount over quantity">Price</th><th class="num">Amount</th><th class="num">Share</th>{{ result_heads() }}{% if has_fees %}<th class="num" title="The broker fees as a share of the amount; - without fees or a positive amount">Fees over amount</th>{% endif %}</tr></thead>
+      <thead><tr><th>Investment</th><th>Type</th><th>Account</th><th class="num">Quantity</th><th class="num" title="Its last price: amount over quantity">Price</th><th class="num">Amount</th><th class="num">Share</th>{{ result_heads() }}{% if has_fees %}<th class="num" title="The broker fees as a share of the amount; - without fees or a positive amount">Fees over amount</th>{% endif %}</tr></thead>
       <tbody>
       {% for h in holdings %}
       <tr>
@@ -169,8 +170,11 @@
       {% endif %}
     </table>
     <p class="muted small">Amounts and quantities are the initial ones of the investments file plus the investment
-      movements below. The results are the totals of the movements naming each investment, whatever their
-      other account; capital gains and losses add up over time, whatever was bought or sold since.</p>
+      movements below, at the last price of each investment: of the prices file, or the one it was last bought or
+      sold at (its amount over its quantity), whichever is newer. Each new price revalues it, as a capital gain or
+      loss, before a purchase or sale or at the end of the date of the price. The results are the totals of the
+      movements naming each investment, whatever their other account; capital gains and losses add up over time,
+      whatever was bought or sold since.</p>
   </div>
 
   {% if closed %}
@@ -278,6 +282,12 @@
     <section class="panel">
       <h2>New investment</h2>
       {{ new_investment_form | safe }}
+    </section>
+    <section class="panel">
+      <h2>New price</h2>
+      <div hx-get="/form/price" hx-trigger="investment-added from:body" hx-target="#price-form" hx-swap="outerHTML">
+        {{ price_form | safe }}
+      </div>
     </section>
     {% if invest_form %}
     <section class="panel">

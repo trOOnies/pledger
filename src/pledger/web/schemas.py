@@ -25,8 +25,15 @@ class InvestmentIn(BaseModel):
     account: str  # an investment account
     name: str
     type: InvestmentType
-    amount: float | None = None  # initial, 0 by default
     quantity: float | None = None  # initial, 0 by default
+    price: float | None = None  # initial, required with an initial quantity
+
+
+class PriceIn(BaseModel):
+    date: str
+    account: str  # an investment account
+    investment: str  # one of its investments
+    price: float  # of one unit
 
 
 class DebtMovementIn(MovementIn):

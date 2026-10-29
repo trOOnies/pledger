@@ -19,6 +19,7 @@ from pledger.web.templating import (
     render_form,
     render_invest_form,
     render_new_investment_form,
+    render_price_form,
     templates,
 )
 from pledger.web.views import (
@@ -273,12 +274,12 @@ def create_investment(
     account: Annotated[str, Form()],
     name: Annotated[str, Form()],
     investment_type: Annotated[str, Form()],
-    amount: Annotated[str, Form()] = "",
     quantity: Annotated[str, Form()] = "",
+    price: Annotated[str, Form()] = "",
 ):
-    values = {"account": account, "name": name, "investment_type": investment_type, "amount": amount, "quantity": quantity}
+    values = {"account": account, "name": name, "investment_type": investment_type, "quantity": quantity, "price": price}
     try:
-        store.add_investment(account, name, investment_type, amount, quantity)
+        store.add_investment(account, name, investment_type, quantity, price)
     except ValueError as e:
         return render_new_investment_form(request, store.load(), values, error=str(e))
     # Keep the account and type to speed up adding similar investments.
@@ -287,6 +288,35 @@ def create_investment(
         success=f"Added {name.strip()} to {account}",
     )
     response.headers["HX-Trigger"] = "investment-added"
+    return response
+
+
+@router.get("/form/price")
+def price_form(request: Request, store: StoreDep):
+    """A new price form, e.g. with the investments of a new investment."""
+    return render_price_form(request, store.load(), {})
+
+
+@router.post("/investments/prices")
+def create_price(
+    request: Request,
+    store: StoreDep,
+    date: Annotated[str, Form()],
+    account: Annotated[str, Form()],
+    investment: Annotated[str, Form()],
+    price: Annotated[str, Form()],
+):
+    values = {"date": date, "account": account, "investment": investment, "price": price}
+    try:
+        store.add_price(date, account, investment, price)
+    except ValueError as e:
+        return render_price_form(request, store.load(), values, error=str(e))
+    # Keep the date and account to speed up entering the prices of the other investments.
+    response = render_price_form(
+        request, store.load(), {"date": date, "account": account},
+        success=f"Added the price of {investment.strip()} on {date}: {money(float(price.replace(',', '')), store.settings.currency)}",
+    )
+    response.headers["HX-Trigger"] = "investments-changed"
     return response
 
 
