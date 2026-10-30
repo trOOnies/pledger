@@ -1,0 +1,118 @@
+<dl>
+  <dt>📋 Ledger</dt>
+  <dd>Your <strong>movements</strong>, newest first, with the form to <strong>add new
+    ones</strong>: pick its <strong>type</strong> (gain, loss or transfer) and then its base movement.
+    Conversions, debt movements and card payments are added in their own tabs.
+    Use the <em>Month</em>, <em>Account</em> and <em>Base movement</em> filters to narrow everything down
+    (a filter in use is highlighted). Each movement shows the <strong>balance of its debit and credit
+    accounts right after it</strong>. The
+    movements setting each account's <strong>initial amount</strong> are left out unless
+    you tick <em>Initial movements</em>. Each movement has an <strong>ID</strong> that
+    never changes, given by pledger itself (rows added to the CSVs by hand get theirs when
+    pledger starts). Click ✎ on a movement to <strong>edit it</strong> in the form, or × to
+    delete it. Movements handled in another tab can't be edited or deleted
+    here: instead, they show a <strong>colored circle</strong> linking to their row in that tab (or
+    to the row they are generated from, like the month of a salary), highlighted:
+    🟢 Investments, 🔵 Currencies (conversions and revaluations), 🟠 Work (salaries),
+    🟣 Accounts (initial amounts and balance corrections, which can be deleted here), 🟡 Debt (debts and loans) and Services (what the services are owed) and 🔴 Credit Cards (card payments). Their <strong>ID</strong> links there too, and the IDs of the Investments,
+    Currencies, Debt and Credit Cards tabs link back to the same movement in the Ledger tab.</dd>
+  <dt>🏦 Accounts</dt>
+  <dd>Every account with its <strong>description and balance</strong>, your total
+    <strong>assets, liabilities and equity</strong>, and the form to <strong>add a new
+    account</strong>. With a month picked, balances show where each account stood
+    <strong>at the end of that month</strong>. It also shows what your assets and liabilities
+    are made of, <strong>by currency or by liquidity</strong>, and, at each month end, your
+    <strong>debt over equity</strong> and your <strong>net liquidity</strong> (liquid assets
+    minus liquid liabilities) <strong>over equity</strong>. Click ✎ on an asset or liability
+    account to <strong>edit it</strong> (all but its name, type and currency), or ⚖ to
+    <strong>correct its balance</strong> to the one you checked by hand, on a date (today
+    by default): the difference becomes a <em>Correction</em> gain or loss on that date.</dd>
+  <dt>💱 Currencies</dt>
+  <dd>Your <strong>currencies</strong>: the <strong>inflation month by month</strong> of the
+    base currency and the price index built from it, day by day (the months that haven't
+    ended yet are projected), and, for each other currency, what it is
+    <strong>worth in the base one</strong> over time next to its <strong>real value</strong>
+    (that value with inflation taken out, in today's prices: if it goes down, the
+    currency grew less than prices). It also shows the balances of the accounts in each currency, what the
+    accounts in other currencies hold <strong>in their own currency</strong>, and how your
+    assets are split <strong>by currency</strong> at each month end. Buying or selling another currency is a
+    <strong>conversion</strong>: add it here, picking the currency sold and the one bought, with the amount in each one
+    (between two other currencies, it goes through the intermediary account Fi); the <em>Currency</em> and <em>Account</em> filters
+    narrow them down, and each one shows the account's balance in its own currency right after it. Every time the
+    currency's value changes, its accounts get a <strong>Foreign currency (G)</strong> or <strong>(L)</strong> gain or loss, so their
+    balance always matches what they hold at that value.</dd>
+  <dt>📊 Results</dt>
+  <dd>How much your <strong>equity changed</strong> in the period, nominal and real (taking
+    out inflation), and how many <strong>months of expenses</strong> it covers (at the average
+    monthly losses of the year up to then, leaving out the deductions of the salary). Your gains and losses <strong>grouped by result type</strong> (click a result type to
+    see what is inside it, and tick <em>Cumulative</em> to add each one to the ones before it), a <strong>waterfall</strong> of the gains and then the losses of
+    each result type adding up to your profit (with its table one click away; tick
+    <em>% of Operative gains</em> to see it all as a share of the gains of your first result type), and a line
+    showing your <strong>equity over time</strong>, nominal and real (dashed, deflated by the CPI
+    to the prices of its last date). Hover over the line to see each day.
+    Initial movements are left out of the results here too, unless you tick <em>Initial
+    movements</em>. Below them are your <strong>result types</strong> and <strong>base
+    movements</strong>; you can add new ones here.</dd>
+  <dt>💼 Work</dt>
+  <dd>Your <strong>work history, month by month</strong>: the company and job position,
+    the <strong>gross salary</strong> and its <strong>deductions</strong> (taxes,
+    contributions... each a column of the work CSV, named after its loss base movement),
+    which take it to the <strong>net salary</strong>, and the date you <strong>received the
+    payment</strong>. A table shows how this year's gross salary gets to the net one. Months without a job are kept too, so no month is ever missing. Add
+    the next month with the form (<em>Fill in from</em> copies the last month into it), or click ✎ on a month to <strong>edit it</strong>. Two
+    charts show your <strong>gross and net salary</strong> over time, nominal and real (dashed). Each month's gross
+    salary also goes into the ledger <strong>week by week</strong>, split equally between
+    the weeks of the month (Monday to Sunday, each in the month with at least 4 of its days),
+    and so do its deductions, out of the account the salary goes to.
+    The Ledger tab shows these with a 🟠: change them by editing the month here.</dd>
+  <dt>📈 Investments</dt>
+  <dd>What you hold in your <strong>investment accounts</strong>: each investment with its
+    type, quantity, amount, <strong>price</strong> (amount over quantity) and broker <strong>fees over
+    its amount</strong>, and what your
+    investments are made of, <strong>by type or by account</strong>. The investment results
+    (capital gains and losses, interest, dividends, broker fees and stock splits) and the
+    buying and selling of investments are
+    <strong>added, edited and deleted here</strong>, not in the Ledger tab, which shows them with a 🟢.
+    Each one names its <strong>investment</strong> and, when buying, selling or splitting, its
+    <strong>quantity</strong>, so the amounts and quantities above stay up to date. The
+    <strong>interest on money</strong> earned or paid in a regular account (picking an
+    <em>Interest on Money</em> base movement, with no investment) gets a section of its own, by account and month by month, and counts towards the total
+    result. Two charts show the <strong>total invested</strong> (nominal and real, dashed) and the <strong>total result</strong>
+    month by month. The <em>Investment account</em>, <em>Investment</em> and <em>Base movement</em> filters
+    narrow the movements down (an investment shows all its movements, broker fees and dividends
+    included), and each movement shows the total of its account and the amount and quantity of
+    its investment right after it.</dd>
+  <dt>🤝 Debt</dt>
+  <dd>Who is in your <strong>debt account (De)</strong>, split into <strong>people</strong>,
+    <strong>services</strong> and <strong>companies</strong>: <strong>what you owe</strong>
+    each of them, <strong>what they owe you</strong>, and your net debt. A movement of a debt
+    account counts for whoever is named in its <strong>comment</strong>; the companies you
+    worked for (from the Work tab) are listed automatically. A warning shows up when a
+    movement names no one, or when someone owes the other way around from what is
+    <strong>expected</strong> (by default, you owe services and companies owe you). The
+    <strong>movements</strong> of De are listed too, with who each one names.
+    Borrowing (<em>Debt</em>, then Incurred or Paid) and lending (<em>Loan</em>, then Given or Collected) are <strong>added,
+    edited and deleted here</strong>, picking who they are about; the <em>Who</em> filter shows the movements of one of them,
+    and each movement shows what you owe whoever it is about right after it (negative and green: what they owe you).</dd>
+  <dt>🧾 Services</dt>
+  <dd>The <strong>monthly values</strong> of the services of your debt account (rent, gas,
+    internet…), a column each in the services file, set month by month and <strong>split between the
+    weeks</strong> of the month, on their Mondays (prorated, like the salaries). Each one becomes
+    movements of its <code>base_movement</code>, an expense, crediting De,
+    naming the service, up to today, so the Debt tab shows what you owe it; pay it from there with
+    <em>Debt - Paid</em>.</dd>
+  <dt>💳 Credit Cards</dt>
+  <dd>What you <strong>owe on each credit card</strong>, plus what was <strong>charged</strong>
+    to it and <strong>paid</strong> off it. With a month picked, the balance is the one at
+    the end of that month, and the charges and payments are the ones of that month. A bar chart shows what was
+    <strong>charged each month</strong> (your purchases, not your payments), and another one
+    shows what you owe on them <strong>as a share of your equity</strong>, month by month,
+    and their <strong>movements</strong> are listed below, each with what you owe on its card right after it
+    (the <em>Credit card</em> filter shows the ones of one card).
+    <strong>Card payments</strong> are added, edited and deleted here, picking the card and the account paying it.</dd>
+  <dt>❓ Help</dt>
+  <dd>These pages: pick a section in the index, or read them in order with the links at the bottom.</dd>
+</dl>
+<p class="note">🗓️ The <strong>Month filter is shared</strong>: pick a month on Ledger,
+  Accounts, Results, Debt or Credit Cards and the other tabs open on that same month. Pick
+  <em>All time</em> to clear it.</p>

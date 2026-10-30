@@ -1,6 +1,7 @@
 """Tests for the pages and the API of pledger.web, shared by every tab."""
 
 import datetime as dt
+import html
 import re
 from dataclasses import replace
 from pathlib import Path
@@ -240,15 +241,32 @@ class TestPages:
         assert r.status_code == 200
         assert 'href="/help" aria-current="page"' in r.text
         assert "help-logo" in r.text and "> Pledger</h1>" in r.text
-        # Section headings carry the same numbers as the index
-        toc = r.text.split('<ol>')[1].split("</ol>")[0]
-        titles = [li.split("</span> ")[1].split("</a>")[0] for li in toc.split("<li>")[1:]]
-        assert len(titles) == 8 and titles[-1] == "Source code and license"
-        about = r.text.split('id="about"')[1].split("</section>")[0]
+        assert r.text == client.get("/help/start").text
+        assert '<a href="/help/start" aria-current="page">' in r.text
+        about = client.get("/help/about").text.split('id="about"')[1].split("</section>")[0]
         assert 'href="https://github.com/trOOnies/pledger"' in about and "GNU General Public License v3.0" in about
-        for n, title in enumerate(titles, start=1):
-            assert f'<span class="help-num">{n}.</span>' in r.text
-            assert f"</span> {title}</h2>" in r.text
+
+    def test_help_sections(self, client):
+        # Each page's heading carries the same number as the index
+        toc = client.get("/help").text.split("<ol>")[1].split("</ol>")[0]
+        links = re.findall(r'href="/help/([\w-]+)".*?</span> (.+?)</a>', toc)
+        assert len(links) == 8 and links[-1] == ("about", "Source code and license")
+        for n, (section, title) in enumerate(links, start=1):
+            r = client.get(f"/help/{section}")
+            assert r.status_code == 200 and f"<title>{title} · Help · pledger</title>" in html.unescape(r.text)
+            assert f'<span class="help-num">{n}.</span>' in r.text and f"</span> {title}</h2>" in r.text
+            assert 'href="/help" aria-current="page"' in r.text  # the Help tab of the top bar
+            assert r.text.count('aria-current="page"') == 2 and f'<a href="/help/{section}" aria-current="page">' in r.text
+            assert ("help-hero" in r.text) == (n == 1)
+            assert ('rel="prev"' in r.text) == (n > 1) and ('rel="next"' in r.text) == (n < 8)
+        pager = client.get("/help/tabs").text.split('class="help-pager"')[1].split("</nav>")[0]
+        assert 'href="/help/start" rel="prev">← Getting started' in pager and 'href="/help/concepts" rel="next">Key ideas →' in pager
+
+    def test_help_shows_the_base_currency(self, client):
+        assert "base currency ($)" in client.get("/help/start").text.replace("<strong>", "").replace("</strong>", "")
+
+    def test_unknown_help_section(self, client):
+        assert client.get("/help/nope").status_code == 404
 
     @pytest.mark.parametrize(
         "path", ["/", "/accounts", "/investments", "/debt", "/results", "/help"]

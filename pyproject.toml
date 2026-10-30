@@ -38,7 +38,7 @@ pledger-web = "pledger.web.__main__:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"pledger.web" = ["templates/*.html", "static/*"]
+"pledger.web" = ["templates/*.html", "templates/help/*.html", "static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

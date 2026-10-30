@@ -77,7 +77,7 @@ A FastAPI + HTMX UI, one tab per area:
 | 🤝 **Debt** | Who we owe and who owes us in the debt account `De` (people, services and companies), with alerts and the movements of the month, each with what we owe whoever it names after it. The debt movements are added and edited here. |
 | 🧾 **Services** | The services of the debt account with their columns of monthly values, how each is owed (week by week, or on a day of each month), what was owed to them this month and in all, and what we owe them now, with the table of monthly values and the movements owed to each one. The monthly values are set here. |
 | 💳 **Credit Cards** | What we owe on each card, what was charged and paid in the month, a chart of the monthly charges, the net owed over equity, and the movements of the month, each with what we owe on its card after it. The card payments are added and edited here. |
-| ❓ **Help** | The concepts, explained for everyday users. |
+| ❓ **Help** | The concepts, explained for everyday users, in sections with an index and Previous and Next links. |
 
 A few things are shared across tabs:
 

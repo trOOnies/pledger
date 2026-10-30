@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
 
 from pledger.web.dependencies import StoreDep
@@ -147,6 +147,28 @@ def results(request: Request, store: StoreDep, month: str | None = None, initial
     return remember_month(templates.TemplateResponse(request, "results.html", context), month)
 
 
+# The sections of the Help tab, in reading order: the id of its page and template, its emoji and title
+HELP_SECTIONS = [
+    ("start", "🚀", "Getting started"),
+    ("tabs", "🧭", "The tabs"),
+    ("concepts", "💡", "Key ideas"),
+    ("how-to", "🛠️", "How to…"),
+    ("examples", "🧾", "Examples"),
+    ("glossary", "📖", "Glossary"),
+    ("faq", "❓", "Questions"),
+    ("about", "🐙", "Source code and license"),
+]
+
+
 @router.get("/help")
-def help_page(request: Request, store: StoreDep):
-    return templates.TemplateResponse(request, "help.html", {"settings": store.settings})
+@router.get("/help/{section}")
+def help_page(request: Request, store: StoreDep, section: str = HELP_SECTIONS[0][0]):
+    number = next((n for n, s in enumerate(HELP_SECTIONS, 1) if s[0] == section), None)
+    if number is None:
+        raise HTTPException(status_code=404, detail=f"No help section {section!r}")
+    return templates.TemplateResponse(request, "help.html", {
+        "settings": store.settings, "sections": HELP_SECTIONS, "number": number,
+        "section": HELP_SECTIONS[number - 1],
+        "previous": HELP_SECTIONS[number - 2] if number > 1 else None,
+        "next": HELP_SECTIONS[number] if number < len(HELP_SECTIONS) else None,
+    })
