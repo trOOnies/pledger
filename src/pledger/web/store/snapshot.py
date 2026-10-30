@@ -43,7 +43,6 @@ from pledger.web.store.constants import (
     INVESTMENT_COLUMNS,
     INVESTMENT_ID,
     LEDGER_ID,
-    LINE_COLUMN,
     SERVICE_COLUMN,
 )
 from pledger.web.store.conversions import _conversion_rows, _in_currency, _result_rows
@@ -93,7 +92,7 @@ class Snapshot:
     interest_rows: DataFrame = field(init=False)
     conversion_rows: DataFrame = field(init=False)
     salary_rows: DataFrame = field(init=False)
-    service_rows: DataFrame = field(init=False)  # with their SERVICE_COLUMN and LINE_COLUMN
+    service_rows: DataFrame = field(init=False)  # with their SERVICE_COLUMN
     result_rows: DataFrame = field(init=False)
     capital_rows: DataFrame = field(init=False)
     # The balance of each account in another currency in that currency, and its movements
@@ -163,7 +162,7 @@ class Snapshot:
         The movements of the CSVs, the salaries and the services: all but the initial
         ones and the results of the accounts in other currencies and the investments.
         """
-        services = self.service_rows.drop(columns=[SERVICE_COLUMN, LINE_COLUMN])
+        services = self.service_rows.drop(columns=[SERVICE_COLUMN])
         return _concat(
             [self.rows, self.investment_rows, self.interest_rows, self.conversion_rows, self.salary_rows, services],
             self.rows.columns,

@@ -300,7 +300,7 @@ class TestSalaries:
     @pytest.fixture
     def settings(self, settings, tmp_path):
         creditors = tmp_path / "creditors.yaml"
-        creditors.write_text("De:\n  companies:\n    Acme: -5\n", encoding="utf-8")
+        creditors.write_text("De:\n  people:\n    Dad: 0\n", encoding="utf-8")
         work = tmp_path / "work.csv"
         work.write_text(WORK_CSV, encoding="utf-8")
         return replace(with_salaries(settings, debit="De"), creditors_path=creditors, work_path=work)
@@ -342,10 +342,10 @@ class TestSalaries:
 
     def test_are_in_the_ledger_and_owed_by_the_company(self, settings):
         snapshot = LedgerStore(settings).load()
-        # The net salary: 1,600 of salary minus 320 of tax, with the initial -5 of Acme
-        assert snapshot.ledger().balances()["De"] == -1285
+        # The net salary: 1,600 of salary minus 320 of tax
+        assert snapshot.ledger().balances()["De"] == -1280
         cc = snapshot.debt_accounts()[0]
-        assert (cc.creditors["Globex"].amount, cc.creditors["Acme"].amount, cc.unassigned) == (-1280, -5, 0)
+        assert (cc.creditors["Globex"].amount, cc.creditors["Acme"].amount, cc.unassigned) == (-1280, 0, 0)
         assert snapshot.debt_accounts("2026-01")[0].creditors["Globex"].amount == -1280
         # Each salary's id is its month and week, and each deduction's also names it, so
         # editing other months or columns never changes them

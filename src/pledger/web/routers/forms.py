@@ -109,16 +109,9 @@ def create_movement(
 
 
 @router.get("/form/movement")
-def movement_form(
-    request: Request, store: StoreDep, move_date: str = "", base_movement: str = "",
-    acc_debit: str = "", acc_credit: str = "", amount: str = "", comment: str = "",
-):
-    """A new movement form, e.g. to cancel editing one, or filled in with a due recurring movement."""
-    values = {
-        "move_date": move_date, "base_movement": base_movement, "acc_debit": acc_debit,
-        "acc_credit": acc_credit, "amount": amount, "comment": comment,
-    }
-    return render_form(request, store.load(), {k: v for k, v in values.items() if v})
+def movement_form(request: Request, store: StoreDep):
+    """A new movement form, e.g. to cancel editing one."""
+    return render_form(request, store.load(), {})
 
 
 # The rows of the movements each CSV gives the ledger, in its order: they have the ids.
@@ -307,9 +300,9 @@ def services_month_form(request: Request, store: StoreDep, month: str = ""):
 
 @router.post("/services/months")
 async def save_service_month(request: Request, store: StoreDep, month: Annotated[str, Form()] = ""):
-    # One "column:<column>" field per column of the services CSV
+    # One "service:<service>" field per service of the services CSV
     values = {
-        k.removeprefix("column:"): str(v) for k, v in (await request.form()).items() if k.startswith("column:")
+        k.removeprefix("service:"): str(v) for k, v in (await request.form()).items() if k.startswith("service:")
     }
     try:
         store.save_service_month(month, values)

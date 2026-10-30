@@ -31,7 +31,7 @@ class InvestmentIn(BaseModel):
 
 class ServiceValueIn(BaseModel):
     month: str  # YYYY-MM
-    column: str  # of the services CSV: one of a service of the debt account
+    service: str  # of the debt account, with a base movement: its column of the services CSV
     amount: float | None = None  # None clears it
 
 

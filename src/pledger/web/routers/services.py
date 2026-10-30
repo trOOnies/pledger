@@ -20,9 +20,9 @@ def list_services(store: StoreDep, service: str = ""):
 
 @router.put("")
 def set_service_value(store: StoreDep, value: ServiceValueIn):
-    """Set the value of a column of the services CSV in a month, replacing it; none clears it."""
+    """Set the value of a service in a month of the services CSV, replacing it; none clears it."""
     try:
-        store.set_service_value(value.month, value.column, "" if value.amount is None else value.amount)
+        store.set_service_value(value.month, value.service, "" if value.amount is None else value.amount)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from None
     return {"ok": True}

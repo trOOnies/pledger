@@ -675,7 +675,6 @@ De:
     Mum: -150.5
   services:
     Work: 0
-  companies:
 """
 
 
@@ -756,12 +755,13 @@ class TestDebtAccount:
     @pytest.mark.parametrize(
         ("old", "new", "message"),
         [
-            ("  companies:\n", "  companies:\nNope: {}\n", r"only has the creditors of De, not of \['Nope'\]"),
-            ("  companies:\n", "  companies:\nCc: {}\n", r"only has the creditors of De, not of \['Cc'\]"),
+            ("    Work: 0\n", "    Work: 0\nNope: {}\n", r"only has the creditors of De, not of \['Nope'\]"),
+            ("    Work: 0\n", "    Work: 0\nCc: {}\n", r"only has the creditors of De, not of \['Cc'\]"),
             ("    Dad: 100\n", "    Dad: lots\n", "Creditor 'Dad' of the account 'De' amount must be a number"),
             ("    Dad: 100\n", "    Dad:\n", "Creditor 'Dad' of the account 'De' amount must be a number"),
-            ("  companies:\n", "  pets:\n", r"unknown sections \['pets'\]"),
-            ("  companies:\n", "  companies: 3\n", "The companies of the account 'De' must be a mapping"),
+            ("    Work: 0\n", "    Work: 0\n  pets:\n", r"unknown sections \['pets'\]"),
+            ("    Work: 0\n", "    Work: 0\n  companies:\n", r"unknown sections \['companies'\]"),
+            ("  services:\n    Work: 0\n", "  services: 3\n", "The services of the account 'De' must be a mapping"),
             ("    Work: 0\n", "    Work: 0\n    Dad: 1\n", "'Dad' of the account 'De' is in both people and services"),
             ("    Work: 0\n", "    Work:\n      amount: 0\n      expected: owed\n", "unknown expected role: 'owed'"),
             ("    Work: 0\n", "    Work:\n      amount: 0\n      due: 1\n", r"unknown keys \['due'\]"),
@@ -786,8 +786,7 @@ class TestDebtAccount:
         creditors_yaml = paths[2]
         Path(creditors_yaml).write_text(
             "De:\n  people:\n    Dad: 1\n    Mum:\n      amount: 2\n      expected: debtor\n"
-            "  services:\n    Gas: 3\n    Rent:\n      amount: 4\n      expected: null\n"
-            "  companies:\n    Acme:\n      amount: 5\n      expected: creditor\n",
+            "  services:\n    Gas: 3\n    Rent:\n      amount: 4\n      expected: null\n",
             encoding="utf-8",
         )
         accounts_yaml, currencies_yaml, _ = paths
@@ -798,9 +797,9 @@ class TestDebtAccount:
         assert {n: c.expected for n, c in cc.creditors.items()} == {
             "Dad": None, "Mum": DebtRole.DEBTOR,  # people have no default
             "Gas": DebtRole.CREDITOR, "Rent": None,  # services default to creditors
-            "Acme": DebtRole.CREDITOR, "Globex": DebtRole.DEBTOR,  # companies to debtors
+            "Acme": DebtRole.DEBTOR, "Globex": DebtRole.DEBTOR,  # companies to debtors
         }
-        assert cc.creditors["Mum"].amount == 2 and cc.initial_amount == 15
+        assert cc.creditors["Mum"].amount == 2 and cc.initial_amount == 10
 
     @pytest.mark.parametrize(
         ("expected", "amount", "met"),

@@ -12,36 +12,36 @@ from pledger.models import DEBT_ACCOUNT, parse_month
 from pledger.web.store.base_store import StoreBase
 from pledger.web.store.common import _parse_amount
 from pledger.web.store.constants import SERVICE_MONTH
-from pledger.web.store.services import service_columns, service_months
+from pledger.web.store.services import service_bases, service_months
 
 
 class ServiceStore(StoreBase):
     """Sets the monthly values of the services CSV."""
 
-    def set_service_value(self, month: str, column: str, amount: str | float = "") -> None:
-        """Set the value of a column of the services CSV in a month, keeping the others (see save_service_month)."""
+    def set_service_value(self, month: str, service: str, amount: str | float = "") -> None:
+        """Set the value of a service in a month of the services CSV, keeping the others (see save_service_month)."""
         snapshot = self.load()
         month = parse_month(month, "month")
         values = dict(service_months(snapshot)).get(month, {})
-        self.save_service_month(month, {**{c: f"{v:,.2f}" for c, v in values.items()}, column.strip(): amount})
+        self.save_service_month(month, {**{c: f"{v:,.2f}" for c, v in values.items()}, service.strip(): amount})
 
     def save_service_month(self, month: str, values: dict[str, str | float]) -> None:
         """
         Save the row of a month of the services CSV (see _service_rows), replacing it, with
-        the value of each column of a service (an empty one is none); the columns left out
-        are emptied. A month not in the CSV yet gets its row, in month order, and a column
-        not in it yet with a value gets its column. The CSV is created if missing.
+        the value of each service (an empty one is none); the ones left out are emptied.
+        A month not in the CSV yet gets its row, in month order, and a service not in it
+        yet with a value gets its column. The CSV is created if missing.
         """
         snapshot = self.load()
         path = self.settings.services_path
         if path is None:
             raise ValueError("No services CSV is set")
         month = parse_month(month, "month")
-        known = service_columns(snapshot)
+        known = service_bases(snapshot)
         values = {c.strip(): str(v).strip() for c, v in values.items()}
         unknown = [c for c in values if c not in known]
         if unknown:
-            raise ValueError(f"{unknown[0]!r} is not a column of a service of {DEBT_ACCOUNT} in the creditors YAML")
+            raise ValueError(f"{unknown[0]!r} is not a service of {DEBT_ACCOUNT} with a base movement in the creditors YAML")
         cells = {
             c: f"{_parse_amount(v, f'value of {c}'):,.2f}" for c, v in values.items() if v
         }

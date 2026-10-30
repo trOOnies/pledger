@@ -57,7 +57,6 @@ from pledger.web.store.constants import (
     INVESTMENT_ID,
     LEDGER_CSV_COLUMNS,
     LEDGER_ID,
-    LINE_COLUMN,
     LOAN_COLLECTED,
     LOAN_GIVEN,
     LOCAL_HOSTS,
@@ -94,7 +93,7 @@ from pledger.web.store.ledger_store import (
     LedgerStore,
 )
 from pledger.web.store.services import (
-    service_columns,
+    service_bases,
     service_months,
 )
 from pledger.web.store.settings import (
@@ -154,7 +153,6 @@ __all__ = [
     "INVESTMENT_ID",
     "LEDGER_CSV_COLUMNS",
     "LEDGER_ID",
-    "LINE_COLUMN",
     "LOAN_COLLECTED",
     "LOAN_GIVEN",
     "LOCAL_HOSTS",
@@ -198,7 +196,7 @@ __all__ = [
     "next_id",
     "own_initial_amount",
     "row_fingerprint",
-    "service_columns",
+    "service_bases",
     "service_months",
     "stored_ids",
     "today",

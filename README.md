@@ -37,7 +37,6 @@ web app.
   - [Debt](#debt)
   - [Services](#services)
   - [Credit cards](#credit-cards)
-  - [Recurring movements](#recurring-movements)
   - [Work](#work)
 - [Development](#-development)
 
@@ -120,8 +119,7 @@ with an environment variable:
 | `creditors.yaml` | | `PLEDGER_CREDITORS` | Who each debt account is owed by or owes to |
 | `credit_cards.yaml` | | `PLEDGER_CREDIT_CARDS` | The credit card accounts |
 | `work.csv` | | `PLEDGER_WORK` | The work history, one row per month |
-| `services.csv` | | `PLEDGER_SERVICES` | The monthly values of the services of the debt account, a column each |
-| `recurring.yaml` | | `PLEDGER_RECURRING` | The movements that repeat every month or week, suggested when due |
+| `services.csv` | | `PLEDGER_SERVICES` | The monthly values of the services of the debt account, a column per service |
 
 On startup, `pledger-web` checks that every one of these files (and `base_currency.csv` and
 `currencies.csv`) exists. Any missing ones are created, the YAMLs empty and the CSVs with just
@@ -140,8 +138,7 @@ rows of the four CSVs of movements keep theirs in a last `id` column: `L-1`, `L-
 CSV, every row without a valid id (one added by hand, or copied with another row's id) gets
 the next number, appended to its line, and the column is added if missing. Leave the `id`
 empty when adding rows by hand. The generated movements get theirs from what they come from:
-`A-<account>` (initial amounts), `W-<month>-<week>` (salaries), `S-<column>-<month>` and
-`S-<column>-<month>-<week>` (services), `R-<account>-<date>`
+`A-<account>` (initial amounts), `W-<month>-<week>` (salaries), `S-<service>-<month>-<week>` (services), `R-<account>-<date>`
 (results of the accounts in other currencies) and `P-<account>-<investment>-<date>` (capital gains
 and losses of a price of `prices.csv`, with `-<n>` for the n-th investment bought or sold that
 date). `prices.csv` has no ids.
@@ -477,9 +474,9 @@ the movements naming an investment of no investment account.
 ### Debt
 
 The debt account is the internal `De`, the only top-level key of `creditors.yaml` (optional:
-without it, `De` has no creditors but the companies). It has up to three sections, `people`,
-`services` and `companies`, mapping who we have debts with to the initial amount: **positive if
-we owe them, negative if they owe us**. A name can only be in one section.
+without it, `De` has no creditors but the companies). It has up to two sections, `people` and
+`services`, mapping who we have debts with to the initial amount: **positive if we owe them,
+negative if they owe us**. A name can only be in one section.
 
 Instead of the amount, a name can map to its `amount` and its `expected` role:
 
@@ -500,12 +497,11 @@ De:
     Rent:
       amount: 0.00
       expected: debtor
-  companies: null
+      base_movement: Rent - Base
 ```
 
-Every company of `work.csv` is a company of `De`, with an initial amount of 0
-unless its `companies` section sets one. The section can also list companies that aren't in the
-work history. The account's initial amount is the sum of its initial amounts, and its balance
+The companies aren't in the file: every company of `work.csv` is a company of `De`, with an
+initial amount of 0, and can't be in another section. The account's initial amount is the sum of its initial amounts, and its balance
 can go below 0 (we are owed more than we owe).
 
 **Who a movement counts for.** The ledger movements with a debt account on either side add to
@@ -585,80 +581,48 @@ the movements of the cards in the month picked, the initial ones included.
 
 ### Services
 
-The services of the debt account (its `services` section in `creditors.yaml`) can be owed
-**monthly values**, kept in `services.csv`: a row per month, and a column per thing a service
-costs. Each column belongs to one service, under its `columns` in `creditors.yaml`, with the base
-movement it is owed with: a loss of one's own (not internal) whose credit side is free or `De`.
+The services of the debt account (its `services` section in `creditors.yaml`) are how the charges
+that repeat are owed: **monthly values**, kept in `services.csv`, a row per month and a column per
+service, named after it. Each service has the base movement it is owed with in its
+`base_movement`: a loss (not internal) whose credit side is free or `De`. Several services can
+share one. A service without a `base_movement` has no column, and only counts what the Debt tab
+names it in.
 
 ```yaml
 De:
   services:
     Rent:
       amount: 0.00
-      columns:
-        Rent: Rent - Base
-        Expenses: Rent - Expenses
+      base_movement: Rent - Base
     Gas:
       amount: 0.00
-      columns:
-        Gas:
-          base_movement: Rent - Basic services
-          day: 10
+      base_movement: Rent - Basic services
 ```
 
 ```csv
-month;Rent;Expenses;Gas
-2026-02;800,000.00;169,260.07;13,504.61
-2026-03;800,000.00;173,355.07;
+month;Rent;Gas
+2026-02;800,000.00;13,504.61
+2026-03;800,000.00;
 ```
 
 - Each value is that month's. An empty cell is nothing, and a month has one row at most.
-- **Prorated**, by default: the value is split equally between the weeks of its month, on their
-  Mondays, like the salaries (see [Work](#work)).
-- **Calendarized**, with a `day` (1 to 31): the whole value is owed on that day of its month, or on
-  the month's last day if it has fewer days.
+- The value is split equally between the weeks of its month, on their Mondays, like the salaries
+  (a week belongs to the month of its Thursday, see [Work](#work)). This is the only frequency.
 
-Each one is a generated movement of its column's base movement, from equity crediting `De`, its
-comment naming the service first (and the column, if named otherwise), so it adds to what we owe
-the service in the Debt tab. They are owed **up to today** (none dated after it, so future months
+Each one is a generated movement of its service's base movement, from equity crediting `De`, its
+comment naming the service first, so it adds to what we owe the service in the Debt tab. They are owed **up to today** (none dated after it, so future months
 can be filled in ahead), never before the first date of the ledger or in the previous month, and
 can't be edited by hand: the Ledger tab shows them with a 🟡 linking to the Services tab. Pay a
 service with a `Debt - Paid` movement naming it, from the Debt tab.
 
-The Services tab lists the services and their columns, with each one's value this month, how it is
-owed, what was owed this month and in all, and what we owe each service now, and shows the monthly
+The Services tab lists the services, with each one's base movement, value this month, what was owed
+this month and in all, and what we owe each service now, and shows the monthly
 values as a table. Its form adds a month (by default the one after the last, with a *Fill in from*
-button for the last month's values) or, for an existing month, replaces it, with a field per column
-by service; each month's ✎ button loads it into the form. `PUT /api/services` sets a single value.
+button for the last month's values) or, for an existing month, replaces it, with a field per
+service; each month's ✎ button loads it into the form. `PUT /api/services` sets a single value.
 New months go in month order, and a column missing from the file is added with its first value. It
 also lists the movements owed to the services, filtered by service, each with what we owe that
 service after it. The file is created with the first month.
-
-### Recurring movements
-
-`recurring.yaml` lists the movements that repeat (rent, subscriptions, an allowance...). pledger
-never writes them: the Ledger tab shows each one in a **Due** panel from the date it is due on
-(and up to 7 days before, faded), until a movement of its base movement, debit and credit
-accounts is in `ledger.csv` in its period, whatever its amount and day. The period is the month,
-or the week from Monday to Sunday. **Add** adds it as it is, and **Fill in** puts it in the
-movement form to change it first. The due ones are also at `/api/recurring/due`.
-
-```yaml
-Rent:
-  base_movement: Housing - Rent
-  credit: Bk          # the sides the base movement doesn't fix
-  amount: 150000.00   # optional: without one, it can only be filled in
-  day: 5              # monthly, on this day (the last one of the shorter months)
-  start: 2026-01      # the first month, this month by default
-  end: 2026-12        # optional: the last month
-  comment: Flat
-Allowance:
-  base_movement: Withdraw
-  weekday: monday     # weekly, on this day, instead of a day of the month
-```
-
-Only the base movements of the Ledger tab can recur. If the file is invalid, the Due panel
-says why, and the rest of the tab works as usual.
 
 ### Work
 

@@ -179,16 +179,15 @@ BEFORE_COLUMN = "before"
 
 
 # The services CSV has the monthly values of the services of the debt account: a row per
-# month, and a column per thing a service costs (e.g. its rent, or the expenses of the
-# building), each one a column of a service in the creditors YAML (see Creditor.columns).
-# Each value is owed to the service as a movement of its column's loss base movement
-# crediting the debt account (see _service_rows): whole on the column's day of the month
-# (calendarized), else split between the weeks of the month (prorated weekly).
+# month, and a column per service, named after it, with a base movement in the creditors
+# YAML (see Creditor.base_movement). Each value is owed to the service as movements of that
+# loss base movement crediting the debt account, split between the weeks of the month
+# (see _service_rows).
 SERVICE_MONTH = "month"
 
 
-# The service and the column of the services CSV of each of their generated movements
-SERVICE_COLUMN, LINE_COLUMN = "service", "column"
+# The service of each of their generated movements
+SERVICE_COLUMN = "service"
 
 
 # The hosts the app answers to by default: only the loopback ones, so that no other site can

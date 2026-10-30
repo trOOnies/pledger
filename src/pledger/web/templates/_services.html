@@ -9,32 +9,22 @@
   <div class="panel">
     <h2>Services <small>{{ services | length }}</small></h2>
     <table data-sortable="services">
-      <thead><tr><th>Service</th><th>Column</th><th>Base movement</th><th title="On a day of each month (calendarized), or split between the weeks of the month (prorated)">Owed</th><th class="num" title="Its value in {{ month }}">Value this month</th><th class="num" title="Owed in {{ month }}, up to today">Owed this month</th><th class="num" title="Owed in all">All time</th><th class="num" title="What we owe the service now, after the payments (negative and green: what it owes us)">We owe</th></tr></thead>
-      {% for s in services %}
+      <thead><tr><th>Service</th><th>Base movement</th><th class="num" title="Its value in {{ month }}">Value this month</th><th class="num" title="Owed in {{ month }}, up to today">Owed this month</th><th class="num" title="Owed in all">All time</th><th class="num" title="What we owe the service now, after the payments (negative and green: what it owes us)">We owe</th></tr></thead>
       <tbody>
-      {% for c in s.columns %}
-      <tr>
-        {% if loop.first %}<td class="nowrap" rowspan="{{ s.columns | length }}"><strong>{{ s.name }}</strong></td>{% endif %}
-        <td>{{ c.name }}</td>
-        <td>{{ c.base }}</td>
-        <td>{{ c.mode }}</td>
-        <td class="num money {{ 'muted' if not c.value }}" data-sort="{{ c.value }}">{{ c.value | money }}</td>
-        <td class="num money {{ 'muted' if not c.this_month }}" data-sort="{{ c.this_month }}">{{ c.this_month | money }}</td>
-        <td class="num money {{ 'muted' if not c.charged }}" data-sort="{{ c.charged }}">{{ c.charged | money }}</td>
-        {% if loop.first %}<td class="num money {{ 'gain' if s.owed < -0.005 }}" rowspan="{{ s.columns | length }}" data-sort="{{ s.owed }}">{{ s.owed | money }}</td>{% endif %}
-      </tr>
-      {% else %}
+      {% for s in services %}
       <tr>
         <td class="nowrap"><strong>{{ s.name }}</strong></td>
-        <td class="muted" colspan="6">No columns: add them under its <code>columns</code> in the creditors file.</td>
+        {% if s.base %}<td>{{ s.base }}</td>{% else %}<td class="muted">None: add its <code>base_movement</code> in the creditors file.</td>{% endif %}
+        <td class="num money {{ 'muted' if not s.value }}" data-sort="{{ s.value }}">{{ s.value | money }}</td>
+        <td class="num money {{ 'muted' if not s.this_month }}" data-sort="{{ s.this_month }}">{{ s.this_month | money }}</td>
+        <td class="num money {{ 'muted' if not s.charged }}" data-sort="{{ s.charged }}">{{ s.charged | money }}</td>
         <td class="num money {{ 'gain' if s.owed < -0.005 }}" data-sort="{{ s.owed }}">{{ s.owed | money }}</td>
       </tr>
       {% endfor %}
       </tbody>
-      {% endfor %}
     </table>
-    <p class="muted small">The services of <code>De</code> in the creditors file, with the columns of the services file
-      owed to each one. What we owe them is in the <a href="/debt">Debt</a> tab too, where their payments
+    <p class="muted small">The services of <code>De</code> in the creditors file, each with its column of the services file.
+      What we owe them is in the <a href="/debt">Debt</a> tab too, where their payments
       (<em>Debt - Paid</em>, naming the service in the comment) are added.</p>
   </div>
 
@@ -62,9 +52,9 @@
         </tbody>
       </table>
     </div>
-    <p class="muted small">Each value is owed up to today, never before the ledger starts: whole on its column's day of
-      the month (or the month's last day), or split equally between the weeks of the month, on their Mondays, as a
-      movement of its column's base movement crediting <code>De</code>.</p>
+    <p class="muted small">Each value is owed up to today, never before the ledger starts, split equally between the weeks
+      of the month, on their Mondays, as movements of its service's base movement crediting <code>De</code>. A week belongs to
+      the month of its Thursday.</p>
   </div>
 
   <form id="service-filter" class="filters" hx-get="/services" hx-target="#services-view" hx-push-url="true" hx-trigger="change">
@@ -79,14 +69,13 @@
     <h2>Movements <small>{{ movements | length }}</small></h2>
     <div class="table-wrap">
       <table class="movements" data-sortable="service-movements">
-        <thead><tr>{{ id_header() }}<th>Date</th><th>Service</th><th>Column</th><th>Base movement</th><th>Debit</th><th class="num">Amount</th><th>Credit</th><th class="num" title="What we owe the service right after it">We owe</th><th>Comment</th></tr></thead>
+        <thead><tr>{{ id_header() }}<th>Date</th><th>Service</th><th>Base movement</th><th>Debit</th><th class="num">Amount</th><th>Credit</th><th class="num" title="What we owe the service right after it">We owe</th><th>Comment</th></tr></thead>
         <tbody>
         {% for m in movements %}
         <tr{% if m.id %} id="{{ row_anchor('movement', m.id) }}"{% endif %}>
           {{ id_cell(m.id, ledger_link(m.id, m.date) if m.id) }}
           <td class="nowrap">{{ m.date }}</td>
           <td class="nowrap"><strong>{{ m.who }}</strong></td>
-          <td>{{ m.column }}</td>
           <td><span class="badge {{ m.type }}">{{ m.type[0] | upper }}</span> {{ m.base }}</td>
           <td>{{ m.debit }}</td>
           <td class="num money" data-sort="{{ m.amount }}">{{ m.amount | money }}</td>
@@ -95,7 +84,7 @@
           <td class="muted">{{ m.comment }}</td>
         </tr>
         {% else %}
-        <tr><td colspan="10" class="muted">No movements.</td></tr>
+        <tr><td colspan="9" class="muted">No movements.</td></tr>
         {% endfor %}
         </tbody>
       </table>

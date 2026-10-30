@@ -73,8 +73,10 @@ class TestDebtSides:
         assert debts == {"Dad": pytest.approx(16)}
 
     def test_no_debt_movements_of_companies(self, settings, tmp_path):
-        settings.creditors_path.write_text("De:\n  people:\n    Dad: 0\n  companies:\n    Acme: 10\n")
-        store = LedgerStore(settings)
+        settings = replace(settings, work_path=settings.ledger_path.with_name("work.csv"))
+        settings.work_path.write_text(WORK_CSV, encoding="utf-8")
+        settings.creditors_path.write_text("De:\n  people:\n    Dad: 0\n")
+        store = LedgerStore(with_salaries(settings))
         with pytest.raises(ValueError, match="'Acme' is a company: its debt comes from the salaries of the Work tab"):
             store.add_debt_movement("2026-02-01", "Debt - Incurred", "Ca", "De", "1", "Acme")
         r = TestClient(create_app(settings)).get("/debt")
@@ -242,7 +244,7 @@ class TestDebtPage:
     def settings(self, settings, tmp_path):
         path = tmp_path / "creditors.yaml"
         path.write_text(
-            "De:\n  people:\n    Dad: 100\n    Ana: -30\n    Leo: 0\n  services:\n    Bank: 50.5\n  companies:\n",
+            "De:\n  people:\n    Dad: 100\n    Ana: -30\n    Leo: 0\n  services:\n    Bank: 50.5\n",
             encoding="utf-8",
         )
         return replace(settings, creditors_path=path)
@@ -360,7 +362,7 @@ class TestDebtKinds:
     def settings(self, settings, tmp_path):
         creditors = tmp_path / "creditors.yaml"
         creditors.write_text(
-            "De:\n  people:\n    Dad: 100\n  services:\n    Gas: 20\n  companies:\n    Acme: -5\n    Old Co: 3\n",
+            "De:\n  people:\n    Dad: 100\n  services:\n    Gas: 20\n",
             encoding="utf-8",
         )
         work = tmp_path / "work.csv"
@@ -372,9 +374,9 @@ class TestDebtKinds:
         cc = LedgerStore(settings).load().accounts["De"]
         assert {n: (c.kind.value, c.amount) for n, c in cc.creditors.items()} == {
             "Dad": ("people", 100), "Gas": ("services", 20),
-            "Acme": ("companies", -5), "Old Co": ("companies", 3), "Globex": ("companies", 0),
+            "Acme": ("companies", 0), "Globex": ("companies", 0),
         }
-        assert cc.initial_amount == 118
+        assert cc.initial_amount == 120
         assert settings.creditors_path.read_text(encoding="utf-8") == before  # never written
 
     def test_new_companies_of_the_work_history(self, settings):
@@ -391,12 +393,12 @@ class TestDebtKinds:
             LedgerStore(settings).load()
 
     def test_debt_page_by_kind(self, settings):
-        r = TestClient(create_app(settings)).get("/debt")
+        r = TestClient(create_app(with_salaries(settings, debit="De"))).get("/debt")  # Globex owes us the salaries
         assert r.status_code == 200
-        for title, count in (("👥 People", 1), ("🧾 Services", 1), ("🏢 Companies", 3)):
+        for title, count in (("👥 People", 1), ("🧾 Services", 1), ("🏢 Companies", 2)):
             assert f"<h2>{title} <small>{count}</small></h2>" in r.text
         companies = r.text.split("<h2>🏢 Companies")[1].split("</table>")[0]
-        assert "<strong>Globex</strong></td>\n        <td>Settled</td>" in companies
+        assert "<strong>Acme</strong></td>\n        <td>Settled</td>" in companies
         assert "<strong>Dad</strong>" not in companies
         we_owe = r.text.split("We owe <span")[1].split("Owed to us <span")[0]
         assert '<span class="bar-name">Services</span>' in we_owe and '<span class="bar-name">Gas</span>' in we_owe

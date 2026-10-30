@@ -5,8 +5,8 @@
 <div class="panel">
   <h2>Services</h2>
   <p class="muted">No services yet. List them under <code>services</code> of the debt account <code>De</code> in
-    <code>{{ settings.creditors_path or "creditors.yaml" }}</code>, each with the <code>columns</code> of
-    <code>{{ settings.services_path.name if settings.services_path else "services.csv" }}</code> owed to it.</p>
+    <code>{{ settings.creditors_path or "creditors.yaml" }}</code>, each with the <code>base_movement</code> of
+    its column of <code>{{ settings.services_path.name if settings.services_path else "services.csv" }}</code>.</p>
 </div>
 {% else %}
 <div class="layout">
