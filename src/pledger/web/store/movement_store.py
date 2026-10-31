@@ -46,7 +46,7 @@ class MovementStore(StoreBase):
         movement whose movements aren't generated, and goes to the ledger CSV: one of a
         debt base movement with `debt` (from the Debt tab), one of a card payment base
         movement with `card_payment` (from the Credit Cards tab), a balance correction with
-        `correction` (from the Accounts tab), else one of the Ledger tab (see _check_tab). It gets the next id of its CSV (see _appended).
+        `correction` (from the Audit tab), else one of the Ledger tab (see _check_tab). It gets the next id of its CSV (see _appended).
         """
         snapshot = self.load()
         field, new_row = _movement_row(

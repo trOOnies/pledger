@@ -1,13 +1,12 @@
 {% from "_type_buttons.html" import type_buttons %}
-{# The account form (see views.account_form): a new account, with `editing` an asset or liability
-   one (see views.account_editing), or with `correcting` the correction of the balance of one (see
-   views.account_correcting). It swaps itself; in _accounts.html, it is kept as is while the rest of
-   the Accounts tab reloads. #}
+{# The account form (see views.account_form): a new account, or with `editing` an asset or liability
+   one (see views.account_editing). It swaps itself; in _accounts.html, it is kept as is while the
+   rest of the Accounts tab reloads. #}
 <form id="account-form" class="stack" hx-swap="outerHTML"
-  hx-post="{{ '/accounts/correct' if correcting else '/accounts/edit' if editing else '/accounts' }}">
-  {% if editing or correcting %}
+  hx-post="{{ '/accounts/edit' if editing else '/accounts' }}">
+  {% if editing %}
   <div class="form-head">
-    <h2>{{ "Correct balance" if correcting else "Edit account" }}</h2>
+    <h2>Edit account</h2>
     <button type="button" class="secondary" hx-get="/form/account" hx-target="#account-form" hx-swap="outerHTML">Cancel</button>
   </div>
   {% else %}
@@ -15,26 +14,6 @@
   {% endif %}
   {% if account_error %}<p class="msg error">{{ account_error }}</p>{% endif %}
   {% if account_success %}<p class="msg success">{{ account_success }}</p>{% endif %}
-  {% if correcting %}
-  <label>Account
-    <input name="name" value="{{ correcting.name }}" readonly tabindex="-1" class="fixed">
-  </label>
-  <p class="muted small">Its balance today: <span class="money">{{ correcting.currency }} {{ "{:,.2f}".format(correcting.balance) }}</span></p>
-  <label>Checked balance
-    <span class="money-input">
-      <span class="prefix">{{ correcting.currency }}</span>
-      <input name="balance" inputmode="decimal" value="{{ values.balance }}" placeholder="0.00" required autocomplete="off" data-money>
-    </span>
-  </label>
-  <label><span>Check date <em class="optional">(optional)</em></span>
-    <input type="date" name="check_date" value="{{ values.check_date }}" data-future-warning>
-    <span class="hint warn" hidden>⚠️ This date is in the future.</span>
-  </label>
-  <p class="muted small">The balance you checked by hand at the end of the check date (today without one), in the
-    account's currency. The difference with its balance then is a <code>Correction (G)</code> or
-    <code>Correction (L)</code> movement on that date, deleted from the <a href="/">Ledger</a> tab if need be.</p>
-  <button type="submit">Correct balance</button>
-  {% else %}
   {% if editing %}
   <div class="pair">
     <label>Name
@@ -96,5 +75,4 @@
   <p class="muted small">A check is on the balance at the end of each day: never negative (net positive) or always 0.00 (net zero). Movements breaking it are rejected.</p>
   {% if editing %}<p class="muted small">The name, type and currency of an account stay; rename it by hand in its YAML and CSVs.</p>{% endif %}
   <button type="submit">{{ "Save changes" if editing else "Add account" }}</button>
-  {% endif %}
 </form>

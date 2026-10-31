@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import datetime as dt
-import math
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -22,9 +20,9 @@ from pledger.web.store.common import (
     _atomic_write,
     _check_description,
     _check_name,
-    _value_on,
+    _parse_number,
 )
-from pledger.web.store.constants import CORRECTION_GAIN, CORRECTION_LOSS
+from pledger.web.store.constants import CORRECTION_GAIN
 from pledger.web.store.movement_store import MovementStore
 from pledger.web.store.yaml_edit import (
     _account_fields,
@@ -117,14 +115,13 @@ class AccountStore(MovementStore):
             _atomic_write(path, before)
             raise ValueError(f"Could not edit {name!r}: {e}") from None
 
-    def correct_balance(self, name: str, balance: str | float, check_date: str = "") -> tuple[str, float] | None:
+    def correct_balance(self, name: str, balance: str | float) -> tuple[str, float] | None:
         """
         Correct the balance of an asset or liability account (but an investment one) to
-        `balance`, checked by hand at the end of `check_date` (today by default), in its
-        currency: a CORRECTION_GAIN or CORRECTION_LOSS movement on that date of the
-        difference with its balance then, out of or into equity, in the ledger CSV. The difference in another currency is at
-        the value of that currency on that date. Returns the base movement and the amount
-        in the base currency, or None if the balance was already right.
+        `balance`, checked by hand today, in its currency: a CORRECTION_GAIN or
+        CORRECTION_LOSS movement today of the difference with its balance, out of or into
+        equity, in the ledger CSV (see Snapshot.correction_of). Returns the base movement
+        and the amount in the base currency, or None if the balance was already right.
         """
         snapshot = self.load()
         account = snapshot.accounts.get(name)
@@ -134,38 +131,20 @@ class AccountStore(MovementStore):
             raise ValueError(f"The balance of the investment account {name!r} comes from its investments")  # noqa: TRY004 (a bad pick)
         if not str(balance).strip():
             raise ValueError("The checked balance is required")
-        try:
-            checked = float(str(balance).replace(",", "").strip())
-        except ValueError:
-            raise ValueError(f"Invalid checked balance: {balance!r}") from None
-        if not math.isfinite(checked):
-            raise ValueError(f"Invalid checked balance: {balance!r}")
-        check_date = check_date.strip() or dt.date.today().isoformat()
-        try:
-            dt.date.fromisoformat(check_date)
-        except ValueError:
-            raise ValueError(f"Invalid check date: {check_date!r}") from None
-
-        if account.currency.is_base_currency:
-            rows = snapshot.all_rows
-            difference = checked - snapshot.ledger(rows[rows.move_date <= check_date]).balances().get(name, 0.0)
-        else:
-            value = _value_on(account.currency, check_date, f"to correct {name!r} with")
-            difference = (checked - snapshot.own_balance(name, check_date)) * value
-        amount = round(abs(difference), 2)
-        if amount < 0.005:
+        checked = _parse_number(balance, "checked balance")
+        correction = snapshot.correction_of(account, checked - snapshot.balances_today()[name])
+        if correction is None:
             return None
-        gain = (difference > 0) == (account.acc_type == AccountType.ASSET)
-        base_name = CORRECTION_GAIN if gain else CORRECTION_LOSS
+        base_name, amount = correction
         if base_name not in snapshot.correction_base_movements():
             raise ValueError(
-                f"Correcting balances needs {base_name!r}, an internal {'gain' if gain else 'loss'} of the "
-                "base movements YAML"
+                f"Correcting balances needs {base_name!r}, an internal "
+                f"{'gain' if base_name == CORRECTION_GAIN else 'loss'} of the base movements YAML"
             )
         base = snapshot.base_movements[base_name]
-        debit, credit = (name, base.acc_credit.name) if gain else (base.acc_debit.name, name)
+        debit, credit = (name, base.acc_credit.name) if base_name == CORRECTION_GAIN else (base.acc_debit.name, name)
         comment = f"Checked balance: {checked:,.2f} {account.currency.name}"
-        self.add(check_date, base_name, debit, credit, amount, comment, correction=True)
+        self.add(snapshot.today.isoformat(), base_name, debit, credit, amount, comment, correction=True)
         return base_name, amount
 
     def add_result_type(self, name: str, long_name: str, description: str) -> None:

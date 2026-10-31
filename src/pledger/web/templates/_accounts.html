@@ -62,14 +62,11 @@
           <td {% if not a.checks %}class="muted"{% endif %}>{{ a.checks | join(", ") if a.checks else "-" }}</td>
           <td class="num money {{ 'loss' if a.balance < 0 and type != 'equity' }}" data-sort="{{ a.balance }}">{{ a.balance | money }}</td>
           <td class="nowrap">
-            {% for url, label, icon, show in (
-              ("/accounts/edit", "Edit account", "&#9998;", a.editable),
-              ("/accounts/correct", "Correct the balance of", "&#9878;&#xFE0E;", a.correctable),
-            ) if show %}
-            <button class="icon edit" title="{{ label }} {{ a.name }}" aria-label="{{ label }} {{ a.name }}"
-              hx-get="{{ url }}" hx-vals='{{ {"name": a.name} | tojson }}' hx-target="#account-form" hx-swap="outerHTML"
-              hx-on::after-request="document.getElementById('account-form')?.scrollIntoView({block: 'nearest', behavior: 'smooth'})">{{ icon | safe }}</button>
-            {% endfor %}
+            {% if a.editable %}
+            <button class="icon edit" title="Edit account {{ a.name }}" aria-label="Edit account {{ a.name }}"
+              hx-get="/accounts/edit" hx-vals='{{ {"name": a.name} | tojson }}' hx-target="#account-form" hx-swap="outerHTML"
+              hx-on::after-request="document.getElementById('account-form')?.scrollIntoView({block: 'nearest', behavior: 'smooth'})">&#9998;</button>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}

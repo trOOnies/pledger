@@ -143,7 +143,7 @@ def _check_tab(
     Each tab adds (or edits, or deletes: the `action`) the movements of its own base
     movements: the conversions are only added from the Currencies tab, the debt
     movements from the Debt tab, the card payments from the Credit Cards tab, the
-    balance corrections from the Accounts tab (`correction`; the Ledger tab deletes
+    balance corrections from the Audit tab (`correction`; the Ledger tab deletes
     them with it too), and all the others from the Ledger tab (or the Investments tab,
     see _check_invest).
     """
@@ -152,7 +152,7 @@ def _check_tab(
     for wanted, bases, what, tab in (
         (debt, snapshot.debt_base_movements(), "debt", "Debt"),
         (card_payment, snapshot.card_payment_base_movements(), "card payment", "Credit Cards"),
-        (correction, snapshot.correction_base_movements(), "balance correction", "Accounts"),
+        (correction, snapshot.correction_base_movements(), "balance correction", "Audit"),
     ):
         if wanted and base_name not in bases:
             raise ValueError(f"Base movement {base_name!r} is not a {what} base movement")

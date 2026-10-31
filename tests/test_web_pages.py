@@ -808,7 +808,7 @@ class TestToggles:
 
 
 class TestLanguage:
-    @pytest.mark.parametrize("path", ["/", "/accounts", "/currencies", "/results", "/work", "/investments", "/debt", "/credit-cards", "/help"])
+    @pytest.mark.parametrize("path", ["/", "/accounts", "/currencies", "/results", "/work", "/investments", "/debt", "/credit-cards", "/audit", "/help"])
     def test_every_tab_is_in_english(self, client, path):
         r = client.get(path)
         assert r.headers["Content-Language"] == "en"

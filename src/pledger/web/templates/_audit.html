@@ -1,0 +1,82 @@
+{# The Audit tab: the form to fill in the balances, blind, or once confirmed the `results` next to
+   the actual ones (see views.audit_results). They carry the balances filled in along, so each
+   correction shows the results again. Nothing is written but by a correction, always optional. #}
+{% macro amount(value, row) %}<span class="money">{{ row.currency }} {{ "{:,.{}f}".format(value, row.decimals) }}</span>{% endmacro %}
+{% if results is none %}
+<form class="panel stack" hx-post="/audit" hx-target="#audit">
+  <h2>Audit</h2>
+  <p class="muted">Check each account in its bank, card or wallet, and write down the balance you see today. Its
+    balance in pledger stays hidden until you confirm, so it can't influence you.</p>
+  {% if audit_error %}<p class="msg error">{{ audit_error }}</p>{% endif %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Account</th><th>Type</th><th>Description</th><th class="num">Balance today</th></tr></thead>
+      <tbody>
+      {% for f in fields %}
+      <tr>
+        <td class="nowrap"><label for="audit-{{ loop.index }}"><strong>{{ f.name }}</strong></label></td>
+        <td>{{ f.type | capitalize }}</td>
+        <td class="muted">{{ f.description }}</td>
+        <td>
+          <span class="money-input">
+            <span class="prefix">{{ f.currency }}</span>
+            <input id="audit-{{ loop.index }}" name="balance:{{ f.name }}" inputmode="decimal" value="{{ values.get(f.name, '') }}"
+              placeholder="Not audited" autocomplete="off" data-money="{{ f.decimals }}">
+          </span>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="muted small">Leave an account empty to skip it. A <code>0.00</code> is audited: its balance should be zero.</p>
+  <button type="submit">Confirm</button>
+</form>
+{% else %}
+<div class="view">
+  <div class="cards">
+    <div class="card"><span class="label">Audited</span><span class="num">{{ results | length }}</span></div>
+    <div class="card"><span class="label">With a difference</span><span class="num">{{ differences }}</span></div>
+    <div class="card"><span class="label">Not audited</span><span class="num">{{ skipped }}</span></div>
+  </div>
+  <div class="panel">
+    <div class="form-head">
+      <h2>Results</h2>
+      <a href="/audit">New audit</a>
+    </div>
+    {% if audit_failure %}<p class="msg error">{{ audit_failure }}</p>{% endif %}
+    {% if audit_success %}<p class="msg success">{{ audit_success }}</p>{% endif %}
+    <form id="audit-values">
+      {% for name, value in values.items() %}<input type="hidden" name="balance:{{ name }}" value="{{ value }}">{% endfor %}
+    </form>
+    <div class="table-wrap">
+      <table data-sortable="audit">
+        <thead><tr><th>Account</th><th>Type</th><th class="num">Inputted</th><th class="num">Actual</th><th class="num" title="Inputted minus actual">Difference</th><th></th></tr></thead>
+        <tbody>
+        {% for r in results %}
+        <tr>
+          <td class="nowrap"><strong>{{ r.name }}</strong></td>
+          <td>{{ r.type | capitalize }}</td>
+          <td class="num" data-sort="{{ r.inputted }}">{{ amount(r.inputted, r) }}</td>
+          <td class="num" data-sort="{{ r.actual }}">{{ amount(r.actual, r) }}</td>
+          <td class="num {{ 'muted' if r.matches else 'loss' }}" data-sort="{{ r.difference }}">{{ amount(r.difference, r) }}</td>
+          <td class="nowrap">
+            {% if r.matches %}<span class="muted">Matches</span>
+            {% elif r.investment %}<span class="muted" title="Its balance comes from its investments">Fix it in <a href="/investments">Investments</a></span>
+            {% else %}
+            <button type="button" class="secondary" hx-post="/audit/correct" hx-include="#audit-values"
+              hx-vals='{{ {"account": r.name} | tojson }}' hx-target="#audit"
+              title="Adds this movement to the ledger, dated today">Add {{ r.base }} of {{ r.amount | money }}</button>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="muted small">Actual balances are at the end of today. The corrections are optional: you can leave a
+      difference and fix it yourself in your data files. One added by mistake can be deleted from the
+      <a href="/">Ledger</a> tab.</p>
+  </div>
+</div>
+{% endif %}

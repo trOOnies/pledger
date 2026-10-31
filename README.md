@@ -31,6 +31,7 @@ web app.
 - [Concepts](#-concepts)
 - [Reference](#-reference)
   - [Accounts](#accounts)
+  - [Audit](#audit)
   - [Base movements and internal movements](#base-movements-and-internal-movements)
   - [Currencies and inflation](#currencies-and-inflation)
   - [Investments](#investments)
@@ -69,14 +70,15 @@ A FastAPI + HTMX UI, one tab per area:
 | Tab | What it shows |
 | --- | --- |
 | 📋 **Ledger** | Lists, adds, edits and deletes movements, with the balances of their accounts right after each one, filtered by month, account and base movement, and by a search (every word in its id, date, base movement, accounts, comment or amount; `"quote"` a phrase). Conversions, debt movements and card payments are added in their own tabs instead. |
-| 🏦 **Accounts** | Balances, total assets, liabilities and equity, a form to add accounts, edit the asset and liability ones (✎) and correct their balance (⚖), the composition of assets and liabilities (by currency or by liquidity) and, at each month end, debt over equity and net liquidity (liquid assets minus liquid liabilities) over equity. |
+| 🏦 **Accounts** | Balances, total assets, liabilities and equity, a form to add accounts, edit the asset and liability ones (✎), the composition of assets and liabilities (by currency or by liquidity) and, at each month end, debt over equity and net liquidity (liquid assets minus liquid liabilities) over equity. |
 | 💱 **Currencies** | Balances per currency, the balance of each account in other currencies in its own currency, the daily CPI of the base currency, its monthly inflation, the nominal and real value of each other currency, and the share of each currency in the assets at each month end. The conversions are added (picking the currency sold and the one bought), edited and deleted here, filtered by currency and account, each with the account's balance in its own currency after it. |
 | 📊 **Results** | The nominal and real change of equity in the period and the months of expenses it covers, gains, losses and profit by result type (also cumulative), a waterfall of the result by type (with its result statement as a table, both also as a share of the gains of the first result type, e.g. *Operative*) and equity over time. Result types and base movements are listed and added here. |
 | 💼 **Work** | The company, job position and salary of each month, from gross to net through its deductions (taxes, contributions...), with a chart of both salaries (0 for the months without a job). |
 | 📈 **Investments** | The investments of the investment accounts with their price (amount over quantity), their composition by type or by account, the results of each one, the interest on money of regular accounts, and charts of the total invested and the total result. The broker fees of each investment are shown over its amount. The **Investment account**, **Investment** and **Base movement** filters narrow the movements down (an investment shows all its movements, whatever their accounts), each with the total of its account and the amount and quantity of its investment after it. The internal `Invest` movements are added, edited and deleted here, and so are new prices of the investments, from which their capital gains and losses are generated. |
 | 🤝 **Debt** | Who we owe and who owes us in the debt account `De` (people, services and companies), with alerts and the movements of the month, each with what we owe whoever it names after it. The debt movements are added and edited here. |
-| 🧾 **Services** | The services of the debt account with their columns of monthly values, how each is owed (week by week, or on a day of each month), what was owed to them this month and in all, and what we owe them now, with the table of monthly values and the movements owed to each one. The monthly values are set here. |
+| 🧾 **Services** | The services of the debt account with their base movements and monthly values, what was owed to them this month and in all, and what we owe them now, with the table of monthly values and the movements owed to each one. The monthly values are set here. |
 | 💳 **Credit Cards** | What we owe on each card, what was charged and paid in the month, a chart of the monthly charges, the net owed over equity, and the movements of the month, each with what we owe on its card after it. The card payments are added and edited here. |
+| 🔍 **Audit** | Fill in the balances you checked by hand, without seeing pledger's, then compare them with the actual ones and, if you want, add a correction for each difference. |
 | ❓ **Help** | The concepts, explained for everyday users, in sections with an index and Previous and Next links. |
 
 A few things are shared across tabs:
@@ -221,10 +223,20 @@ revalue nothing until the first date of `currencies.csv` after it. Without a `pr
 the ledger starts on the date of its first movement.
 
 The Accounts tab groups their balances by currency or by liquidity. Its ✎ edits an asset or
-liability account in its YAML, the internal ones too (all but its name, type and currency), and its ⚖ corrects the
-balance of one (but an investment account) to the one checked by hand at the end of a date, today
-by default, in its currency. The difference is a movement of one of these internal base movements,
-on that date, in the ledger CSV:
+liability account in its YAML, the internal ones too (all but its name, type and currency).
+
+### Audit
+
+The Audit tab compares your asset and liability accounts with what you checked by hand. It lists
+them without their balances, so you **fill them in blind**, each in the currency of the account. An
+account left empty isn't audited, while a `0.00` is audited as zero.
+
+Confirming shows each balance filled in next to the actual one at the end of today, and nothing is
+written. Each difference has a button to add a correction, which is optional: you can fix the
+difference yourself in your data files instead. Investment accounts are compared too, but aren't
+corrected, because their balance comes from their investments.
+
+A correction is a movement dated today, in the ledger CSV, of one of these internal base movements:
 
 ```yaml
 internal:

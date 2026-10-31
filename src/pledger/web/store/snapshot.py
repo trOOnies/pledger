@@ -23,14 +23,17 @@ from pledger.models import (
     MovementBase,
     ResultType,
     initial_week,
+    is_foreign,
 )
 from pledger.web.store import common
-from pledger.web.store.common import _concat, stored_ids
+from pledger.web.store.common import _concat, _value_on, stored_ids
 from pledger.web.store.constants import (
     BEFORE_COLUMN,
     CARD_PAYMENT_BASES,
     CONVERSION_ID,
     CONVERSIONS,
+    CORRECTION_GAIN,
+    CORRECTION_LOSS,
     CORRECTIONS,
     DEBT_BASES,
     GENERATED,
@@ -186,6 +189,32 @@ class Snapshot:
         """
         values = self.accounts[name].currency.base_currency_mapping
         return float(sum(_in_currency(m, values) for m in self.currency_moves.get(name, []) if m[0] <= date))
+
+    def balances_today(self) -> dict[str, float]:
+        """
+        The balance of each account at the end of today: in its currency if it is in
+        another one (see is_foreign), else in the base one.
+        """
+        today, rows = self.today.isoformat(), self.all_rows
+        balances = self.ledger(rows[rows.move_date <= today]).balances()
+        return {
+            name: self.own_balance(name, today) if is_foreign(account) else balances.get(name, 0.0)
+            for name, account in self.accounts.items()
+        }
+
+    def correction_of(self, account: Account, difference: float) -> tuple[str, float] | None:
+        """
+        The CORRECTIONS base movement and the amount in the base currency, at today's
+        value of the currency, of correcting the balance of an asset or liability account
+        by `difference` (in the currency of balances_today). None if under a cent.
+        """
+        if is_foreign(account):
+            difference *= _value_on(account.currency, self.today.isoformat(), f"to correct {account.name!r} with")
+        amount = round(abs(difference), 2)
+        if amount < 0.005:
+            return None
+        gain = (difference > 0) == (account.acc_type == AccountType.ASSET)
+        return CORRECTION_GAIN if gain else CORRECTION_LOSS, amount
 
     def conversion_balances(self) -> dict[int, float]:
         """

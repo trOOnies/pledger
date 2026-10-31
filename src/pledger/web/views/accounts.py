@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import datetime as dt
-
 from pledger.enums import AccountCheck, AccountType
 from pledger.models import (
     SPECIAL_LABELS,
@@ -88,8 +86,6 @@ def build_accounts(snapshot: Snapshot, month: str = "", values: dict | None = No
                 "checks": [CHECK_LABELS[c] for c in a.checks],
                 "balance": balances.get(a.name, 0.0),
                 "editable": a.acc_type in EDITABLE_ACCOUNT_TYPES,
-                # Investment accounts get their balance from their investments
-                "correctable": a.acc_type in EDITABLE_ACCOUNT_TYPES and not isinstance(a, InvestmentAccount),
             }
             for a in snapshot.accounts.values()
             if a.acc_type == t
@@ -111,13 +107,8 @@ def build_accounts(snapshot: Snapshot, month: str = "", values: dict | None = No
     }
 
 
-def account_form(snapshot: Snapshot, values: dict | None = None, editing: dict | None = None,
-                 correcting: dict | None = None) -> dict:
-    """
-    The state of the account form: of a new account, of an account `editing` (see
-    account_editing) or of the correction of the balance of one, `correcting` (see
-    account_correcting).
-    """
+def account_form(snapshot: Snapshot, values: dict | None = None, editing: dict | None = None) -> dict:
+    """The state of the account form: of a new account, or of an account `editing` (see account_editing)."""
     values = values or {}
     values.setdefault("acc_type", AccountType.ASSET.value)
     values.setdefault("acc_currency", snapshot.base_currency.name)
@@ -129,19 +120,7 @@ def account_form(snapshot: Snapshot, values: dict | None = None, editing: dict |
         "check_labels": CHECK_LABELS,
         "values": values,
         "editing": editing,
-        "correcting": correcting,
     }
-
-
-def account_correcting(snapshot: Snapshot, account) -> dict:
-    """What the account form needs to correct the balance of an account: its balance today, in its currency."""
-    today = dt.date.today().isoformat()
-    if account.currency.is_base_currency:
-        rows = snapshot.all_rows
-        balance = snapshot.ledger(rows[rows.move_date <= today]).balances().get(account.name, 0.0)
-    else:
-        balance = snapshot.own_balance(account.name, today)
-    return {"name": account.name, "currency": account.currency.name, "balance": balance}
 
 
 CHECK_LABELS = {

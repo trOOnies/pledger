@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 
-from pledger.models import DebtAccount, InvestmentAccount
+from pledger.models import DebtAccount
 from pledger.web.dependencies import StoreDep
 from pledger.web.store import CARD_SURPLUS, LedgerStore, Snapshot, StaleRowError
 from pledger.web.templating import (
@@ -25,11 +25,12 @@ from pledger.web.templating import (
 )
 from pledger.web.views import (
     EDITABLE_ACCOUNT_TYPES,
-    account_correcting,
     account_editing,
     account_fields,
     account_form,
     account_values,
+    audit_form,
+    audit_results,
     base_fields,
     base_sides,
     build_conversions,
@@ -514,14 +515,14 @@ def render_setup(request: Request, store: LedgerStore, values: dict, **extra):
 
 def render_account_form(
     request: Request, store: LedgerStore, values: dict, editing: dict | None = None,
-    correcting: dict | None = None, changed: bool = False, **extra,
+    changed: bool = False, **extra,
 ):
     """
     The account form alone (see views.account_form); `changed` tells the rest of the
     Accounts tab to reload.
     """
     response = templates.TemplateResponse(
-        request, "_account_form.html", {**account_form(store.load(), values, editing, correcting), **extra}
+        request, "_account_form.html", {**account_form(store.load(), values, editing), **extra}
     )
     if changed:
         response.headers["HX-Trigger"] = "accounts-changed"
@@ -607,43 +608,42 @@ def edit_account(
     return render_account_form(request, store, {}, changed=True, account_success=f"Updated account {name}")
 
 
-def correctable_account(store: LedgerStore, name: str):
-    """An account whose balance can be corrected in the Accounts tab: not an investment one."""
-    account = editable_account(store, name)
-    if isinstance(account, InvestmentAccount):
-        raise HTTPException(status_code=404, detail=f"{name!r} is an investment account")
-    return account
+def audit_values(form) -> dict[str, str]:
+    """The balances filled in, by account, from a "balance:<account>" field per account."""
+    return {k.removeprefix("balance:"): str(v) for k, v in form.items() if k.startswith("balance:")}
 
 
-@router.get("/accounts/correct")
-def correct_balance_form(request: Request, store: StoreDep, name: str):
-    """The account form to correct the balance of an account (see LedgerStore.correct_balance)."""
-    account = correctable_account(store, name)
-    return render_account_form(request, store, {}, correcting=account_correcting(store.load(), account))
-
-
-@router.post("/accounts/correct")
-def correct_balance(
-    request: Request,
-    store: StoreDep,
-    name: Annotated[str, Form()],
-    balance: Annotated[str, Form()] = "",  # required, but checked by the store
-    check_date: Annotated[str, Form()] = "",
-):
-    account = correctable_account(store, name)
+def render_audit(request: Request, store: LedgerStore, values: dict[str, str], **extra):
+    """The results of an audit, or the form again with what is wrong with it (see views.audit_results)."""
+    snapshot = store.load()
     try:
-        corrected = store.correct_balance(name, balance, check_date)
+        context = audit_results(snapshot, values)
     except ValueError as e:
-        return render_account_form(
-            request, store, {"balance": balance, "check_date": check_date},
-            correcting=account_correcting(store.load(), account), account_error=str(e),
-        )
+        context = {**audit_form(snapshot, values), "audit_error": str(e)}
+    return templates.TemplateResponse(request, "_audit.html", {**context, **extra})
+
+
+@router.post("/audit")
+async def audit(request: Request, store: StoreDep):
+    """Confirm the balances filled in: only now are they shown next to the actual ones."""
+    return render_audit(request, store, audit_values(await request.form()))
+
+
+@router.post("/audit/correct")
+async def correct_balance(request: Request, store: StoreDep):
+    """Correct an account to its balance filled in (see LedgerStore.correct_balance), keeping the results."""
+    form = await request.form()
+    name, values = str(form.get("account", "")), audit_values(form)
+    try:
+        corrected = store.correct_balance(name, values.get(name, ""))
+    except ValueError as e:
+        return render_audit(request, store, values, audit_failure=str(e))
     if corrected is None:
-        return render_account_form(request, store, {}, account_success=f"The balance of {name} was already right")
+        return render_audit(request, store, values, audit_success=f"The balance of {name} was already right")
     base_movement, amount = corrected
-    return render_account_form(
-        request, store, {}, changed=True,
-        account_success=f"Corrected {name}: {base_movement} of {money(amount, store.settings.currency)}",
+    return render_audit(
+        request, store, values,
+        audit_success=f"Corrected {name}: {base_movement} of {money(amount, store.settings.currency)}",
     )
 
 

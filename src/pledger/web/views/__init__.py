@@ -5,13 +5,16 @@ from pledger.web.views.accounts import (
     CHECK_LABELS,
     EDITABLE_ACCOUNT_TYPES,
     LIQUIDITY_GROUPS,
-    account_correcting,
     account_editing,
     account_form,
     account_values,
     balance_groupings,
     build_accounts,
     over_time_charts,
+)
+from pledger.web.views.audit import (
+    audit_form,
+    audit_results,
 )
 from pledger.web.views.charts import (
     MAX_CHART_POINTS,
@@ -135,12 +138,13 @@ __all__ = [
     "MOVEMENT_SOURCES",
     "NO_TYPE",
     "UNASSIGNED",
-    "account_correcting",
     "account_editing",
     "account_fields",
     "account_form",
     "account_movements",
     "account_values",
+    "audit_form",
+    "audit_results",
     "balance_groupings",
     "base_fields",
     "base_sides",

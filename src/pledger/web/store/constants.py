@@ -121,7 +121,7 @@ INTEREST = {INTEREST_GAIN, INTEREST_LOSS}
 
 # The internal gain and loss of the corrections of the balance of an account to the one
 # checked by hand, in favour of oneself or against, in the ledger CSV: added from the
-# Accounts tab and deleted from the Ledger one (see LedgerStore.correct_balance)
+# Audit tab and deleted from the Ledger one (see LedgerStore.correct_balance)
 CORRECTION_GAIN = "Correction (G)"
 
 

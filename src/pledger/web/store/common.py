@@ -228,14 +228,20 @@ def _parse_date(value: str, what: str) -> dt.date | None:
         raise ValueError(f"Invalid {what}: {value!r}") from None
 
 
-def _parse_amount(amount: str | float, what: str, negative_error: str | None = None) -> float:
-    """A finite, non-negative amount, from a number or text like '1,234.50'."""
+def _parse_number(amount: str | float, what: str) -> float:
+    """A finite number, from a number or text like '1,234.50'."""
     try:
         value = float(str(amount).replace(",", "").strip())
     except ValueError:
         raise ValueError(f"Invalid {what}: {amount!r}") from None
     if not math.isfinite(value):
         raise ValueError(f"Invalid {what}: {amount!r}")
+    return value
+
+
+def _parse_amount(amount: str | float, what: str, negative_error: str | None = None) -> float:
+    """A finite, non-negative amount, from a number or text like '1,234.50'."""
+    value = _parse_number(amount, what)
     if value < 0:
         raise ValueError(negative_error or f"The {what} cannot be negative")
     return value

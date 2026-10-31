@@ -21,7 +21,7 @@ MOVEMENT_SOURCES = {
     "revaluation": ("🔵", "Generated from the values of the Currencies tab"),
     "work": ("🟠", "Generated each week from the salary of the Work tab"),
     "accounts": ("🟣", "Generated from the initial amount of the account, in the Accounts tab"),
-    "corrections": ("🟣", "A balance correction, added from the Accounts tab; it can be deleted here"),
+    "corrections": ("🟣", "A balance correction, added from the Audit tab; it can be deleted here"),
     "debt": ("🟡", "Added, edited and deleted from the Debt tab"),
     "services": ("🟡", "Generated from the monthly value of the service, in the Services tab"),
     "credit-cards": ("🔴", "Added, edited and deleted from the Credit Cards tab"),

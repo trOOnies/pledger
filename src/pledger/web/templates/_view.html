@@ -28,7 +28,7 @@
             {% set emoji, title = movement_sources[m.source] %}
             <a class="source" href="{{ m.link }}" title="{{ title }}" aria-label="{{ title }}">{{ emoji }}</a>
             {% endif %}
-            {# The balance corrections are added from the Accounts tab, but deleted here #}
+            {# The balance corrections are added from the Audit tab, but deleted here #}
             {% if m.correction or not (m.source or m.internal) %}
             {% if m.editable %}
             {{ edit_button("/movements/%d/edit" % m.index, m.fingerprint, "movement-form") }}
