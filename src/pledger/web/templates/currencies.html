@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_line.html" import column_chart, multi_line_chart, stacked_chart with context %}
+{% from "_estimated.html" import estimated_alert %}
 {% block title %}Currencies · pledger{% endblock %}
 {% macro change_cell(value) %}<td class="num {{ 'muted' if value is none }}" data-sort="{{ value if value is not none else '' }}">{{ value | signed_percent }}</td>{% endmacro %}
 {% block content %}
@@ -56,7 +57,7 @@
           <td class="num money" data-sort="{{ c.liabilities }}">{{ c.liabilities | money }}</td>
           {% if c.last %}
           <td class="num" data-sort="{{ c.last.value }}">{{ c.last.value | number }}</td>
-          <td class="nowrap">{{ c.last.date }}</td>
+          <td class="nowrap">{{ c.last.date }}{% if c.last.estimated %} <span class="muted small">(estimated)</span>{% endif %}</td>
           {{ change_cell(c.last.change) }}
           {% else %}
           <td class="num muted">-</td><td class="muted">-</td><td class="num muted">-</td>
@@ -117,7 +118,7 @@
       {% endif %}
       {{ multi_line_chart(cpi_chart, "Customer price index of " ~ base.name ~ " from " ~ inflation_months[0].month ~ " to " ~ inflation_months[-1].month, series=1) }}
       <p class="muted small">100 before {{ inflation_months[0].month }}. Each month's inflation grows it evenly over its
-        days. Dashed, the months that haven't ended yet, with their projected inflation.</p>
+        days. Dashed, the months that haven't ended yet or are estimated, with their projected inflation.</p>
       {% else %}
       <p class="muted">No months in <code>base_currency.csv</code> yet.</p>
       {% endif %}
@@ -125,6 +126,7 @@
 
     <section class="panel">
       <h2>Monthly inflation <small>from base_currency.csv</small></h2>
+      {{ estimated_alert(overdue_inflation, "month", "base_currency.csv") }}
       {% if inflation_chart %}
       {% if last_month %}
       <p class="equity-headline">
@@ -135,13 +137,13 @@
       {% set ns = namespace(points=[]) %}
       {% for c in inflation_chart.columns %}
         {% set ns.points = ns.points + [{
-          "x": c.x, "y": c.y, "label": c.month ~ (" (projected)" if c.projected else ""),
+          "x": c.x, "y": c.y, "label": c.month ~ (" (estimated)" if c.estimated else " (projected)" if c.projected else ""),
           "value_text": "%.2f%%" | format(100 * c.value),
           "change_text": ("%.2f%% in the last 12 months" | format(100 * c.last_12)) if c.last_12 is not none else "",
         }] %}
       {% endfor %}
       {{ column_chart(inflation_chart, ns.points, "Monthly inflation of " ~ base.name ~ " from " ~ inflation_months[0].month ~ " to " ~ inflation_months[-1].month, series=1, money=False) }}
-      <p class="muted small">Faded, the months that haven't ended yet: their inflation is projected.</p>
+      <p class="muted small">Faded, the months that haven't ended yet and the estimated ones, which take the last known inflation: their inflation is projected.</p>
       <details class="chart-table">
         <summary>Show table</summary>
         <div class="table-wrap">
@@ -150,7 +152,7 @@
             <tbody>
             {% for m in inflation_months | reverse %}
             <tr>
-              <td class="nowrap">{{ m.month }}{% if m.projected %} <span class="muted small">(projected)</span>{% endif %}</td>
+              <td class="nowrap">{{ m.month }}{% if m.estimated %} <span class="muted small">(estimated)</span>{% elif m.projected %} <span class="muted small">(projected)</span>{% endif %}</td>
               <td class="num" data-sort="{{ m.value }}">{{ "%.2f%%" | format(100 * m.value) }}</td>
               <td class="num" data-sort="{{ m.cpi }}">{{ m.cpi | number }}</td>
               <td class="num {{ 'muted' if m.last_12 is none }}" data-sort="{{ m.last_12 if m.last_12 is not none else '' }}">{{ ("%.2f%%" | format(100 * m.last_12)) if m.last_12 is not none else "-" }}</td>
@@ -171,6 +173,7 @@
     {% for c in others %}
     <section class="panel">
       <h2>{{ c.name }} in {{ base.name }} <small>nominal and real, at each date of the currencies CSV</small></h2>
+      {{ estimated_alert(c.overdue, "week", "currencies.csv") }}
       {% if c.chart %}
       <p class="equity-headline">
         <span class="num-lg">{{ c.last.value | number }}</span>
@@ -180,7 +183,8 @@
       {{ multi_line_chart(c.chart, c.name ~ " in " ~ base.name ~ ", nominal and real, from " ~ c.series[0].date ~ " to " ~ c.last.date ~ ", ending at " ~ (c.last.value | number), series=c.slot) }}
       <p class="muted small"><strong>Nominal</strong>: what one {{ c.name }} ({{ c.description }}) is worth in {{ base.name }}.
         <strong>Real</strong>: that value deflated by the CPI, in {{ base.name }} of {{ c.real_date }}. When the real
-        value goes down, {{ c.name }} grew less than prices.</p>
+        value goes down, {{ c.name }} grew less than prices. An estimated value is the last known one grown by the
+        inflation since then, so its real value stays the same.</p>
       <details class="chart-table">
         <summary>Show table</summary>
         <div class="table-wrap">
@@ -189,8 +193,8 @@
             <tbody>
             {% for p in c.series | reverse %}
             <tr>
-              <td class="nowrap">{{ p.date }}</td>
-              <td class="num" data-sort="{{ p.value }}">{{ p.value | number }}</td>
+              <td class="nowrap">{{ p.date }}{% if p.estimated %} <span class="muted small">(estimated)</span>{% endif %}</td>
+              <td class="num {{ 'estimated' if p.estimated }}" data-sort="{{ p.value }}">{{ p.value | number }}</td>
               <td class="num {{ 'muted' if p.real is none }}" data-sort="{{ p.real if p.real is not none else '' }}">{{ (p.real | number) if p.real is not none else "-" }}</td>
               {{ change_cell(p.change) }}
             </tr>

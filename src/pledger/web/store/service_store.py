@@ -8,11 +8,11 @@ from dataclasses import replace
 
 from pandas import DataFrame, concat
 
-from pledger.models import DEBT_ACCOUNT, parse_month
+from pledger.models import DEBT_ACCOUNT, ESTIMATED, parse_month
 from pledger.web.store.base_store import StoreBase
 from pledger.web.store.common import _parse_amount
 from pledger.web.store.constants import SERVICE_MONTH
-from pledger.web.store.services import service_bases, service_months
+from pledger.web.store.services import service_bases, service_cells
 
 
 class ServiceStore(StoreBase):
@@ -22,13 +22,13 @@ class ServiceStore(StoreBase):
         """Set the value of a service in a month of the services CSV, keeping the others (see save_service_month)."""
         snapshot = self.load()
         month = parse_month(month, "month")
-        values = dict(service_months(snapshot)).get(month, {})
-        self.save_service_month(month, {**{c: f"{v:,.2f}" for c, v in values.items()}, service.strip(): amount})
+        self.save_service_month(month, {**service_cells(snapshot).get(month, {}), service.strip(): amount})
 
     def save_service_month(self, month: str, values: dict[str, str | float]) -> None:
         """
         Save the row of a month of the services CSV (see _service_rows), replacing it, with
-        the value of each service (an empty one is none); the ones left out are emptied.
+        the value of each service (an empty one is none, and ESTIMATED one to estimate);
+        the ones left out are emptied.
         A month not in the CSV yet gets its row, in month order, and a service not in it
         yet with a value gets its column. The CSV is created if missing.
         """
@@ -43,7 +43,8 @@ class ServiceStore(StoreBase):
         if unknown:
             raise ValueError(f"{unknown[0]!r} is not a service of {DEBT_ACCOUNT} with a base movement in the creditors YAML")
         cells = {
-            c: f"{_parse_amount(v, f'value of {c}'):,.2f}" for c, v in values.items() if v
+            c: v if v == ESTIMATED else f"{_parse_amount(v, f'value of {c}'):,.2f}"
+            for c, v in values.items() if v
         }
         rows = snapshot.services
         months = [m.strip() for m in rows[SERVICE_MONTH]]

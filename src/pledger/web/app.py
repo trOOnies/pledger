@@ -75,11 +75,14 @@ async def ledger_data_error(request: Request, exc: LedgerDataError):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Freeze the ids of the rows added to the CSVs of movements while pledger was off.
-    try:
-        app.state.store.freeze_ids()
-    except (OSError, ValueError, LedgerDataError) as e:  # the pages show what is wrong
-        logging.getLogger(__name__).warning("Could not freeze the ids of the movements: %s", e)
+    # Freeze the ids of the rows added to the CSVs of movements while pledger was off, and
+    # add the weeks and months that went by without a value as estimated.
+    store = app.state.store
+    for run, what in ((store.freeze_ids, "freeze the ids of the movements"), (store.fill_estimated, "fill in the estimates")):
+        try:
+            run()
+        except (OSError, ValueError, LedgerDataError) as e:  # the pages show what is wrong
+            logging.getLogger(__name__).warning("Could not %s: %s", what, e)
     yield
 
 

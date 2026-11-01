@@ -210,6 +210,7 @@ tr:last-child td { border-bottom: none; }
 .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .nowrap { white-space: nowrap; }
 .muted { color: var(--muted); }
+.estimated { font-style: italic; }
 .small { font-size: .8rem; margin: 0; }
 .optional { font-weight: normal; opacity: .8; }
 

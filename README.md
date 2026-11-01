@@ -85,8 +85,8 @@ A few things are shared across tabs:
 
 - 🗓️ The **month filter** is shared by Ledger, Accounts, Results, Debt and Credit Cards, and
   remembered in a cookie.
-- 🔮 In the Currencies tab, the months that haven't ended yet are **projected**: dashed in the
-  CPI chart and faded in the inflation one.
+- 🔮 In the Currencies tab, the months that haven't ended yet and the estimated ones are
+  **projected**: dashed in the CPI chart and faded in the inflation one.
 - 👁️ The **eye button** in the top bar replaces every amount with `******` until clicked
   again. The browser remembers the choice.
 - 🔗 The **ID** of a movement links to its other face: from the Ledger tab to its row in the tab
@@ -127,6 +127,28 @@ On startup, `pledger-web` checks that every one of these files (and `base_curren
 `currencies.csv`) exists. Any missing ones are created, the YAMLs empty and the CSVs with just
 their header. pledger then lists them and exits, so you can fill in the required ones before
 you start it again.
+
+**A value you don't know yet is `estimated`.** That reserved word goes in a cell of
+`base_currency.csv`, `currencies.csv` or `services.csv` when there is definitely a value there,
+but not its exact one yet. pledger estimates it, and replacing the word with the real value is
+all it takes to correct it:
+
+| File | The estimate |
+| --- | --- |
+| `base_currency.csv` | Exactly the last known inflation. |
+| `currencies.csv` | The last known value of the currency, grown by the CPI since its date. |
+| `services.csv` | The last known value of the service, grown by the inflation of each month since then, to the cent. |
+
+There must be a known value before it: the ledger doesn't load otherwise. A date or month after the
+last one of `base_currency.csv` takes its last inflation, and an estimated value of a currency after
+today revalues nothing yet.
+
+On startup, pledger adds the months and weeks missing from these three files, from their first row
+up to the current month or week, as `estimated` (a week on its Monday, see [Work](#work)). Those
+files are left as they are if they have no rows. In `currencies.csv`, only the currencies with an
+earlier value get it, and in `services.csv` only the services with a value in the month before, as
+an empty cell there means there is none. When a month or week ends and is still `estimated`, the
+Currencies and Services tabs warn about it in the section that shows it.
 
 **The CSV stays the source of truth.** Adding a movement appends one line, deleting removes
 one line, and the rest of the file is left byte-for-byte as it was. New accounts and base
@@ -301,7 +323,8 @@ value of its currency on that date (the last one up to then, else its first one)
 `description`.
 
 `base_currency.csv` has the `monthly_inflation` of the base currency for each `month`, as a
-percentage (the `%` is optional), with no month missing:
+percentage (the `%` is optional) or `estimated` (see [Your data files](#-your-data-files)), with
+no month missing:
 
 ```csv
 month;monthly_inflation
@@ -319,7 +342,8 @@ in the base currency.
 
 `currencies.csv` has, for each `date`, the value of each other currency in the base one, one
 column each (no other columns). Values must be positive and dates can't repeat. An empty cell
-is a date without that value. Without other currencies, the file is optional.
+is a date without that value, and `estimated` one yet to be known (see
+[Your data files](#-your-data-files)). Without other currencies, the file is optional.
 
 ```csv
 date;USD;USC
@@ -617,7 +641,8 @@ month;Rent;Gas
 2026-03;800,000.00;
 ```
 
-- Each value is that month's. An empty cell is nothing, and a month has one row at most.
+- Each value is that month's. An empty cell is nothing, `estimated` a value yet to be known (see
+  [Your data files](#-your-data-files)), and a month has one row at most.
 - The value is split equally between the weeks of its month, on their Mondays, like the salaries
   (a week belongs to the month of its Thursday, see [Work](#work)). This is the only frequency.
 

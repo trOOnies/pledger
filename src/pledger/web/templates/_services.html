@@ -1,5 +1,9 @@
 {% from "_id.html" import id_cell, id_header %}
+{% from "_estimated.html" import estimated_alert %}
 <div class="view">
+  {% set overdue_items = [] %}
+  {% for o in overdue %}{% set _ = overdue_items.append(o.month ~ ": " ~ (o.services | join(", "))) %}{% endfor %}
+  {{ estimated_alert(overdue_items, "month", "the services file") }}
   <div class="cards">
     <div class="card" title="The values of the services in {{ month }}"><span class="label">This month's value</span><span class="num money">{{ monthly | money }}</span></div>
     <div class="card" title="What was owed to the services in {{ month }}, up to today"><span class="label">Owed this month</span><span class="num money">{{ this_month | money }}</span></div>
@@ -15,7 +19,7 @@
       <tr>
         <td class="nowrap"><strong>{{ s.name }}</strong></td>
         {% if s.base %}<td>{{ s.base }}</td>{% else %}<td class="muted">None: add its <code>base_movement</code> in the creditors file.</td>{% endif %}
-        <td class="num money {{ 'muted' if not s.value }}" data-sort="{{ s.value }}">{{ s.value | money }}</td>
+        <td class="num money {{ 'muted' if not s.value }} {{ 'estimated' if s.estimated }}" data-sort="{{ s.value }}"{% if s.estimated %} title="Estimated"{% endif %}>{{ s.value | money }}</td>
         <td class="num money {{ 'muted' if not s.this_month }}" data-sort="{{ s.this_month }}">{{ s.this_month | money }}</td>
         <td class="num money {{ 'muted' if not s.charged }}" data-sort="{{ s.charged }}">{{ s.charged | money }}</td>
         <td class="num money {{ 'gain' if s.owed < -0.005 }}" data-sort="{{ s.owed }}">{{ s.owed | money }}</td>
@@ -38,7 +42,7 @@
         <tr>
           <td class="nowrap">{{ v.month }}{% if v.future %} <span class="muted small" title="Not owed until then">(future)</span>{% endif %}</td>
           {% for value in v.cells %}
-          {% if value is none %}<td class="num muted">-</td>{% else %}<td class="num money" data-sort="{{ value }}">{{ value | money }}</td>{% endif %}
+          {% if value is none %}<td class="num muted">-</td>{% else %}<td class="num money {{ 'estimated' if v.estimated[loop.index0] }}" data-sort="{{ value }}"{% if v.estimated[loop.index0] %} title="Estimated"{% endif %}>{{ value | money }}</td>{% endif %}
           {% endfor %}
           <td class="nowrap">
             <button class="icon edit" title="Edit" aria-label="Edit {{ v.month }}"
@@ -54,7 +58,8 @@
     </div>
     <p class="muted small">Each value is owed up to today, never before the ledger starts, split equally between the weeks
       of the month, on their Mondays, as movements of its service's base movement crediting <code>De</code>. A week belongs to
-      the month of its Thursday.</p>
+      the month of its Thursday. <span class="estimated">In italics</span>, the estimated values: the last known one grown by
+      the inflation since then.</p>
   </div>
 
   <form id="service-filter" class="filters" hx-get="/services" hx-target="#services-view" hx-push-url="true" hx-trigger="change">

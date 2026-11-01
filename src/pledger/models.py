@@ -60,6 +60,9 @@ PREVIOUS_MONTH = "previous_month"
 
 INFLATION_COLUMN = "monthly_inflation"  # of the base currency, in base_currency.csv
 CPI_BASE = 100.0  # the CPI at the end of the day before the first month of base_currency.csv
+# The reserved word of a cell of base_currency.csv, currencies.csv or the services CSV: there
+# is a value for it, but it isn't known yet, so pledger estimates it.
+ESTIMATED = "estimated"
 
 
 def _coalesce_mt_account(
@@ -129,6 +132,37 @@ def daily_cpi(monthly_inflation: pd.Series) -> pd.Series:
     return pd.concat([pd.Series([CPI_BASE], index=[before]), pd.Series(cpi, index=dates)])
 
 
+def price_growth(monthly_inflation: pd.Series | None, start: pd.Timestamp, end: pd.Timestamp) -> float:
+    """
+    How much prices grow (a ratio, 1 for no change) from the end of day `start` to the end
+    of day `end`, along the daily CPI. After the last month of the inflation, each month
+    has the inflation of that last one; before its first month, prices don't change.
+    """
+    if monthly_inflation is None or not len(monthly_inflation):
+        return 1.0
+    months = pd.period_range(monthly_inflation.index[0], max(monthly_inflation.index[-1], end.to_period("M")), freq="M")
+    cpi = daily_cpi(monthly_inflation.reindex(months).ffill())
+    first = cpi.index[0]
+    return float(cpi[max(end, first)] / cpi[max(start, first)])
+
+
+def _with_estimates(values: pd.Series, estimated: pd.Series, monthly_inflation: pd.Series | None) -> pd.Series:
+    """
+    A currency's values by date, with those of the `estimated` dates: the last known value
+    before them, grown by the inflation since then (see price_growth).
+    """
+    filled = values.copy()
+    known = values.dropna()
+    for date in values.index[estimated]:
+        earlier = known[known.index < date]
+        if not len(earlier):
+            raise ValueError(
+                f"The currencies CSV has {values.name} {ESTIMATED} on {date.date()}, with no known value before it"
+            )
+        filled[date] = earlier.iloc[-1] * price_growth(monthly_inflation, earlier.index[-1], date)
+    return filled
+
+
 @dataclass
 class Currency:
     """Ledger currency."""
@@ -138,6 +172,8 @@ class Currency:
     base_currency_mapping: pd.Series | None  # its value in the base currency by date; None for the base one
     # The inflation of each month (a ratio, by monthly Period), only for the base currency
     monthly_inflation: pd.Series | None = None
+    # What of the above pledger estimated (see ESTIMATED): months for the base currency, else dates
+    estimated: tuple = ()
 
     def __post_init__(self):
         self.is_base_currency = self.base_currency_mapping is None
@@ -161,7 +197,8 @@ class Currency:
         Their values are read from the CSVs next to the YAML: `base_currency.csv`
         has the `monthly_inflation` of the base currency for each `month`, and
         `currencies.csv` a `date` column and one column per other currency, with its
-        value in the base currency (empty cells are dates without a value).
+        value in the base currency (empty cells are dates without a value). Both take
+        ESTIMATED instead of a value: see _load_inflation and _with_estimates.
         """
         data = _load_yaml(path)
 
@@ -177,28 +214,32 @@ class Currency:
             )
 
         folder = os.path.dirname(path)
-        values = cls._load_values(os.path.join(folder, "currencies.csv"), names)
+        inflation, estimated_months = cls._load_inflation(os.path.join(folder, "base_currency.csv"))
+        values, estimated = cls._load_values(os.path.join(folder, "currencies.csv"), names, inflation)
         base_currency = cls(
             name=data["base_currency"]["name"],
             description=data["base_currency"]["description"],
             base_currency_mapping=None,
-            monthly_inflation=cls._load_inflation(os.path.join(folder, "base_currency.csv")),
+            monthly_inflation=inflation,
+            estimated=estimated_months,
         )
         other_currencies = {
             curr["name"]: cls(
                 name=curr["name"],
                 description=curr["description"],
                 base_currency_mapping=values[curr["name"]].dropna(),
+                estimated=tuple(values.index[estimated[curr["name"]]]),
             )
             for curr in currencies
         }
         return base_currency, other_currencies
 
     @staticmethod
-    def _load_inflation(path: str) -> pd.Series:
+    def _load_inflation(path: str) -> tuple[pd.Series, tuple]:
         """
         The base currency CSV: the inflation of each month, a percentage (e.g. `2.90%`,
-        the `%` optional), as a ratio by monthly Period. Months must be consecutive.
+        the `%` optional), as a ratio by monthly Period, and the months with ESTIMATED
+        instead, which get exactly the last known inflation. Months must be consecutive.
         """
         rows = pd.read_csv(path, sep=";", dtype=str, keep_default_na=False, encoding="utf-8-sig")
         missing = [c for c in ("month", INFLATION_COLUMN) if c not in rows.columns]
@@ -218,19 +259,26 @@ class Currency:
             raise ValueError(
                 f"The base currency CSV has no inflation for {list(rows.month[texts == ''])}"
             )
-        inflation = pd.Series(pd.to_numeric(texts).astype(float).to_numpy() / 100, index=months)
+        estimated = (texts == ESTIMATED).to_numpy()
+        inflation = pd.Series(pd.to_numeric(texts.mask(estimated)).astype(float).to_numpy() / 100, index=months)
         if (inflation <= -1).any():
             raise ValueError("The base currency CSV inflation must be above -100%")
-        return inflation
+        if estimated.any() and pd.isna(inflation.iloc[0]):
+            raise ValueError(f"The base currency CSV has {months[0]} {ESTIMATED}, with no known inflation before it")
+        return inflation.ffill(), tuple(months[estimated])
 
     @staticmethod
-    def _load_values(path: str, names: list[str]) -> pd.DataFrame:
+    def _load_values(
+        path: str, names: list[str], monthly_inflation: pd.Series | None = None
+    ) -> tuple[pd.DataFrame, pd.DataFrame]:
         """
-        The currencies CSV, indexed and sorted by date, with a column per currency.
-        Optional without other currencies.
+        The currencies CSV, indexed and sorted by date, with a column per currency, the
+        ESTIMATED cells filled in (see _with_estimates), and the same frame telling which
+        cells those are. Optional without other currencies.
         """
         if not names and not os.path.exists(path):
-            return pd.DataFrame(index=pd.DatetimeIndex([], name="date"))
+            empty = pd.DataFrame(index=pd.DatetimeIndex([], name="date"))
+            return empty, empty
         values = (
             pd.read_csv(path, sep=";", parse_dates=["date"], encoding="utf-8-sig")
             .set_index("date", drop=True)
@@ -248,10 +296,15 @@ class Currency:
                 f"The currencies CSV repeats the dates {[d.date().isoformat() for d in repeated]}"
             )
         values.index = pd.to_datetime(values.index)  # not parsed without rows
-        values = values.apply(pd.to_numeric).astype(float)
+        estimated = values.astype(str).apply(lambda c: c.str.strip() == ESTIMATED).astype(bool)
+        values = values.mask(estimated).apply(pd.to_numeric).astype(float)
         if (values <= 0).any().any():
             raise ValueError("The currencies CSV values must be positive")
-        return values
+        filled = pd.DataFrame(
+            {c: _with_estimates(values[c], estimated[c], monthly_inflation) for c in values.columns},
+            index=values.index,
+        )
+        return filled, estimated
 
 
 @dataclass

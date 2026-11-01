@@ -74,19 +74,28 @@ class Settings:
             allowed_hosts=allowed_hosts(os.environ.get("PLEDGER_ALLOWED_HOSTS", "")),
         )
 
+    @property
+    def base_currency_path(self) -> Path:
+        """The monthly inflation of the base currency, next to the currencies YAML."""
+        return self.currencies_path.parent / "base_currency.csv"
+
+    @property
+    def currency_values_path(self) -> Path:
+        """The values of the other currencies, next to the currencies YAML."""
+        return self.currencies_path.parent / "currencies.csv"
+
     def expected_files(self) -> dict[Path, str]:
         """
         Every data file, with what it is created with when missing: the YAMLs empty,
         the CSVs with just their header.
         """
-        currencies_folder = self.currencies_path.parent
         files = {
             self.accounts_path: "",
             self.base_movements_path: "",
             self.ledger_path: _header([*LEDGER_CSV_COLUMNS, ID_COLUMN]),
             self.currencies_path: "",
-            currencies_folder / "base_currency.csv": _header(["month", INFLATION_COLUMN]),
-            currencies_folder / "currencies.csv": _header(["date"]),
+            self.base_currency_path: _header(["month", INFLATION_COLUMN]),
+            self.currency_values_path: _header(["date"]),
             self.investments_path: "",
             self.creditors_path: "",
             self.work_path: _header(WORK_COLUMNS),

@@ -27,7 +27,7 @@
     </span>
   </label>
   {% endfor %}
-  <p class="muted small">Saved in <code>{{ path }}</code>; leave a value empty for none.
+  <p class="muted small">Saved in <code>{{ path }}</code>; leave a value empty for none, or write <code>estimated</code> if it isn't known yet.
     {% if editing %}Saving replaces this month.{% else %}New months go in month order.{% endif %}</p>
   <button type="submit">{% if editing %}Save {{ month }}{% else %}Add month{% endif %}</button>
   {% else %}

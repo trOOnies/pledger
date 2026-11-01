@@ -4,10 +4,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from pandas import DataFrame
+from pandas import DataFrame, Period, Timestamp
 
 from pledger.enums import CreditorKind, LedgerSide, MovementType
-from pledger.models import DEBT_ACCOUNT, DebtAccount, parse_month
+from pledger.models import (
+    DEBT_ACCOUNT,
+    ESTIMATED,
+    DebtAccount,
+    parse_month,
+    price_growth,
+)
 from pledger.web.store.common import _generated_rows, _parse_amount
 from pledger.web.store.constants import (
     ID_COLUMN,
@@ -50,7 +56,9 @@ def service_bases(snapshot: Snapshot) -> dict[str, MovementBase]:
 def service_months(snapshot: Snapshot) -> list[tuple[str, dict[str, float]]]:
     """
     The rows of the services CSV: each month, once, with the value of each column with
-    one (empty ones are none). Every column is a service (see service_bases).
+    one (empty ones are none). Every column is a service (see service_bases). An
+    ESTIMATED cell (see service_estimates) has the last known value of its service, of
+    an earlier month, grown by the inflation of the months since then, to the cent.
     """
     bases = service_bases(snapshot)
     unknown = [c for c in snapshot.services.columns if c != SERVICE_MONTH and c not in bases]
@@ -67,10 +75,50 @@ def service_months(snapshot: Snapshot) -> list[tuple[str, dict[str, float]]]:
         seen.add(month)
         values = {
             c: _parse_amount(text, f"value of {c} in {month} of the services CSV")
-            for c, text in row.items() if c != SERVICE_MONTH and str(text).strip()
+            for c, text in row.items()
+            if c != SERVICE_MONTH and str(text).strip() and not _is_estimated(text)
         }
         found.append((month, values))
+    estimates, months = service_estimates(snapshot), dict(found)
+    inflation = snapshot.base_currency.monthly_inflation
+    last: dict[str, tuple[str, float]] = {}  # the last known value of each service, with its month
+    for month in sorted(months):
+        last |= {c: (month, v) for c, v in months[month].items()}
+        for service in estimates.get(month, []):
+            if service not in last:
+                raise ValueError(
+                    f"The services CSV has {service} {ESTIMATED} in {month}, with no known value before it"
+                )
+            known, value = last[service]
+            months[month][service] = round(value * price_growth(inflation, _month_end(known), _month_end(month)), 2)
     return found
+
+
+def service_estimates(snapshot: Snapshot) -> dict[str, list[str]]:
+    """The services with an ESTIMATED cell in each month of the services CSV that has any."""
+    found = {}
+    for row in snapshot.services.to_dict("records"):
+        services = [c for c, text in row.items() if c != SERVICE_MONTH and _is_estimated(text)]
+        if services:
+            found[parse_month(row[SERVICE_MONTH], "month of the services CSV")] = services
+    return found
+
+
+def service_cells(snapshot: Snapshot) -> dict[str, dict[str, str]]:
+    """Each month's values of the services CSV as written in a form: ESTIMATED ones as such."""
+    estimates = service_estimates(snapshot)
+    return {
+        month: {c: ESTIMATED if c in estimates.get(month, []) else f"{v:,.2f}" for c, v in values.items()}
+        for month, values in service_months(snapshot)
+    }
+
+
+def _is_estimated(text) -> bool:
+    return str(text).strip() == ESTIMATED
+
+
+def _month_end(month: str) -> Timestamp:
+    return Period(month, freq="M").end_time.normalize()
 
 
 def _service_rows(snapshot: Snapshot, start: int) -> DataFrame:

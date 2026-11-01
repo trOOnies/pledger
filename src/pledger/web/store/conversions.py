@@ -247,7 +247,8 @@ def _result_rows(snapshot: Snapshot, start: int) -> tuple[DataFrame, dict[str, f
     revalued: the result is a RESULT_GAIN or RESULT_LOSS movement against the equity
     account, of the difference between that balance at that value of the currency
     and its balance in the ledger, to the cent. Never in the initial week, which only
-    has the initial movements: those dates are revalued on the next one after it.
+    has the initial movements: those dates are revalued on the next one after it, or
+    after today with an estimated value.
     """
     accounts = {
         n: a for n, a in snapshot.accounts.items()
@@ -280,6 +281,7 @@ def _result_rows(snapshot: Snapshot, start: int) -> tuple[DataFrame, dict[str, f
         add(row["move_date"], row["acc_debit"], row["acc_credit"], amount, other, i)
 
     new_rows, balances = [], {}
+    now = Timestamp(snapshot.today)
     week = snapshot.initial_week
     last_initial = week.end.isoformat() if week is not None else ""
     for name, acc in accounts.items():
@@ -288,6 +290,7 @@ def _result_rows(snapshot: Snapshot, start: int) -> tuple[DataFrame, dict[str, f
         if not account_moves or not len(values):
             balances[name] = 0.0 if not account_moves else math.nan
             continue
+        estimates = set(acc.currency.estimated)
         book = other = 0.0  # its balance in the base currency and in its own
         pending = iter(account_moves)
         move = next(pending, None)
@@ -298,6 +301,8 @@ def _result_rows(snapshot: Snapshot, start: int) -> tuple[DataFrame, dict[str, f
                 move = next(pending, None)
             if day <= last_initial:
                 continue  # the initial week only has the initial movements: revalued after it
+            if when > now and when in estimates:
+                continue  # an estimate of the future isn't a result yet
             result = round(other * value - book, 2)
             if abs(result) < 0.005:
                 continue

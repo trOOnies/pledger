@@ -1,0 +1,12 @@
+{# A warning about what is still estimated after its month or week ended. #}
+{% macro estimated_alert(items, one, file) %}
+{% if items %}
+<details class="msg warn alert" role="alert">
+  <summary>⚠ {{ items | length }} past {{ one if items | length == 1 else one ~ "s" }} still estimated.</summary>
+  <p class="small">Replace <code>estimated</code> with the real value in <code>{{ file }}</code>.</p>
+  <ul class="small">
+    {% for item in items %}<li>{{ item }}</li>{% endfor %}
+  </ul>
+</details>
+{% endif %}
+{% endmacro %}

@@ -28,6 +28,7 @@ from pledger.web.views.charts import (
     stacked_chart,
 )
 from pledger.web.views.common import AVERAGE_MONTH_DAYS, month_end_balances, percent
+from pledger.weeks import Week
 
 
 def build_conversions(snapshot: Snapshot, currency: str = "", account: str = "") -> list[dict]:
@@ -193,7 +194,8 @@ def inflation_months(base: Currency, today: dt.date) -> list[dict]:
     """
     The inflation of each month of the base currency, with the CPI at its end and the
     inflation of the 12 months up to it (None before 12 months). A month that hasn't
-    ended by `today` is `projected`: its inflation can't be known yet.
+    ended by `today` is `projected`: its inflation can't be known yet. So is an
+    `estimated` one, whose inflation isn't known yet.
     """
     inflation, cpi = base.monthly_inflation, base.customer_price_index
     current = Period(today, freq="M")
@@ -204,7 +206,8 @@ def inflation_months(base: Currency, today: dt.date) -> list[dict]:
             "value": float(value),
             "cpi": float(cpi[month.end_time.normalize()]),
             "last_12": None if math.isnan(yearly[month]) else float(yearly[month]),
-            "projected": month >= current,
+            "projected": month >= current or month in base.estimated,
+            "estimated": month in base.estimated,
         }
         for month, value in inflation.items()
     ]
@@ -213,10 +216,13 @@ def inflation_months(base: Currency, today: dt.date) -> list[dict]:
 def cpi_chart(base: Currency, today: dt.date) -> dict | None:
     """
     The daily CPI of the base currency, sampled to draw: one line up to the end of
-    the last month that has ended by `today`, and a dashed one, projected, after it.
+    the last month that has ended by `today`, and a dashed one, projected, after it,
+    or from the first estimated month on, if earlier.
     """
     cpi = base.customer_price_index
-    boundary = Timestamp(today.replace(day=1)) - Timedelta(days=1)  # the end of the last month ended
+    # Right after the end of the last month ended
+    first = min([Timestamp(today.replace(day=1)), *(m.start_time for m in base.estimated)])
+    boundary = first - Timedelta(days=1)
 
     def line(name: str, values: Series, dashed: bool) -> dict:
         return {"name": name, "dashed": dashed, "series": [
@@ -234,9 +240,10 @@ def build_currencies(snapshot: Snapshot, today: dt.date | None = None) -> dict:
     currency, its value in the base currency (nominal) and that value deflated by the
     CPI (real) over time; the balances of the accounts in each currency, and the share
     of equity in the other currencies (None without them or positive equity); and the
-    share of each currency in the assets at each month end.
+    share of each currency in the assets at each month end. What is estimated is marked,
+    and what is still estimated after its month or week ended is `overdue`.
     """
-    today = today or dt.date.today()
+    today = today or snapshot.today
     base = snapshot.base_currency
     cpi = base.customer_price_index
     balances = snapshot.ledger().balances()
@@ -279,8 +286,8 @@ def build_currencies(snapshot: Snapshot, today: dt.date | None = None) -> dict:
         values = c.base_currency_mapping
         real, real_date = real_values(values, cpi)
         series = [
-            {**p, "real": None if math.isnan(r) else float(r)}
-            for p, r in zip(value_series(values), real)
+            {**p, "real": None if math.isnan(r) else float(r), "estimated": d in c.estimated}
+            for p, r, d in zip(value_series(values), real, values.index)
         ]
         others.append({
             "name": c.name,
@@ -292,6 +299,9 @@ def build_currencies(snapshot: Snapshot, today: dt.date | None = None) -> dict:
             "real_growth": growth(real.dropna()),
             "real_date": real_date,
             "series": series,
+            "overdue": [
+                d.date().isoformat() for d in sorted(c.estimated) if Week.of(d.date()).end < today
+            ],
             "chart": multi_line_chart([
                 {"name": "Nominal", "series": series, "dashed": False},
                 {"name": "Real", "series": [{"date": p["date"], "value": p["real"]} for p in series], "dashed": True},
@@ -322,6 +332,7 @@ def build_currencies(snapshot: Snapshot, today: dt.date | None = None) -> dict:
         ),
         "cpi_chart": cpi_chart(base, today),
         "inflation_months": months,
+        "overdue_inflation": [m["month"] for m in months if m["estimated"] and m["month"] < f"{today:%Y-%m}"],
         "inflation_chart": column_chart(months, percent) if months else None,
         "currency_shares": stacked_chart(monthly, shares),
     }

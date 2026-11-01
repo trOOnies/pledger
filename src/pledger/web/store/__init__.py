@@ -95,6 +95,8 @@ from pledger.web.store.ledger_store import (
 )
 from pledger.web.store.services import (
     service_bases,
+    service_cells,
+    service_estimates,
     service_months,
 )
 from pledger.web.store.settings import (
@@ -199,6 +201,8 @@ __all__ = [
     "own_initial_amount",
     "row_fingerprint",
     "service_bases",
+    "service_cells",
+    "service_estimates",
     "service_months",
     "stored_ids",
     "today",

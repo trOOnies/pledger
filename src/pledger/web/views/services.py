@@ -8,6 +8,8 @@ from pledger.web.store import (
     SERVICE_COLUMN,
     Snapshot,
     service_bases,
+    service_cells,
+    service_estimates,
     service_months,
 )
 from pledger.web.views.common import movement_rows
@@ -20,13 +22,15 @@ def build_services(snapshot: Snapshot, service: str = "") -> dict:
     and value this month, what was owed to it this month, up to today, and in all, and
     what we owe it now. Also the rows of the services CSV, newest first, and the movements
     owed to the services, newest first (of `service` only, if any), each with what we owe
-    that service right after it.
+    that service right after it. The estimated values are marked, and `overdue` has the
+    months already ended with any (see store.service_estimates).
     """
     debt = next((a for a in snapshot.debt_accounts() if a.name == DEBT_ACCOUNT), None)
     services = debt.get_kind(CreditorKind.SERVICE) if debt else {}
     bases, months = service_bases(snapshot), service_months(snapshot)
     month = snapshot.today.strftime("%Y-%m")
     now = dict(months).get(month, {})
+    estimates = service_estimates(snapshot)
     rows = snapshot.service_rows
     charged = dict.fromkeys(services, 0.0)
     this_month = dict.fromkeys(services, 0.0)
@@ -38,13 +42,17 @@ def build_services(snapshot: Snapshot, service: str = "") -> dict:
     table = [
         {
             "name": name, "base": bases[name].name if name in bases else None, "owed": c.amount,
-            "value": now.get(name, 0.0), "this_month": this_month[name], "charged": charged[name],
+            "value": now.get(name, 0.0), "estimated": name in estimates.get(month, []),
+            "this_month": this_month[name], "charged": charged[name],
         }
         for name, c in services.items()
     ]
     names = [c for c in bases if any(c in values for _, values in months)]
     values = [
-        {"month": m, "cells": [v.get(c) for c in names], "future": m > month}
+        {
+            "month": m, "cells": [v.get(c) for c in names], "future": m > month,
+            "estimated": [c in estimates.get(m, []) for c in names],
+        }
         for m, v in sorted(months, reverse=True) if v
     ]
     if service not in services:
@@ -60,6 +68,7 @@ def build_services(snapshot: Snapshot, service: str = "") -> dict:
         "services": table,
         "columns": names,
         "values": values,
+        "overdue": [{"month": m, "services": estimates[m]} for m in sorted(estimates) if m < month],
         "movements": movements,
         "service": service,
         "month": month,
@@ -75,19 +84,19 @@ def service_form(snapshot: Snapshot, month: str = "", values: dict | None = None
     month after the last one, empty, with the services to fill in (see store.service_bases),
     and the values of the last month to fill it in with.
     """
-    months = dict(service_months(snapshot))
+    months = service_cells(snapshot)
     last = max(months, default=None)
     if not month:
         month = next_month(last) if last else snapshot.today.strftime("%Y-%m")
     if values is None:
-        values = {c: f"{v:,.2f}" for c, v in months.get(month, {}).items()}
+        values = months.get(month, {})
     return {
         "month": month,
         "values": values,
         "services": list(service_bases(snapshot)),
         "editing": month in months,
         "autofill": (
-            {"month": last, "fields": {f"service:{c}": f"{v:,.2f}" for c, v in months[last].items()}}
+            {"month": last, "fields": {f"service:{c}": v for c, v in months[last].items()}}
             if last else None
         ),
     }
