@@ -325,12 +325,33 @@ class TestConversions:
         assert store.add_exchange("2026-01-06", "USD", "ARS", "Bk", "Ca", "0.5", "600") == "Foreign currency - Sold"
         assert conv.conversions_path.read_text().splitlines()[-1] == "2026-01-06;Foreign currency - Sold;Ca;600.00;Bk;;0.5000;C-2"
         for args, error in [
-            (("USD", "USD", "Bk", "Bk"), "sell or buy ARS for another currency, or one other currency for another, not USD for USD"),
+            (("ARS", "ARS", "Ca", "Fi"), "sell or buy ARS for another currency, or one other currency for another, not ARS for ARS"),
+            (("USD", "USD", "Bk", "Bk"), "The accounts from and to must be different"),
             (("ARS", "EUR", "Ca", "Bk"), "Unknown currency: 'EUR'"),
             (("ARS", "USD", "Bk", "Ca"), "The account from must be in ARS, but Bk is in USD"),
         ]:
             with pytest.raises(ValueError, match=re.escape(error)):
                 store.add_exchange("2026-01-06", *args, "1", "1")
+
+    def test_the_same_currency_twice_is_a_pair(self, cross):
+        store = LedgerStore(cross)
+        extra = "  Ud:\n    description: More dollars\n    currency: USD\n    initial_amount: 0\n"
+        path = cross.accounts_path
+        path.write_text(path.read_text().replace("liability:\n", extra + "liability:\n", 1))
+        n = len(store.load().conversions)
+        assert store.add_exchange("2026-01-06", "USD", "USD", "Bk", "Ud", "0.05", "0.05") == CROSS_CONVERSION
+        snapshot = store.load()
+        rows = snapshot.conversions.iloc[n:]
+        assert [(r.base_movement, r.acc_debit, r.amount_base_currency, r.acc_credit, r.amount_other_currency)
+                for r in rows.itertuples()] == [
+            ("Foreign currency - Sold", "Fi", "50.00", "Bk", "0.0500"),
+            ("Foreign currency - Bought", "Ud", "50.00", "Fi", "0.0500"),
+        ]
+        assert conversion_pairs(snapshot) == {n: n + 1, n + 1: n}
+        assert snapshot.ledger().balances()["Fi"] == 0
+        assert snapshot.other_balances["Ud"] == pytest.approx(0.05)
+        store.delete_conversion(n)  # both, as one
+        assert len(store.load().conversions) == n
 
     @pytest.fixture
     def cross(self, conv) -> Settings:
@@ -402,9 +423,11 @@ class TestConversions:
             return re.search(r"<option selected>(\w+)", sold)[1], re.search(r"<option selected>(\w+)", bought)[1], r.text
 
         assert fields()[:2] == ("ARS", "USD")  # those of the last conversion
-        sold, bought, text = fields(sold="USD", bought="USD", changed="sold")
+        sold, bought, text = fields(sold="USD", bought="ARS", changed="sold")
         assert (sold, bought) == ("USD", "ARS") and "Foreign currency - Sold" in text
         assert '>Bk</option>' in text.split('name="acc_from"')[1].split("</select>")[0]
+        sold, bought, text = fields(sold="USD", bought="USD", changed="sold")  # the same one is fine
+        assert (sold, bought) == ("USD", "USD") and "right followed by" in text
         assert fields(sold="ARS", bought="ARS", changed="bought")[:2] == ("USD", "ARS")
 
     def test_not_in_the_ledger_tab(self, conv, conv_client):

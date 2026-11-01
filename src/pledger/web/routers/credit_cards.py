@@ -7,17 +7,19 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query
 
 from pledger.web.dependencies import StoreDep
-from pledger.web.schemas import MovementIn
+from pledger.web.schemas import CardPaymentIn
 from pledger.web.store import StaleRowError
 
 router = APIRouter(prefix="/api/credit-cards", tags=["credit cards"])
 
 
 @router.post("/payments", status_code=201)
-def create_card_payment(store: StoreDep, movement: MovementIn):
-    """Added to the ledger CSV like the others."""
+def create_card_payment(store: StoreDep, movement: CardPaymentIn):
+    """Added to the ledger CSV like the others, with `amount_card` for a card in another currency."""
+    fields = movement.model_dump()
+    fields["amount_card"] = "" if movement.amount_card is None else movement.amount_card
     try:
-        store.add(**movement.model_dump(), card_payment=True)
+        store.add_card_payment(**fields)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from None
     return {"ok": True}

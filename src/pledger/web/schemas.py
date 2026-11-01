@@ -19,6 +19,12 @@ class MovementIn(BaseModel):
 class InvestMovementIn(MovementIn):
     investment: str = ""  # required with an INVESTMENT side
     quantity: float | None = None  # required to buy, sell and split
+    currency: str = ""  # of the amount and the fees, the base one by default
+    fees: float | None = None  # broker fees, added as their own movement
+
+
+class CardPaymentIn(MovementIn):
+    amount_card: float | None = None  # in the currency of a card in another one
 
 
 class InvestmentIn(BaseModel):

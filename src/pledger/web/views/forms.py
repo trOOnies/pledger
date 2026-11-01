@@ -7,11 +7,17 @@ from pledger.models import SPECIAL_LABELS, MovementBase
 from pledger.web.store import Snapshot
 
 
+def by_currency(snapshot: Snapshot, names: list[str]) -> dict[str, list[str]]:
+    """These accounts grouped by their currency, in the order of the currencies: the base one first."""
+    groups = {c: [n for n in names if snapshot.accounts[n].currency.name == c] for c in snapshot.currencies}
+    return {c: found for c, found in groups.items() if found}
+
+
 def account_fields(snapshot: Snapshot, base_name: str) -> dict:
     """
     Which debit/credit accounts are fixed or selectable for a base movement: any
     non-equity account, or only the accounts of a special side (see SPECIAL_SIDES, with
-    that side's label, e.g. "Investment").
+    that side's label, e.g. "Investment"), also grouped by currency to pick from.
     """
     base = snapshot.base_movements.get(base_name)
     free = [a.name for a in snapshot.free_accounts()]
@@ -19,12 +25,17 @@ def account_fields(snapshot: Snapshot, base_name: str) -> dict:
         return {
             "debit_fixed": None, "credit_fixed": None, "debit_options": free,
             "credit_options": free, "debit_special": None, "credit_special": None, "type": "",
+            "debit_groups": by_currency(snapshot, free), "credit_groups": by_currency(snapshot, free),
         }
+    debit = [a.name for a in snapshot.side_accounts(base, LedgerSide.DEBIT)]
+    credit = [a.name for a in snapshot.side_accounts(base, LedgerSide.CREDIT)]
     return {
         "debit_fixed": base.acc_debit.name if base.acc_debit else None,
         "credit_fixed": base.acc_credit.name if base.acc_credit else None,
-        "debit_options": [a.name for a in snapshot.side_accounts(base, LedgerSide.DEBIT)],
-        "credit_options": [a.name for a in snapshot.side_accounts(base, LedgerSide.CREDIT)],
+        "debit_options": debit,
+        "credit_options": credit,
+        "debit_groups": by_currency(snapshot, debit),
+        "credit_groups": by_currency(snapshot, credit),
         "debit_special": SPECIAL_LABELS.get(base.debit_special),
         "credit_special": SPECIAL_LABELS.get(base.credit_special),
         "type": base.move_type.value,

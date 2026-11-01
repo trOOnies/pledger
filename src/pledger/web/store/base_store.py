@@ -48,6 +48,7 @@ from pledger.web.store.constants import (
     SERVICE_MONTH,
     WORK_COLUMNS,
 )
+from pledger.web.store.conversions import linked_ids
 from pledger.web.store.investments import _check_invest, initial_prices
 from pledger.web.store.movements import _check_initial_base_movements, _check_tab
 from pledger.web.store.snapshot import Snapshot
@@ -226,6 +227,50 @@ class StoreBase:
             "conversions": ("conversions", s.conversions_path, conversion_fingerprint),
         }[field]
 
+    def _movement_file(self, field: str) -> tuple[Path, str, str]:
+        """The path, name and id prefix of the CSV movements of a Snapshot `field` are added to."""
+        path, what, prefix = {
+            "rows": (self.settings.ledger_path, "ledger", LEDGER_ID),
+            "interest": (self.settings.interest_path, "interest", INTEREST_ID),
+            "investments": (self.settings.investment_movements_path, "investments", INVESTMENT_ID),
+            "conversions": (self.settings.conversions_path, "conversions", CONVERSION_ID),
+        }[field]
+        if path is None:
+            raise ValueError(f"No {what} CSV is set")
+        return path, what, prefix
+
+    def _add_column(self, path: Path, n_rows: int, column: str) -> None:
+        """Add a column to the header of a CSV, if it has one and not this column. Its rows are left as they are."""
+        if not _existing(path) or not path.read_bytes().strip():
+            return
+        csv_file = self._read_file(n_rows, path)
+        if column not in next(csv.reader([csv_file.lines[0]], delimiter=";")):
+            csv_file.lines[0] += f";{column}"
+            self._write_file(csv_file)
+
+    def _linked_group(self, snapshot: Snapshot, field: str, index: int) -> set[str] | None:
+        """The ids of the movements linked to a row (see linked_ids), itself included, if any."""
+        own = stored_ids(getattr(snapshot, field), self._movement_file(field)[2])[index]
+        return linked_ids(snapshot).get(own)
+
+    def _delete_group(self, snapshot: Snapshot, group: set[str]) -> None:
+        """Delete the movements of these ids, in whatever CSV, all or none."""
+        found = {}
+        for field in ("rows", "investments", "conversions"):
+            ids = stored_ids(getattr(snapshot, field), self._movement_file(field)[2])
+            found[field] = [i for i, own in enumerate(ids) if own in group]
+        changed = replace(snapshot, **{
+            field: getattr(snapshot, field).drop(index=getattr(snapshot, field).index[found[field]]) for field in found
+        })
+        changed.ledger().check_accounts()
+        changed.investment_accounts()
+        for field, indexes in found.items():
+            if indexes:
+                csv_file = self._read_file(len(getattr(snapshot, field)), self._movement_file(field)[0])
+                for i in reversed(indexes):
+                    del csv_file.lines[csv_file.row_lines[i]]
+                self._write_file(csv_file)
+
     def _replace_line(self, snapshot: Snapshot, field: str, index: int, new_row: dict) -> None:
         """
         Replace the values of `new_row` in the line of a row of the CSV of a Snapshot
@@ -259,6 +304,10 @@ class StoreBase:
         if field == "rows":
             _check_invest(snapshot, rows.iloc[index]["base_movement"], False, "deleted")
             _check_tab(snapshot, rows.iloc[index]["base_movement"], False, debt, card_payment, "deleted", correction)
+        group = None if field == "interest" else self._linked_group(snapshot, field, index)
+        if group:
+            self._delete_group(snapshot, group)
+            return
         changed = replace(snapshot, **{field: rows.drop(index=rows.index[index])})
         changed.ledger().check_accounts()
         changed.investment_accounts()  # e.g. not deleting a purchase of something sold later

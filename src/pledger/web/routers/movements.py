@@ -25,7 +25,7 @@ def list_movements(
 @router.post("", status_code=201)
 def create_movement(store: StoreDep, movement: MovementIn):
     try:
-        store.add(**movement.model_dump())
+        store.add_ledger_movement(**movement.model_dump())
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from None
     return {"ok": True}

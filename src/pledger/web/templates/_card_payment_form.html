@@ -27,12 +27,18 @@
   <input type="hidden" name="base_movement" value="{{ base_movement }}">
   {% endif %}
   <div id="card-account-fields">{% include "_account_fields.html" %}</div>
-  <label>Amount
+  <label>Amount{% if foreign_cards %} <em class="optional">({{ "as in the ledger" if editing else "in the currency of the other account" }})</em>{% endif %}
     <span class="money-input">
-      <span class="prefix">{{ currency }}</span>
+      {% if not foreign_cards %}<span class="prefix">{{ currency }}</span>{% endif %}
       <input name="amount" inputmode="decimal" min="0" value="{{ values.amount }}" placeholder="0.00" required autocomplete="off" data-money>
     </span>
   </label>
+  {% if foreign_cards %}
+  <label><span>Paid in the card's currency <em class="optional">({{ foreign_cards.items() | map("join", ": ") | join(", ") }})</em></span>
+    <input name="amount_card" inputmode="decimal" min="0" value="{{ values.amount_card }}" placeholder="0.00" autocomplete="off" data-money="4">
+  </label>
+  <span class="hint">Required when paying one of these cards from an account in another currency.</span>
+  {% endif %}
   <label><span>Comment <em class="optional">(optional)</em></span>
     <input name="comment" value="{{ values.comment }}" autocomplete="off">
   </label>

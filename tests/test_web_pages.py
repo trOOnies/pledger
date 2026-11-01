@@ -705,7 +705,7 @@ class TestEditMovements:
 
     def test_ledger_rows_have_an_edit_button(self, client):
         r = client.get("/")
-        assert r.text.count('hx-get="/movements/') == 4
+        assert len(re.findall(r'hx-get="/movements/\d+/edit"', r.text)) == 4
         assert 'hx-get="/movements/2/edit"' in r.text and "&#9998;" in r.text
 
     def test_edit_form_is_filled_with_the_row(self, client, settings):

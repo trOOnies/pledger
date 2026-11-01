@@ -69,15 +69,15 @@ A FastAPI + HTMX UI, one tab per area:
 
 | Tab | What it shows |
 | --- | --- |
-| 📋 **Ledger** | Lists, adds, edits and deletes movements, with the balances of their accounts right after each one, filtered by month, account and base movement, and by a search (every word in its id, date, base movement, accounts, comment or amount; `"quote"` a phrase). Conversions, debt movements and card payments are added in their own tabs instead. |
-| 🏦 **Accounts** | Balances, total assets, liabilities and equity, a form to add accounts, edit the asset and liability ones (✎), the composition of assets and liabilities (by currency or by liquidity) and, at each month end, debt over equity and net liquidity (liquid assets minus liquid liabilities) over equity. |
+| 📋 **Ledger** | Lists, adds, edits and deletes movements, with the balances of their accounts right after each one, filtered by month, account and base movement, by whether it can be edited here, and by a search (every word in its id, date, base movement, accounts, comment or amount; `"quote"` a phrase). The **Debit** and **Credit** fields of every form separate the accounts by currency. Its ⧉ button fills the form in with a movement, to add a similar one: nothing is saved until it is added, as a new movement. Conversions, debt movements and card payments are added in their own tabs instead. |
+| 🏦 **Accounts** | Balances (also in their currency, for the accounts in another one), total assets, liabilities and equity, a form to add accounts, edit the asset and liability ones (✎), the composition of assets and liabilities (by currency or by liquidity) and, at each month end, debt over equity and net liquidity (liquid assets minus liquid liabilities) over equity. |
 | 💱 **Currencies** | Balances per currency, the balance of each account in other currencies in its own currency, the daily CPI of the base currency, its monthly inflation, the nominal and real value of each other currency, and the share of each currency in the assets at each month end. The conversions are added (picking the currency sold and the one bought), edited and deleted here, filtered by currency and account, each with the account's balance in its own currency after it. |
 | 📊 **Results** | The nominal and real change of equity in the period and the months of expenses it covers, gains, losses and profit by result type (also cumulative), a waterfall of the result by type (with its result statement as a table, both also as a share of the gains of the first result type, e.g. *Operative*) and equity over time. Result types and base movements are listed and added here. |
 | 💼 **Work** | The company, job position and salary of each month, from gross to net through its deductions (taxes, contributions...), with a chart of both salaries (0 for the months without a job). |
 | 📈 **Investments** | The investments of the investment accounts with their price (amount over quantity), their composition by type or by account, the results of each one, the interest on money of regular accounts, and charts of the total invested and the total result. The broker fees of each investment are shown over its amount. The **Investment account**, **Investment** and **Base movement** filters narrow the movements down (an investment shows all its movements, whatever their accounts), each with the total of its account and the amount and quantity of its investment after it. The internal `Invest` movements are added, edited and deleted here, and so are new prices of the investments, from which their capital gains and losses are generated. |
 | 🤝 **Debt** | Who we owe and who owes us in the debt account `De` (people, services and companies), with alerts and the movements of the month, each with what we owe whoever it names after it. The debt movements are added and edited here. |
 | 🧾 **Services** | The services of the debt account with their base movements and monthly values, what was owed to them this month and in all, and what we owe them now, with the table of monthly values and the movements owed to each one. The monthly values are set here. |
-| 💳 **Credit Cards** | What we owe on each card, what was charged and paid in the month, a chart of the monthly charges, the net owed over equity, and the movements of the month, each with what we owe on its card after it. The card payments are added and edited here. |
+| 💳 **Credit Cards** | What we owe on each card (also in its currency, for a card in another one), what was charged and paid in the month, a chart of the monthly charges, the net owed over equity, and the movements of the month, each with what we owe on its card after it. The card payments are added and edited here. |
 | 🔍 **Audit** | Fill in the balances you checked by hand, without seeing pledger's, then compare them with the actual ones and, if you want, add a correction for each difference. |
 | ❓ **Help** | The concepts, explained for everyday users, in sections with an index and Previous and Next links. |
 
@@ -354,6 +354,15 @@ date;USD;USC
 The Currencies tab charts each other currency's **nominal** value in the base one next to its
 **real** value: deflated by the daily CPI, in the base currency of its last date with a CPI.
 
+**Gains and losses in another currency.** In the Ledger tab (and `POST /api/movements`), the amount
+of a gain or loss of an account in another currency, a credit card too, is in that currency. At its
+value on that date (the last one up to then), pledger adds the movement in the base currency through
+`Fi`, and the `Foreign currency - Sold` or `Bought` conversion between `Fi` and the account, linked to
+it like the ones of the investments (see [Investments](#investments)): deleting one deletes both, and
+their date and amount can't be edited. A base movement with that account fixed can't go through `Fi`:
+it is a single row of the amount in the base currency. Transfers stay in the base currency. Its ⧉
+button fills the form in with the account and the amount in its currency.
+
 #### Conversions
 
 Buying or selling another currency is a **conversion**, kept in `movements/conversion.csv`
@@ -375,7 +384,8 @@ Bought` debiting the account in the other currency, or `Foreign currency - Sold`
 The Currencies tab picks it from the currency sold and the one bought, so they can't be added
 from the Ledger or Investments tabs.
 
-Selling one other currency for another (e.g. USC for USD) is a **cross conversion**, through the
+Selling one other currency for another (e.g. USC for USD), or moving one between two of its
+accounts (e.g. USD for USD), is a **cross conversion**, through the
 internal `Fi`: a `Foreign currency - Sold` of the currency sold into it, right followed by a
 `Foreign currency - Bought` of the one bought out of it, both of the amount sold at the value of
 its currency on that date (in `currencies.csv`, the last one up to then), so `Fi` is left as it
@@ -505,7 +515,26 @@ their net (its *Net interest on money* card) to the total result. The interest o
 investment is one of its results instead (e.g. `Dividends & Interest`, in `investment.csv`).
 
 It also charts the total invested and the total result at each month end, and warns about
-the movements naming an investment of no investment account.
+the movements naming an investment of no investment account. For every account of `interest.csv`,
+it warns about each week already ended without a row of that account, from the week of its first one
+on; a row of `0.00` is enough for a week with no interest.
+
+**Broker fees and other currencies.** The form of the Investments tab (or `POST
+/api/investments/movements`, with `currency` and `fees`) adds what takes several rows:
+
+- `Dividends & Interest`, `Investment - Bought` and `Investment - Sold` have an optional **Broker
+  fees** field, which adds a `Broker fees` movement of the same investment, out of the same account.
+- The **Currency** is that of the amount and the fees, at its value in `currencies.csv` on that date
+  (the last one up to then), and picking an account picks its currency. In another currency, with an
+  account in another currency, the movements of `investment.csv` are in the base currency through
+  `Fi`, and a `Foreign currency - Sold` conversion takes the money out of that account into `Fi`
+  (with the fees), or a `Foreign currency - Bought` one brings it in (without them). If the account
+  is in a third currency, its amount is what the base amount is worth in it. With an account in the
+  base currency no conversion is needed, and an interest on money stays in its own account.
+
+Those rows only balance `Fi` together, so the conversion lists their ids in an optional `linked`
+column of `conversion.csv`, added with the first one. Deleting any of them, from any tab, deletes
+them all, and their amounts can't be edited: delete them and add them again.
 
 ### Debt
 
@@ -590,6 +619,28 @@ Vi:
   description: Visa Credit Card from Santander
   initial_amount: 57236.80
 ```
+
+A card in another `currency` is followed in that currency, like the other accounts in other
+currencies (see [Results of the other currencies](#results-of-the-other-currencies)), and the Credit
+Cards tab shows what is owed on it in that currency too. Charges are added in the card's currency in the Ledger tab (see
+[Currencies and inflation](#currencies-and-inflation)).
+
+**Paying a card in another currency.** Its debt is paid in its currency: the *Paid in the card's
+currency* field says how much, and the card follows that amount exactly. The *Amount* is in the
+currency of the other account:
+
+- In the card's currency, that is the only amount needed. It goes through `Fi`, at the value of the
+  currency on that date: a `Foreign currency - Sold` conversion linked to the payment (see
+  [Investments](#investments)).
+- In the base currency, *Paid in the card's currency* is required, and the payment is a single
+  row, with that amount in the `amount_other_currency` column of `ledger.csv`, added with the first
+  one. What it paid over or under the value of the currency is a `Foreign currency` result on the
+  next date of `currencies.csv`.
+- In a third currency, it is required too, and goes through `Fi` like the first case.
+
+`POST /api/credit-cards/payments` takes it as `amount_card`, and a payment of such a card without it
+is refused. When editing a payment, *Amount* is the one in the ledger, in the base currency. A
+surplus works the same way.
 
 The **card payments** and **surpluses** (negative payments: money the card gives back) are
 those of two internal transfers, which the Credit Cards tab needs under `transfer` in the

@@ -8,9 +8,19 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 
-from pledger.models import DebtAccount
+from pledger.models import INTERMEDIARY, DebtAccount
 from pledger.web.dependencies import StoreDep
-from pledger.web.store import CARD_SURPLUS, LedgerStore, Snapshot, StaleRowError
+from pledger.web.store import (
+    CARD_SURPLUS,
+    OTHER_AMOUNT,
+    LedgerStore,
+    Snapshot,
+    StaleRowError,
+    foreign_card,
+    foreign_result_account,
+    linked_conversion,
+)
+from pledger.web.store.common import _amount_of, _value_on
 from pledger.web.templating import (
     money,
     render_card_payment_form,
@@ -94,15 +104,17 @@ def create_movement(
         "amount": amount, "comment": comment,
     }
     try:
-        store.add(move_date, base_movement, acc_debit, acc_credit, amount, comment)
+        store.add_ledger_movement(move_date, base_movement, acc_debit, acc_credit, amount, comment)
     except ValueError as e:
         return render_form(request, store.load(), values, error=str(e))
     # Keep date, type and base movement to speed up entering similar movements.
     keep = {"move_date": move_date, "move_type": move_type, "base_movement": base_movement}
     value = float(amount.replace(",", ""))
+    account = foreign_result_account(store.load(), base_movement, acc_debit, acc_credit)
+    shown = f"{value:,.2f} {account.currency.name}" if account else money(value, store.settings.currency)
     response = render_form(
         request, store.load(), keep,
-        success=f"Added {base_movement}: {money(value, store.settings.currency)}"
+        success=f"Added {base_movement}: {shown}"
         + (" (dated in the future)" if move_date > dt.date.today().isoformat() else ""),
     )
     response.headers["HX-Trigger"] = "ledger-changed"
@@ -139,6 +151,27 @@ def updated(editing: dict, what: str, move_date: str) -> str:
     return f"Updated {editing['id'] + ' ' if editing['id'] else ''}{what}{future}"
 
 
+def copy_values(snapshot: Snapshot, index: int, own: str | None) -> dict:
+    """
+    The values of the movement form to add a movement like a row of the ledger CSV: as
+    add_ledger_movement takes them, so with the account and amount of its linked conversion, if
+    any, and the amount of a gain or loss of an account in another currency in that currency.
+    """
+    row = snapshot.rows.iloc[index]
+    values = ledger_values(row)
+    conversion = linked_conversion(snapshot, own)
+    if conversion is not None:
+        names = (conversion["acc_debit"], conversion["acc_credit"])
+        account = next(n for n in names if not snapshot.accounts[n].currency.is_base_currency)
+        side = "acc_debit" if values["acc_debit"] == INTERMEDIARY else "acc_credit"
+        return {**values, side: account, "amount": conversion[OTHER_AMOUNT]}
+    account = foreign_result_account(snapshot, row["base_movement"], row["acc_debit"], row["acc_credit"])
+    if account is not None:
+        rate = _value_on(account.currency, row["move_date"], "to copy the movement")
+        values["amount"] = f"{_amount_of(row['amount']) / rate:,.2f}"
+    return values
+
+
 def ledger_values(row) -> dict:
     """The values of the movement form of a ledger CSV row."""
     return {
@@ -153,6 +186,13 @@ def edit_movement_form(request: Request, store: StoreDep, index: int, fingerprin
     """The movement form filled with a row of the ledger CSV, to edit it."""
     editing, snapshot = editing_of(store, "rows", index, fingerprint)
     return render_form(request, snapshot, ledger_values(snapshot.rows.iloc[index]), editing=editing)
+
+
+@router.get("/movements/{index}/copy")
+def copy_movement_form(request: Request, store: StoreDep, index: int, fingerprint: str):
+    """A new movement form filled with a row of the ledger CSV, which is left as it is."""
+    origin, snapshot = editing_of(store, "rows", index, fingerprint)
+    return render_form(request, snapshot, copy_values(snapshot, index, origin["id"]), copied=origin["id"] or "another movement")
 
 
 @router.post("/movements/{index}/edit")
@@ -205,14 +245,14 @@ def delete_movement(store: StoreDep, index: int, fingerprint: Annotated[str, For
 @router.get("/form/invest-bases")
 def form_invest_bases(request: Request, store: StoreDep, move_type: str = ""):
     return templates.TemplateResponse(
-        request, "_invest_bases.html", {**invest_fields(store.load(), move_type=move_type), "values": {}}
+        request, "_invest_bases.html", {**invest_fields(store.load(), move_type=move_type), "values": {}, "oob": True}
     )
 
 
 @router.get("/form/invest-fields")
 def form_invest_fields(request: Request, store: StoreDep, base_movement: str = ""):
     return templates.TemplateResponse(
-        request, "_invest_fields.html", {**invest_fields(store.load(), base_movement), "values": {}}
+        request, "_invest_fields.html", {**invest_fields(store.load(), base_movement), "values": {}, "oob": True}
     )
 
 
@@ -242,27 +282,32 @@ def create_investment_movement(
     investment: Annotated[str, Form()] = "",
     quantity: Annotated[str, Form()] = "",
     investment_account: Annotated[str, Form()] = "",  # only narrows down the investments of the form
+    currency: Annotated[str, Form()] = "",
+    fees: Annotated[str, Form()] = "",
 ):
     values = {
         "move_date": move_date, "move_type": move_type, "base_movement": base_movement,
         "acc_debit": acc_debit, "acc_credit": acc_credit,
         "amount": amount, "comment": comment,
         "investment": investment, "quantity": quantity, "investment_account": investment_account,
+        "currency": currency, "fees": fees,
     }
     try:
-        store.add(
+        store.add_investment_movement(
             move_date, base_movement, acc_debit, acc_credit, amount, comment,
-            invest=True, investment=investment, quantity=quantity,
+            investment=investment, quantity=quantity, currency=currency, fees=fees,
         )
     except ValueError as e:
         return render_invest_form(request, store.load(), values, error=str(e))
     # Keep date, type and base movement to speed up entering similar movements.
-    keep = {"move_date": move_date, "move_type": move_type, "base_movement": base_movement}
+    keep = {"move_date": move_date, "move_type": move_type, "base_movement": base_movement, "currency": currency}
     value = float(amount.replace(",", ""))
     of = f" of {investment.strip()}" if investment.strip() else ""
+    base_name = store.load().base_currency.name
+    shown = money(value, store.settings.currency) if currency in ("", base_name) else f"{value:,.2f} {currency}"
     response = render_invest_form(
         request, store.load(), keep,
-        success=f"Added {base_movement}{of}: {money(value, store.settings.currency)}"
+        success=f"Added {base_movement}{of}: {shown}"
         + (" (dated in the future)" if move_date > dt.date.today().isoformat() else ""),
     )
     response.headers["HX-Trigger"] = "investments-changed"
@@ -484,13 +529,14 @@ def create_card_payment(
     acc_debit: Annotated[str, Form()] = "",
     acc_credit: Annotated[str, Form()] = "",
     comment: Annotated[str, Form()] = "",
+    amount_card: Annotated[str, Form()] = "",
 ):
     values = {
         "move_date": move_date, "base_movement": base_movement, "acc_debit": acc_debit,
-        "acc_credit": acc_credit, "amount": amount, "comment": comment,
+        "acc_credit": acc_credit, "amount": amount, "comment": comment, "amount_card": amount_card,
     }
     try:
-        store.add(move_date, base_movement, acc_debit, acc_credit, amount, comment, card_payment=True)
+        store.add_card_payment(move_date, base_movement, acc_debit, acc_credit, amount, comment, amount_card)
     except ValueError as e:
         return render_card_payment_form(request, store.load(), values, error=str(e))
     # Keep date and base movement to speed up entering similar payments.
@@ -498,11 +544,20 @@ def create_card_payment(
     response = render_card_payment_form(
         request, store.load(), keep,
         success=(f"Surplus of {acc_credit}" if base_movement == CARD_SURPLUS else f"Paid {acc_debit}")
-        + f": {money(float(amount.replace(',', '')), store.settings.currency)}"
+        + f": {card_amount_text(store, acc_debit, acc_credit, amount)}"
         + (" (dated in the future)" if move_date > dt.date.today().isoformat() else ""),
     )
     response.headers["HX-Trigger"] = "credit-cards-changed"
     return response
+
+
+def card_amount_text(store: LedgerStore, acc_debit: str, acc_credit: str, amount: str) -> str:
+    """A card payment in the success message: in the currency of the other account, for a card in another one."""
+    snapshot, value = store.load(), float(amount.replace(",", ""))
+    card = foreign_card(snapshot, acc_debit, acc_credit)
+    if card is None:
+        return money(value, store.settings.currency)
+    return f"{value:,.2f} {snapshot.accounts[acc_credit if card.name == acc_debit else acc_debit].currency.name}"
 
 
 def render_setup(request: Request, store: LedgerStore, values: dict, **extra):
@@ -793,6 +848,7 @@ def edit_investment_movement(
     investment: Annotated[str, Form()] = "",
     quantity: Annotated[str, Form()] = "",
     investment_account: Annotated[str, Form()] = "",  # only narrows down the investments of the form
+    fees: Annotated[str, Form()] = "",
 ):
     values = {
         "move_date": move_date, "move_type": move_type, "base_movement": base_movement,
@@ -803,6 +859,8 @@ def edit_investment_movement(
     field = INVEST_SOURCES[source]
     editing, _ = editing_of(store, field, index, fingerprint, f"/investments/{source}/{index}/edit")
     try:
+        if fees.strip():
+            raise ValueError("Add the broker fees of a movement already saved as their own movement")
         store.edit_investment(
             field, index, fingerprint, move_date, base_movement, acc_debit, acc_credit, amount, comment,
             investment, quantity,
@@ -968,7 +1026,9 @@ def card_payment_form(request: Request, store: StoreDep, base_movement: str = ""
 def edit_card_payment_form(request: Request, store: StoreDep, index: int, fingerprint: str):
     """The card payment form filled with a row of the ledger CSV, to edit it."""
     editing, snapshot = editing_of(store, "rows", index, fingerprint)
-    return render_card_payment_form(request, snapshot, ledger_values(snapshot.rows.iloc[index]), editing=editing)
+    row = snapshot.rows.iloc[index]
+    values = {**ledger_values(row), "amount_card": row.get(OTHER_AMOUNT, "")}
+    return render_card_payment_form(request, snapshot, values, editing=editing)
 
 
 @router.post("/credit-cards/payments/{index}/edit")
@@ -983,14 +1043,15 @@ def edit_card_payment(
     acc_debit: Annotated[str, Form()] = "",
     acc_credit: Annotated[str, Form()] = "",
     comment: Annotated[str, Form()] = "",
+    amount_card: Annotated[str, Form()] = "",
 ):
     values = {
         "move_date": move_date, "base_movement": base_movement, "acc_debit": acc_debit,
-        "acc_credit": acc_credit, "amount": amount, "comment": comment,
+        "acc_credit": acc_credit, "amount": amount, "comment": comment, "amount_card": amount_card,
     }
     editing, _ = editing_of(store, "rows", index, fingerprint)
     try:
-        store.edit(index, fingerprint, move_date, base_movement, acc_debit, acc_credit, amount, comment, card_payment=True)
+        store.edit_card_payment(index, fingerprint, move_date, base_movement, acc_debit, acc_credit, amount, comment, amount_card)
     except StaleRowError as e:
         raise HTTPException(status_code=409, detail=str(e)) from None
     except ValueError as e:

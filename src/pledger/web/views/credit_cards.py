@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
-from pledger.models import CREDIT_CARD, CreditCardAccount, next_month, rounds_to_zero
+from pledger.models import (
+    CREDIT_CARD,
+    CreditCardAccount,
+    is_foreign,
+    next_month,
+    rounds_to_zero,
+)
 from pledger.web.store import CARD_PAYMENT, CARD_PAYMENT_BASES, CARD_SURPLUS, Snapshot
 from pledger.web.views.charts import column_chart, line_chart, with_real
 from pledger.web.views.common import (
@@ -11,6 +17,7 @@ from pledger.web.views.common import (
     month_end,
     month_end_balances,
     months_of,
+    own_balance,
     percent,
     ratio_series,
 )
@@ -24,7 +31,8 @@ def build_credit_cards(snapshot: Snapshot, month: str = "", card: str = "") -> d
     paid (debits) in that month, leaving out the initial movements. Lists the
     cards with a negative balance (we are owed): rare, so possibly an error. Charts
     the net owed on them at each month end, nominal, real and over equity, and what
-    was charged to them in each month, up to `month`.
+    was charged to them in each month, up to `month`. A card in another currency also
+    has its balance in that currency, in `own` (None for the others).
     """
     cards = [a for a in snapshot.accounts.values() if isinstance(a, CreditCardAccount)]
     if card not in {a.name for a in cards}:
@@ -44,11 +52,13 @@ def build_credit_cards(snapshot: Snapshot, month: str = "", card: str = "") -> d
             "charged": sum(m.amount for m in moves if m.acc_credit is a),
             "paid": sum(m.amount for m in moves if m.acc_debit is a),
             "balance": balances.get(a.name, 0.0),
+            "own": own_balance(snapshot, a, month),
         }
         for a in cards
     ]
     return {
         "accounts": accounts,
+        "has_own": any(a["own"] is not None for a in accounts),
         "months": months_of(snapshot),
         "month": month,
         "base_currency": snapshot.base_currency.name,
@@ -123,7 +133,8 @@ def card_payment_fields(snapshot: Snapshot, base_movement: str = "") -> dict:
     """
     The base movements of the Credit Cards tab (CARD_PAYMENT_BASES) to pick from, as buttons
     (see CARD_BUTTONS), with the account fields of the selected one (the payment by
-    default), and what the others should be if they aren't as expected.
+    default), what the others should be if they aren't as expected, and the cards in
+    another currency, which need what was paid in their currency.
     """
     bases, missing = snapshot.tab_base_movements(CARD_PAYMENT_BASES, CREDIT_CARD)
     buttons = {n: b for n, b in CARD_BUTTONS.items() if n in bases}
@@ -134,4 +145,8 @@ def card_payment_fields(snapshot: Snapshot, base_movement: str = "") -> dict:
         "base_movement": base_movement,
         "missing": missing,
         "fields": account_fields(snapshot, base_movement),
+        "foreign_cards": {
+            a.name: a.currency.name for a in snapshot.accounts.values()
+            if isinstance(a, CreditCardAccount) and is_foreign(a)
+        },
     }

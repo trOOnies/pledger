@@ -16,6 +16,7 @@ from pledger.web.views.common import (
     grouped_composition,
     month_end_balances,
     months_of,
+    own_balance,
     percent,
     ratio_series,
 )
@@ -85,6 +86,7 @@ def build_accounts(snapshot: Snapshot, month: str = "", values: dict | None = No
                 ),
                 "checks": [CHECK_LABELS[c] for c in a.checks],
                 "balance": balances.get(a.name, 0.0),
+                "own": own_balance(snapshot, a, month),
                 "editable": a.acc_type in EDITABLE_ACCOUNT_TYPES,
             }
             for a in snapshot.accounts.values()
@@ -101,6 +103,7 @@ def build_accounts(snapshot: Snapshot, month: str = "", values: dict | None = No
         "liabilities": totals[AccountType.LIABILITY.value],
         "equity": totals[AccountType.EQUITY.value],
         "accounts_by_type": accounts_by_type,
+        "has_own": {t: any(a["own"] is not None for a in accs) for t, accs in accounts_by_type.items()},
         "groupings": balance_groupings(snapshot, balances),
         **over_time_charts(snapshot, month),
         **account_form(snapshot, values),

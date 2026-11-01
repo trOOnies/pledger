@@ -1,9 +1,14 @@
 """Tests for the Ledger tab: its balances, filters and search."""
 
+import datetime as dt
+from dataclasses import replace
+
 import pytest
+from helpers import HTMX
 
 from pledger.web.store import (
     LedgerStore,
+    row_fingerprint,
 )
 from pledger.web.views import (
     build_view,
@@ -78,3 +83,80 @@ class TestLedgerBaseFilter:
         r = client.get("/", params={"base": "Food"})
         assert '<option value="Food" selected>Food</option>' in r.text
         assert "<h2>Movements <small>1</small></h2>" in r.text
+
+
+class TestCopyMovement:
+    @staticmethod
+    def row(settings, index):
+        return LedgerStore(settings).load().rows.iloc[index]
+
+    def test_editable_movements_have_the_button(self, client):
+        table = client.get("/").text.split('data-sortable="movements"')[1].split("</table>")[0]
+        assert table.count('title="Copy"') == table.count('title="Edit"') == 4
+        assert 'hx-get="/movements/2/copy"' in table
+
+    def test_fills_in_a_new_movement_form(self, client, settings):
+        LedgerStore(settings).freeze_ids()
+        row = self.row(settings, 2)
+        form = client.get("/movements/2/copy", params={"fingerprint": row_fingerprint(row)}, headers=HTMX).text
+        assert "<h2>New movement</h2>" in form and "Edit movement" not in form
+        assert 'hx-post="/movements"' in form and 'name="fingerprint"' not in form
+        assert f'name="move_date" value="{row.move_date}"' in form
+        assert f'name="amount" inputmode="decimal" min="0" value="{row.amount}"' in form
+        assert "Filled in from L-3" in form
+
+    def test_a_stale_row_isnt_copied(self, client):
+        assert client.get("/movements/2/copy", params={"fingerprint": "x"}).status_code == 409
+
+    def test_adding_it_is_a_new_movement(self, client, settings):
+        before = LedgerStore(settings).load().rows
+        row = before.iloc[2]
+        client.get("/movements/2/copy", params={"fingerprint": row_fingerprint(row)})
+        assert len(LedgerStore(settings).load().rows) == len(before)  # copying saves nothing
+        for date in (row.move_date, "2026-02-01"):  # the date can stay
+            r = client.post("/movements", data={
+                "move_date": date, "base_movement": row.base_movement, "acc_debit": row.acc_debit,
+                "acc_credit": row.acc_credit, "amount": row.amount, "comment": row.comment,
+            }, headers=HTMX)
+            assert "Added " in r.text and "Filled in from" not in r.text
+        rows = LedgerStore(settings).load().rows
+        assert len(rows) == len(before) + 2
+        assert rows.iloc[2][list(before.columns)].equals(row)  # the original is left as it was
+        assert list(rows.move_date[-2:]) == [row.move_date, "2026-02-01"]
+
+
+class TestEditableFilter:
+    @pytest.fixture
+    def settings(self, settings):
+        with settings.ledger_path.open("a", encoding="utf-8") as f:
+            f.write("2026-02-01;Food;Eq;1;Ca;\n")
+        return settings
+
+    def test_only_the_editable_ones(self, settings):
+        snapshot = LedgerStore(settings).load()
+        moves = build_view(snapshot, initial=True)["movements"]
+        kept = build_view(snapshot, initial=True, editable=True)["movements"]
+        assert len(kept) == sum(m["editable"] for m in moves) < len(moves)
+        assert all(m["editable"] for m in kept)
+
+    def test_not_the_generated_ones_of_a_regular_base_movement(self, settings, tmp_path, monkeypatch):
+        monkeypatch.setattr("pledger.web.store.common.today", lambda: dt.date(2026, 2, 15))
+        creditors = tmp_path / "creditors.yaml"
+        creditors.write_text("De:\n  services:\n    Rent:\n      amount: 0\n      base_movement: Food\n", encoding="utf-8")
+        services = tmp_path / "services.csv"
+        services.write_text("month;Rent\n2026-01;100\n", encoding="utf-8")
+        snapshot = LedgerStore(replace(settings, creditors_path=creditors, services_path=services)).load()
+        moves = build_view(snapshot)["movements"]
+        generated = [m for m in moves if m["base"] == "Food" and m["source"]]
+        assert generated and not any(m["editable"] for m in generated)
+        assert {m["source"] for m in build_view(snapshot, editable=True)["movements"]} == {None}
+
+    def test_keeps_the_balances_and_works_with_the_search(self, settings):
+        snapshot = LedgerStore(settings).load()
+        everything = {m["index"]: m for m in build_view(snapshot)["movements"]}
+        for m in build_view(snapshot, editable=True, q="food")["movements"]:
+            assert m["base"] == "Food" and m["debit_balance"] == everything[m["index"]]["debit_balance"]
+
+    def test_the_tab_has_it(self, client):
+        assert 'name="editable" value="true" >' in client.get("/").text
+        assert 'name="editable" value="true" checked' in client.get("/", params={"editable": "true"}).text

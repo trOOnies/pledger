@@ -1,7 +1,8 @@
 {% from "_type_buttons.html" import type_buttons %}
 {% from "_edit.html" import form_head %}
 {# The investment movement form: a new one, or with `editing` one of the investments or interest CSV. #}
-<form id="invest-form" class="stack" hx-post="{{ editing.url if editing else '/investments/movements' }}" hx-swap="outerHTML">
+<form id="invest-form" class="stack" hx-post="{{ editing.url if editing else '/investments/movements' }}" hx-swap="outerHTML"
+  {% if not editing and currencies | length > 1 %}data-account-currencies='{{ account_currencies | tojson }}'{% endif %}>
   {{ form_head("investment movement", editing, "/form/invest-movement", "invest-form") }}
   {% if error %}<p class="msg error">{{ error }}</p>{% endif %}
   {% if success %}<p class="msg success">{{ success }}</p>{% endif %}
@@ -11,12 +12,28 @@
   </label>
   {{ type_buttons(move_types, move_type, "/form/invest-bases", "#invest-bases") }}
   <div id="invest-bases" class="stack">{% include "_invest_bases.html" %}</div>
+  {% if not editing and currencies | length > 1 %}
+  <div class="pair">
+    <label>Amount
+      <input name="amount" inputmode="decimal" min="0" value="{{ values.amount }}" placeholder="0.00" required autocomplete="off" data-money>
+    </label>
+    <label>Currency
+      <select name="currency">
+        {% for c in currencies %}<option {% if c == values.currency %}selected{% endif %}>{{ c }}</option>{% endfor %}
+      </select>
+    </label>
+  </div>
+  <span class="hint">The amount and the fees are in this currency, at its value on that date. With an account in another
+    currency, it goes through <code>Fi</code>, with a conversion.</span>
+  {% else %}
   <label>Amount
     <span class="money-input">
       <span class="prefix">{{ currency }}</span>
       <input name="amount" inputmode="decimal" min="0" value="{{ values.amount }}" placeholder="0.00" required autocomplete="off" data-money>
     </span>
   </label>
+  {% endif %}
+  {% include "_invest_fees.html" %}
   <label><span>Comment <em class="optional">(optional)</em></span>
     <input name="comment" value="{{ values.comment }}" autocomplete="off">
   </label>

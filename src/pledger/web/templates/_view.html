@@ -1,5 +1,5 @@
 {% from "_id.html" import id_cell, id_header %}
-{% from "_edit.html" import edit_button %}
+{% from "_edit.html" import copy_button, edit_button %}
 <div class="panel">
   <h2>Movements <small>{{ movements | length }}</small></h2>
   <div class="table-wrap">
@@ -31,6 +31,7 @@
             {# The balance corrections are added from the Audit tab, but deleted here #}
             {% if m.correction or not (m.source or m.internal) %}
             {% if m.editable %}
+            {{ copy_button("/movements/%d/copy" % m.index, m.fingerprint, "movement-form") }}
             {{ edit_button("/movements/%d/edit" % m.index, m.fingerprint, "movement-form") }}
             {% endif %}
             <button class="icon" title="Delete" aria-label="Delete movement"

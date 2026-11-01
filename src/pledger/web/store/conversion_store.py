@@ -167,6 +167,10 @@ class ConversionStore(StoreBase):
             raise StaleRowError(f"Conversion {index} does not exist")
         if fingerprint is not None and conversion_fingerprint(rows.iloc[index]) != fingerprint:
             raise StaleRowError("The conversions changed since this page was loaded; reload and try again")
+        group = self._linked_group(snapshot, "conversions", index)
+        if group:
+            self._delete_group(snapshot, group)
+            return
         indexes = sorted({index, conversion_pairs(snapshot).get(index, index)})
         replace(snapshot, conversions=rows.drop(index=rows.index[indexes])).ledger().check_accounts()
         csv_file = self._read_file(len(rows), self.settings.conversions_path)

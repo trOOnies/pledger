@@ -26,6 +26,9 @@
   <label class="check" title="Movements that set the initial amounts of the accounts; they are left out of results by default">
     <input type="checkbox" name="initial" value="true" {% if initial %}checked{% endif %}> Initial movements
   </label>
+  <label class="check" title="Only the movements that can be edited here, with the ✎ button">
+    <input type="checkbox" name="editable" value="true" {% if editable %}checked{% endif %}> Editable
+  </label>
 </form>
 
 <div class="layout">

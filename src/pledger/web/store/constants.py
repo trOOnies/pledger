@@ -65,6 +65,19 @@ BASE_AMOUNT, OTHER_AMOUNT = "amount_base_currency", "amount_other_currency"
 CONVERSION_COLUMNS = ["move_date", "base_movement", "acc_debit", BASE_AMOUNT, "acc_credit", "comment", OTHER_AMOUNT]
 
 
+# Optional column of the conversions CSV: the ids of the movements of other CSVs a conversion
+# was added with, through the INTERMEDIARY account, which only balances with all of them.
+# They are deleted together (see linked_ids).
+LINKED_COLUMN = "linked"
+
+
+# The base movement of the broker fees, and those that can add them from their form.
+BROKER_FEES = "Broker fees"
+
+
+FEE_BASES = {"Dividends & Interest", "Investment - Bought", "Investment - Sold"}
+
+
 # The internal transfers of the conversions of every other currency: bringing it in
 # (debiting an account in it) or taking it out (crediting one).
 CONVERSION_BOUGHT, CONVERSION_SOLD = "Foreign currency - Bought", "Foreign currency - Sold"

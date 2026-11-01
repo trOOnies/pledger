@@ -13,6 +13,7 @@ from pledger.models import InvestmentAccount
 from pledger.web.store.base_store import StoreBase
 from pledger.web.store.common import (
     LedgerDataError,
+    _amount_of,
     _atomic_write,
     _check_name,
     _fit_row,
@@ -136,7 +137,12 @@ class InvestmentStore(StoreBase):
         add. It stays in its CSV, and keeps its id and any other column.
         """
         snapshot = self.load()
-        self.current_row(snapshot, source, index, fingerprint)
+        current = self.current_row(snapshot, source, index, fingerprint)
+        if (
+            source == "investments" and self._linked_group(snapshot, source, index)
+            and _parse_amount(amount, "amount") != _amount_of(current["amount"])
+        ):
+            raise ValueError("This amount was added with its conversion: delete the movement and add it again")
         field, new_row = _movement_row(
             snapshot, move_date, base_movement, acc_debit, acc_credit, amount, comment,
             True, investment, quantity, False, False,

@@ -199,6 +199,17 @@
   {% if has_interest %}
   <section class="panel">
     <h2>Interest on money <small>all time</small></h2>
+    {% if missing_interest %}
+    <details class="msg warn alert" role="alert">
+      <summary>⚠ {{ missing_interest | length }} account{{ "s have" if missing_interest | length > 1 else " has" }} past weeks without interest.</summary>
+      <p class="small">Since each account's first movement of interest. Each week is shown by its Monday.</p>
+      <ul class="small">
+        {% for a in missing_interest %}
+        <li><strong>{{ a.name }}</strong> ({{ a.weeks | length }}): {{ a.weeks | join(", ") }}</li>
+        {% endfor %}
+      </ul>
+    </details>
+    {% endif %}
     {% if interest_accounts %}
     <p class="equity-headline">
       <span class="num-lg money {{ 'gain' if interest_totals.net > 0 else 'loss' if interest_totals.net < 0 }}">{{ interest_totals.net | money }}</span>

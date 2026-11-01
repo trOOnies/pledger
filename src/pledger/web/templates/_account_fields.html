@@ -1,4 +1,4 @@
-{% macro side(name, label, fixed, options, special) %}
+{% macro side(name, label, fixed, options, special, groups) %}
 <label><span>{{ label }}{% if special %} <em class="optional">({{ special | lower }} account)</em>{% endif %}</span>
   {% if fixed %}
   <input value="{{ fixed }}" readonly tabindex="-1" class="fixed">
@@ -6,14 +6,23 @@
   {% else %}
   <select name="{{ name }}" required>
     <option value="">Choose…</option>
+    {% if groups | length > 1 %}
+    {# The accounts by currency, to tell apart those of another one #}
+    {% for currency, names in groups.items() %}
+    <optgroup label="{{ currency }}">
+      {% for acc in names %}<option {% if acc == values[name] %}selected{% endif %}>{{ acc }}</option>{% endfor %}
+    </optgroup>
+    {% endfor %}
+    {% else %}
     {% for acc in options %}
     <option {% if acc == values[name] %}selected{% endif %}>{{ acc }}</option>
     {% endfor %}
+    {% endif %}
   </select>
   {% endif %}
 </label>
 {% endmacro %}
 <div class="pair">
-  {{ side("acc_debit", "Debit", fields.debit_fixed, fields.debit_options, fields.debit_special) }}
-  {{ side("acc_credit", "Credit", fields.credit_fixed, fields.credit_options, fields.credit_special) }}
+  {{ side("acc_debit", "Debit", fields.debit_fixed, fields.debit_options, fields.debit_special, fields.debit_groups) }}
+  {{ side("acc_credit", "Credit", fields.credit_fixed, fields.credit_options, fields.credit_special, fields.credit_groups) }}
 </div>

@@ -50,7 +50,7 @@
       {% for type, accs in accounts_by_type.items() if accs %}
       <h3>{{ type | capitalize }}</h3>
       <table data-sortable="balances-{{ type }}">
-        <thead><tr><th>Account</th><th>Description</th><th>Currency</th><th>Liquid</th><th>Special</th><th>Checks</th><th class="num">Balance</th><th></th></tr></thead>
+        <thead><tr><th>Account</th><th>Description</th><th>Currency</th><th>Liquid</th><th>Special</th><th>Checks</th><th class="num">Balance</th>{% if has_own[type] %}<th class="num" title="The balance of an account in another currency, in that currency">Balance in its currency</th>{% endif %}<th></th></tr></thead>
         <tbody>
         {% for a in accs %}
         <tr id="{{ row_anchor('account', a.name) }}">
@@ -61,6 +61,7 @@
           <td {% if a.special == "-" %}class="muted"{% endif %}>{{ a.special }}</td>
           <td {% if not a.checks %}class="muted"{% endif %}>{{ a.checks | join(", ") if a.checks else "-" }}</td>
           <td class="num money {{ 'loss' if a.balance < 0 and type != 'equity' }}" data-sort="{{ a.balance }}">{{ a.balance | money }}</td>
+          {% if has_own[type] %}{% if a.own is none %}<td class="num muted">-</td>{% else %}<td class="num money" data-sort="{{ a.own }}">{{ "{:,.2f}".format(a.own) }}</td>{% endif %}{% endif %}
           <td class="nowrap">
             {% if a.editable %}
             <button class="icon edit" title="Edit account {{ a.name }}" aria-label="Edit account {{ a.name }}"

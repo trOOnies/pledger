@@ -105,8 +105,9 @@ def conversion_fields(snapshot: Snapshot, sold: str = "", bought: str = "", chan
     movement (see exchange_base_movement). Between two other currencies, it is a cross
     one (see store.is_cross), through the INTERMEDIARY account. By default, the
     currencies of the last conversion, else
-    selling the base currency for the first other one. When they clash (the same
-    currency), the one not `changed` ("sold" or "bought") gives way.
+    selling the base currency for the first other one. When they clash (the base
+    currency twice), the one not `changed` ("sold" or "bought") gives way. The same
+    other currency twice is a cross conversion too, between two of its accounts.
     """
     names = list(snapshot.currencies)
     base = snapshot.base_currency.name
@@ -120,7 +121,7 @@ def conversion_fields(snapshot: Snapshot, sold: str = "", bought: str = "", chan
         sold = base if bought != base else next(iter(others), base)
     if bought not in names:
         bought = next(iter(others), base) if sold == base else base
-    if sold == bought and others:
+    if sold == bought == base and others:
         if changed == "bought":
             sold = base if bought != base else others[0]
         else:

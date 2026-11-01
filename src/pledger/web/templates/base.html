@@ -239,6 +239,26 @@
       }
     });
 
+    // In a form with data-account-currencies, picking an account picks its currency too.
+    document.addEventListener("change", (e) => {
+      const form = e.target.closest("form[data-account-currencies]");
+      if (!form || !["acc_debit", "acc_credit"].includes(e.target.name)) return;
+      const currency = JSON.parse(form.dataset.accountCurrencies)[e.target.value];
+      if (currency) form.querySelector("select[name=currency]").value = currency;
+    });
+
+    // In a form with data-foreign-accounts, a gain or loss of one of them is in its currency.
+    function showAmountCurrency(form) {
+      const prefix = form.querySelector("[data-amount-prefix]");
+      const accounts = JSON.parse(form.dataset.foreignAccounts);
+      const foreign = ["acc_debit", "acc_credit"].map((n) => accounts[form.elements[n]?.value]).find(Boolean);
+      prefix.textContent = (form.elements.move_type?.value !== "transfer" && foreign) || prefix.dataset.amountPrefix;
+    }
+    const showAmountCurrencies = () => document.querySelectorAll("form[data-foreign-accounts]").forEach(showAmountCurrency);
+    document.addEventListener("change", showAmountCurrencies);
+    document.addEventListener("htmx:afterSettle", showAmountCurrencies);
+    showAmountCurrencies();
+
     // Expand all toggles (data-expand-all): expand or collapse every expandable row of
     // the bars of their panel. Their state is kept when HTMX re-renders the panel.
     const expandState = {};

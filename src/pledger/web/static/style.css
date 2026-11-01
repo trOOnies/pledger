@@ -211,6 +211,7 @@ tr:last-child td { border-bottom: none; }
 .nowrap { white-space: nowrap; }
 .muted { color: var(--muted); }
 .estimated { font-style: italic; }
+#invest-fees:empty { display: none; }
 .small { font-size: .8rem; margin: 0; }
 .optional { font-weight: normal; opacity: .8; }
 

@@ -9,7 +9,14 @@ from typing import TYPE_CHECKING
 from pandas import DataFrame, Timestamp
 
 from pledger.enums import AccountType
-from pledger.models import FOREIGN_CURRENCY, INTERMEDIARY, Account, InvestmentAccount
+from pledger.models import (
+    FOREIGN_CURRENCY,
+    INTERMEDIARY,
+    Account,
+    CreditCardAccount,
+    InvestmentAccount,
+    is_foreign,
+)
 from pledger.web.store.common import (
     _amount_of,
     _concat,
@@ -18,14 +25,18 @@ from pledger.web.store.common import (
     _required_base,
     _value_on,
     own_initial_amount,
+    stored_ids,
 )
 from pledger.web.store.constants import (
     BASE_AMOUNT,
+    CARD_PAYMENT_BASES,
     CONVERSION_BOUGHT,
+    CONVERSION_ID,
     CONVERSION_SOLD,
     CONVERSIONS,
     ID_COLUMN,
     INITIAL_ID,
+    LINKED_COLUMN,
     OTHER_AMOUNT,
     RESULT_GAIN,
     RESULT_ID,
@@ -98,9 +109,9 @@ def _exchange_args(
 
 
 def is_cross(snapshot: Snapshot, sold: str, bought: str) -> bool:
-    """Whether a conversion of these currencies is a cross one: between two different other currencies."""
+    """Whether a conversion of these currencies is a cross one: between two other currencies, or the same one."""
     others = set(snapshot.currencies) - {snapshot.base_currency.name}
-    return sold in others and bought in others and sold != bought
+    return sold in others and bought in others
 
 
 def _cross_rows(
@@ -121,6 +132,8 @@ def _cross_rows(
             raise ValueError(f"Unknown account: {name!r}")
         if account.currency.name != currency:
             raise ValueError(f"The account {side} must be in {currency}, but {name} is in {account.currency.name}")
+    if acc_from == acc_to:
+        raise ValueError("The accounts from and to must be different")
     try:
         dt.date.fromisoformat(move_date)
     except ValueError:
@@ -131,6 +144,54 @@ def _cross_rows(
         _conversion_row(snapshot, move_date, CONVERSION_SOLD, through, acc_from, base_value, amount_sold, comment),
         _conversion_row(snapshot, move_date, CONVERSION_BOUGHT, acc_to, through, base_value, amount_bought, comment),
     ]
+
+
+def linked_ids(snapshot: Snapshot) -> dict[str, set[str]]:
+    """
+    The movements added together through the INTERMEDIARY account: the id of each one to
+    the ids of them all, from the LINKED_COLUMN of their conversion.
+    """
+    groups: dict[str, set[str]] = {}
+    if LINKED_COLUMN in snapshot.conversions.columns:
+        rows = snapshot.conversions
+        for own, text in zip(stored_ids(rows, CONVERSION_ID), rows[LINKED_COLUMN]):
+            if own and str(text).split():
+                group = {own, *str(text).split()}
+                groups |= dict.fromkeys(group, group)
+    return groups
+
+
+def linked_conversion(snapshot: Snapshot, own: str | None) -> dict | None:
+    """The row of the conversions CSV linked to a movement of this id (see linked_ids), if any."""
+    if not own or LINKED_COLUMN not in snapshot.conversions.columns:
+        return None
+    rows = snapshot.conversions.to_dict("records")
+    return next((row for row in rows if own in str(row[LINKED_COLUMN]).split()), None)
+
+
+def _other_amount(snapshot: Snapshot, row) -> float | None:
+    """
+    The amount in the currency of a credit card of a ledger row with one in its OTHER_AMOUNT
+    column, else None: a card payment or surplus of a card in another currency, against
+    an account in the base currency (the INTERMEDIARY for any other, see LinkedStore).
+    """
+    text = str(row.get(OTHER_AMOUNT, "")).strip()
+    if not text:
+        return None
+    date = row["move_date"]
+    names = (row["acc_debit"], row["acc_credit"])
+    card = next((snapshot.accounts[n] for n in names if isinstance(snapshot.accounts.get(n), CreditCardAccount)), None)
+    if row["base_movement"] not in CARD_PAYMENT_BASES or card is None or not is_foreign(card):
+        raise ValueError(
+            f"Only the card payments of a credit card in another currency have an {OTHER_AMOUNT} ({date})"
+        )
+    other = next(snapshot.accounts[n] for n in names if n != card.name)
+    if not other.currency.is_base_currency:
+        raise ValueError(
+            f"A card payment with an {OTHER_AMOUNT} must be against an account in "
+            f"{snapshot.base_currency.name}, not {other.name} ({date})"
+        )
+    return _parse_amount(text, f"{OTHER_AMOUNT} of a card payment ({date})")
 
 
 def conversion_pairs(snapshot: Snapshot) -> dict[int, int]:
@@ -274,8 +335,9 @@ def _result_rows(snapshot: Snapshot, start: int) -> tuple[DataFrame, dict[str, f
         [snapshot.rows, snapshot.investment_rows, snapshot.interest_rows, snapshot.salary_rows],
         snapshot.rows.columns,
     )
-    for date, debit, credit, amount in zip(rows["move_date"], rows["acc_debit"], rows["acc_credit"], rows["amount"]):
-        add(date, debit, credit, float(amount.replace(",", "").replace(" ", "") or 0), None)
+    others = [_other_amount(snapshot, row) for row in snapshot.rows.to_dict("records")] + [None] * len(rows)
+    for date, debit, credit, amount, other in zip(rows["move_date"], rows["acc_debit"], rows["acc_credit"], rows["amount"], others):
+        add(date, debit, credit, float(amount.replace(",", "").replace(" ", "") or 0), other)
     for i, (_, row) in enumerate(snapshot.conversions.iterrows()):
         _, amount, other = _check_conversion(snapshot, row)
         add(row["move_date"], row["acc_debit"], row["acc_credit"], amount, other, i)

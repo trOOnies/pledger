@@ -1,0 +1,5 @@
+{# The broker fees of the base movement picked (see views.invest_fields), after the amount. Swapped out of
+   band with `oob`, as the fields of the base movement come before the amount. #}
+<div id="invest-fees" class="stack" {% if oob %}hx-swap-oob="true"{% endif %}>{% if fees and not editing %}<label><span>Broker fees <em class="optional">(optional, adds a Broker fees movement)</em></span>
+  <input name="fees" inputmode="decimal" value="{{ values.fees }}" placeholder="0.00" autocomplete="off" data-money>
+</label>{% endif %}</div>

@@ -6,16 +6,18 @@ from dataclasses import replace
 
 from pandas import DataFrame, concat
 
+from pledger.models import CreditCardAccount, is_foreign
 from pledger.web.store.base_store import StoreBase
-from pledger.web.store.common import _fit_row, _with_row
-from pledger.web.store.constants import (
-    INTEREST_ID,
-    INVESTMENT_COLUMN,
-    INVESTMENT_ID,
-    LEDGER_ID,
-)
+from pledger.web.store.common import _amount_of, _fit_row, _parse_amount, _with_row
+from pledger.web.store.constants import INVESTMENT_COLUMN, OTHER_AMOUNT
 from pledger.web.store.investments import _check_invest, _check_known_investment
 from pledger.web.store.movements import _check_tab, _debt_comment, _movement_row
+
+
+def foreign_card(snapshot, acc_debit: str, acc_credit: str) -> CreditCardAccount | None:
+    """The credit card in another currency on a side, if any."""
+    accounts = (snapshot.accounts.get(n) for n in (acc_debit, acc_credit))
+    return next((a for a in accounts if isinstance(a, CreditCardAccount) and is_foreign(a)), None)
 
 
 class MovementStore(StoreBase):
@@ -49,17 +51,13 @@ class MovementStore(StoreBase):
         `correction` (from the Audit tab), else one of the Ledger tab (see _check_tab). It gets the next id of its CSV (see _appended).
         """
         snapshot = self.load()
+        if card_payment and foreign_card(snapshot, acc_debit, acc_credit):
+            raise ValueError("A card in another currency needs what was paid in its currency (see add_card_payment)")
         field, new_row = _movement_row(
             snapshot, move_date, base_movement, acc_debit, acc_credit, amount, comment,
             invest, investment, quantity, debt, card_payment, correction,
         )
-        path, what, prefix = {
-            "rows": (self.settings.ledger_path, "ledger", LEDGER_ID),
-            "interest": (self.settings.interest_path, "interest", INTEREST_ID),
-            "investments": (self.settings.investment_movements_path, "investments", INVESTMENT_ID),
-        }[field]
-        if path is None:
-            raise ValueError(f"No {what} CSV is set")
+        path, what, prefix = self._movement_file(field)
         frame = getattr(snapshot, field)
         new_row = _fit_row(new_row, frame.columns, what)
         changed = replace(snapshot, **{field: concat([frame, DataFrame([new_row])], ignore_index=True)})
@@ -94,21 +92,29 @@ class MovementStore(StoreBase):
         comment: str = "",
         debt: bool = False,
         card_payment: bool = False,
+        amount_card: str = "",
     ) -> None:
         """
         Replace a row of the ledger CSV by position with a movement of the same tab,
         optionally checking it is the expected one, like delete: of the Ledger tab, else
         of the Debt tab with `debt` or of the Credit Cards tab with `card_payment` (see
-        _check_tab). The row keeps its id and any other column.
+        _check_tab). The row keeps its id and any other column. A card payment of a card in
+        another currency has its `amount_card` in that currency (see LinkedStore.edit_card_payment).
         """
         snapshot = self.load()
         current = self.current_row(snapshot, "rows", index, fingerprint)
+        if self._linked_group(snapshot, "rows", index) and not card_payment and (
+            move_date != current["move_date"] or _parse_amount(amount, "amount") != _amount_of(current["amount"])
+        ):
+            raise ValueError("Its date and amount came with its conversion: delete the movement and add it again")
         _check_invest(snapshot, current["base_movement"], False, "edited")
         _check_tab(snapshot, current["base_movement"], False, debt, card_payment, "edited")
         _, new_row = _movement_row(
             snapshot, move_date, base_movement, acc_debit, acc_credit, amount, comment,
             False, "", "", debt, card_payment,
         )
+        if amount_card:
+            new_row[OTHER_AMOUNT] = amount_card
         _fit_row(new_row, snapshot.rows.columns, "ledger")  # every value has a column
         replace(snapshot, rows=_with_row(snapshot.rows, index, new_row)).ledger().check_accounts()
         self._replace_line(snapshot, "rows", index, new_row)

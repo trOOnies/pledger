@@ -48,8 +48,9 @@ def list_investment_movements(store: StoreDep):
 def create_investment_movement(store: StoreDep, movement: InvestMovementIn):
     fields = movement.model_dump()
     fields["quantity"] = "" if movement.quantity is None else movement.quantity
+    fields["fees"] = "" if movement.fees is None else movement.fees
     try:
-        store.add(**fields, invest=True)
+        store.add_investment_movement(**fields)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from None
     return {"ok": True}

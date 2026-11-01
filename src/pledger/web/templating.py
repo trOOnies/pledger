@@ -11,6 +11,7 @@ from fastapi.templating import Jinja2Templates
 from jinja2 import pass_context
 
 from pledger.enums import MovementType
+from pledger.models import is_foreign
 from pledger.web.store import Snapshot
 from pledger.web.views import (
     MOVEMENT_SOURCES,
@@ -117,6 +118,7 @@ def render_form(request: Request, snapshot: Snapshot, values: dict, **extra):
         "_form.html",
         {
             "move_types": [t.value for t in MovementType],
+            "foreign_accounts": {a.name: a.currency.name for a in snapshot.accounts.values() if is_foreign(a)},
             "currency": request.app.state.store.settings.currency,
             "values": values,
             **base,
@@ -131,6 +133,7 @@ def render_invest_form(request: Request, snapshot: Snapshot, values: dict, **ext
     invest = invest_fields(snapshot, values.get("base_movement", ""), values.get("move_type", ""))
     values["base_movement"] = invest["base_movement"]
     values["move_type"] = invest["move_type"]
+    values["currency"] = values.get("currency") or snapshot.base_currency.name
     return templates.TemplateResponse(
         request,
         "_invest_form.html",

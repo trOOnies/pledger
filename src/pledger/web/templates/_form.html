@@ -1,8 +1,10 @@
 {% from "_type_buttons.html" import type_buttons %}
 {% from "_edit.html" import form_head %}
 {# The movement form of the Ledger tab: a new movement, or with `editing` one of the ledger CSV. #}
-<form id="movement-form" class="stack" hx-post="{{ '/movements/%d/edit' % editing.index if editing else '/movements' }}" hx-swap="outerHTML">
+<form id="movement-form" class="stack" hx-post="{{ '/movements/%d/edit' % editing.index if editing else '/movements' }}" hx-swap="outerHTML"
+  {% if foreign_accounts and not editing %}data-foreign-accounts='{{ foreign_accounts | tojson }}'{% endif %}>
   {{ form_head("movement", editing, "/form/movement", "movement-form") }}
+  {% if copied %}<p class="muted small">Filled in from {{ copied }}. It is a new movement: nothing is saved until you add it.</p>{% endif %}
   {% if error %}<p class="msg error">{{ error }}</p>{% endif %}
   {% if success %}<p class="msg success">{{ success }}</p>{% endif %}
   <label>Date
@@ -13,10 +15,11 @@
   <div id="base-fields" class="stack">{% include "_base_fields.html" %}</div>
   <label>Amount
     <span class="money-input">
-      <span class="prefix">{{ currency }}</span>
+      <span class="prefix" data-amount-prefix="{{ currency }}">{{ currency }}</span>
       <input name="amount" inputmode="decimal" min="0" value="{{ values.amount }}" placeholder="0.00" required autocomplete="off" data-money>
     </span>
   </label>
+  {% if foreign_accounts and not editing %}<span class="hint">A gain or loss of an account in another currency is in that currency.</span>{% endif %}
   <label><span>Comment <em class="optional">(optional)</em></span>
     <input name="comment" value="{{ values.comment }}" autocomplete="off">
   </label>

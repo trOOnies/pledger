@@ -32,11 +32,12 @@ def matches(movement: dict, terms: list[str]) -> bool:
 
 def build_view(
     snapshot: Snapshot, month: str = "", account: str = "", initial: bool = False, base: str = "",
-    q: str = "",
+    q: str = "", editable: bool = False,
 ) -> dict:
     """
     Filtered movements (by month, account, base movement and a search, see matches) and
-    results for the ledger view, without the initial ones by default.
+    results for the ledger view, without the initial ones by default. With `editable`,
+    only those that can be edited from the Ledger tab.
     """
     rows = snapshot.all_rows
     mask = rows.move_date.str.startswith(month) if month else rows.move_date.notna()
@@ -50,8 +51,8 @@ def build_view(
     ledger = snapshot.ledger(filtered)
     movements = movement_rows(snapshot, filtered, ledger)
     terms = search_terms(q)
-    if terms:
-        movements = [m for m in movements if matches(m, terms)]
+    if terms or editable:
+        movements = [m for m in movements if matches(m, terms) and (m["editable"] or not editable)]
         filtered = filtered.loc[[m["index"] for m in reversed(movements)]]
         ledger = snapshot.ledger(filtered)
     # The balances after each movement are those of the whole ledger, whatever the filters.
@@ -64,6 +65,7 @@ def build_view(
         "month": month,
         "account": account,
         "initial": initial,
+        "editable": editable,
         "accounts": list(snapshot.accounts),
         "base": base,
         "bases": list(snapshot.base_movements),

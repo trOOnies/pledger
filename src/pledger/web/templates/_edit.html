@@ -7,6 +7,15 @@
   hx-on::after-request="document.getElementById('{{ form_id }}')?.scrollIntoView({block: 'nearest', behavior: 'smooth'})">&#9998;</button>
 {% endmacro %}
 
+{# Copying a movement from its table: the button of its row, getting a new form filled with it. #}
+{% macro copy_button(url, fingerprint, form_id) %}
+<button class="icon edit" title="Copy" aria-label="Copy movement"
+  hx-get="{{ url }}"
+  hx-vals='{{ {"fingerprint": fingerprint} | tojson }}'
+  hx-target="#{{ form_id }}" hx-swap="outerHTML"
+  hx-on::after-request="document.getElementById('{{ form_id }}')?.scrollIntoView({block: 'nearest', behavior: 'smooth'})">&#10697;</button>
+{% endmacro %}
+
 {# The heading of a form: `title`, or while `editing` a movement its ID, a Cancel button getting
    a new form from `cancel_url` and the fingerprint of the row edited. #}
 {% macro form_head(title, editing, cancel_url, form_id) %}

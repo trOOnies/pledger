@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+import datetime as dt
+
 from pledger.enums import AccountType, InvestmentType, MovementType
 from pledger.models import INVESTMENT, InvestmentAccount, next_month, rounds_to_zero
 from pledger.web.store import (
     BEFORE_COLUMN,
+    BROKER_FEES,
+    FEE_BASES,
     GENERATED,
     INTEREST,
+    INTEREST_ACCOUNT,
     INVESTMENT_COLUMN,
     QUANTITY_COLUMN,
     QUANTITY_OPTIONAL,
@@ -20,6 +25,7 @@ from pledger.web.store import (
 from pledger.web.views.charts import column_chart, line_chart, with_real
 from pledger.web.views.common import grouped_composition, month_end, movement_rows
 from pledger.web.views.forms import account_fields, bases_by_type, default_move_type
+from pledger.weeks import Week
 
 INVESTMENT_TYPE_LABELS = {
     InvestmentType.PUBLIC_BOND: "Public bond",
@@ -34,9 +40,6 @@ INVESTMENT_TYPE_LABELS = {
 
 
 NO_TYPE = "No type"  # label of the investments only in the ledger, not in the investments YAML
-
-
-BROKER_FEES = "Broker fees"  # the investment base movement of the fees, shown as a share of the amount
 
 
 def is_closed(holding: dict) -> bool:
@@ -180,6 +183,27 @@ def interest_movements(snapshot: Snapshot) -> list:
     return snapshot.ledger(snapshot.interest_rows).movements
 
 
+def missing_interest(snapshot: Snapshot) -> list[dict]:
+    """
+    The accounts of the interest CSV with the weeks ended by today with no movement of
+    theirs, from the week of their first one on, each as its Monday.
+    """
+    weeks: dict[str, set[Week]] = {}
+    for date, name in zip(snapshot.interest["move_date"], snapshot.interest[INTEREST_ACCOUNT]):
+        weeks.setdefault(name.strip(), set()).add(Week.of(dt.date.fromisoformat(date.strip())))
+    last = Week.of(snapshot.today - dt.timedelta(days=7))  # the last one ended, at the latest yesterday
+    found = []
+    for name, seen in weeks.items():
+        week, missing = min(seen), []
+        while week <= last:
+            if week not in seen:
+                missing.append(week.start.isoformat())
+            week = Week(week.start + dt.timedelta(days=7))
+        if missing:
+            found.append({"name": name, "weeks": missing})
+    return found
+
+
 def build_interest(snapshot: Snapshot) -> dict:
     """
     The interest on money (see interest_movements) earned and paid in each account,
@@ -214,6 +238,7 @@ def build_interest(snapshot: Snapshot) -> dict:
     return {
         "has_interest": bool(INTEREST & snapshot.base_movements.keys()),
         "interest_accounts": accounts,
+        "missing_interest": missing_interest(snapshot),
         "interest_totals": {k: sum(a[k] for a in accounts) for k in ("gains", "losses", "net")},
         "interest_chart": column_chart(series) if series else None,
         "interest_series": series,
@@ -374,8 +399,8 @@ def invest_fields(snapshot: Snapshot, base_movement: str = "", move_type: str = 
     that of the base movement, else a loss: see default_move_type), but the
     conversions, and the fields of the selected one (the first one by default): its
     accounts, whether it names an investment ("required" with an INVESTMENT side,
-    else "optional") and has a quantity ("required", "optional" or None), plus the
-    known investments to pick from.
+    else "optional"), has a quantity ("required", "optional" or None) and can add its
+    broker `fees`, plus the known investments and the currencies to pick from.
     """
     bases = {
         n: b for n, b in snapshot.invest_base_movements().items()
@@ -400,9 +425,14 @@ def invest_fields(snapshot: Snapshot, base_movement: str = "", move_type: str = 
             else "optional" if base_movement in QUANTITY_OPTIONAL
             else None
         ),
+        "fees": base_movement in FEE_BASES and BROKER_FEES in bases,
         # Those of the investments YAML and those only in the ledger, by account
         "investments_by_account": {
             a.name: sorted(a.investments) for a in snapshot.investment_accounts() if a.investments
+        },
+        "currencies": list(snapshot.currencies),
+        "account_currencies": {
+            a.name: a.currency.name for a in snapshot.free_accounts() if not isinstance(a, InvestmentAccount)
         },
     }
 

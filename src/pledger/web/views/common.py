@@ -8,7 +8,7 @@ from pandas import DataFrame, Period
 
 from pledger.enums import AccountType, MovementType
 from pledger.ledger import Ledger
-from pledger.models import next_month
+from pledger.models import Account, is_foreign, next_month
 from pledger.web.store import Snapshot, row_fingerprint
 
 # The tab where each kind of movement that can't be deleted from the Ledger tab is
@@ -130,6 +130,7 @@ def movement_rows(snapshot: Snapshot, rows: DataFrame, ledger: Ledger) -> list[d
     ]
     for m, move in zip(movements, ledger.movements):
         m["link"] = source_link(m["source"], move, m["id"]) if m["source"] else None
+        m["editable"] = m["editable"] and not m["source"]  # e.g. not the generated ones of a Food service
     movements.reverse()
     return movements
 
@@ -232,6 +233,16 @@ def composition(
 def month_end(month: str) -> str:
     """The ISO date of the last day of a YYYY-MM month."""
     return Period(month, freq="M").end_time.date().isoformat()
+
+
+def own_balance(snapshot: Snapshot, account: Account, month: str = "") -> float | None:
+    """
+    The balance of an account in another currency (see is_foreign), in that currency, as of the
+    end of `month` (all the ledger by default). None for the others, or without its values.
+    """
+    if not is_foreign(account) or not len(account.currency.base_currency_mapping):
+        return None
+    return snapshot.own_balance(account.name, month_end(month)) if month else snapshot.other_balances.get(account.name, 0.0)
 
 
 def percent(value: float) -> str:
