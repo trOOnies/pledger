@@ -430,13 +430,13 @@ def form_conversion_fields(
 
 
 @router.get("/conversions")
-def conversions(request: Request, store: StoreDep, currency: str = "", account: str = ""):
+def conversions(request: Request, store: StoreDep, currency: str = "", account: str = "", initial: bool = False):
     """
-    The conversions, of the currency and account picked in the filter if any (see
-    views.conversion_filter), with the filter itself, out of band.
+    The conversions, of the currency and account picked in the filter if any, and the
+    initial movements if asked (see views.conversion_filter), with the filter itself, out of band.
     """
     return templates.TemplateResponse(
-        request, "_conversions.html", {**conversion_filter(store.load(), currency, account), "oob": True}
+        request, "_conversions.html", {**conversion_filter(store.load(), currency, account, initial), "oob": True}
     )
 
 

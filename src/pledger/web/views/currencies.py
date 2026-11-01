@@ -13,12 +13,15 @@ from pledger.web.store import (
     BASE_AMOUNT,
     CONVERSION_BOUGHT,
     CONVERSION_SOLD,
+    ID_COLUMN,
+    INITIAL_ID,
     OTHER_AMOUNT,
     Snapshot,
     conversion_fingerprint,
     conversion_pairs,
     exchange_base_movement,
     is_cross,
+    own_initial_amount,
 )
 from pledger.web.views.charts import (
     column_chart,
@@ -31,17 +34,55 @@ from pledger.web.views.common import AVERAGE_MONTH_DAYS, month_end_balances, per
 from pledger.weeks import Week
 
 
-def build_conversions(snapshot: Snapshot, currency: str = "", account: str = "") -> list[dict]:
+def initial_conversions(snapshot: Snapshot) -> list[dict]:
+    """
+    The initial movements of the accounts with their initial amount in another currency
+    (see own_initial_amount), as rows of the conversions: generated, so with no `index`.
+    """
+    found = []
+    for _, row in snapshot.initial_rows.iterrows():
+        account = snapshot.accounts[row[ID_COLUMN].removeprefix(f"{INITIAL_ID}-")]
+        if not own_initial_amount(account):
+            continue
+        amount, other_amount = float(row["amount"]), abs(account.initial_amount)
+        found.append({
+            "index": None,
+            "id": row[ID_COLUMN],
+            "fingerprint": None,
+            "initial": True,
+            "date": row["move_date"],
+            "base": row["base_movement"],
+            "debit": row["acc_debit"],
+            "credit": row["acc_credit"],
+            "amount": amount,
+            "other_amount": other_amount,
+            "currency": account.currency.name,
+            "account": account.name,
+            "other_balance": account.initial_amount,
+            "bought": account.name == row["acc_debit"],
+            "rate": amount / other_amount,
+            "comment": row.get("comment", ""),
+            "pair": None,
+            "pair_id": None,
+            "through": None,
+        })
+    return found
+
+
+def build_conversions(
+    snapshot: Snapshot, currency: str = "", account: str = "", initial: bool = False
+) -> list[dict]:
     """
     The rows of the conversions CSV, newest first, with the amount in each currency,
     the value of the other currency in the base one they imply and the balance of the
     account in the other currency right after it, in that currency; with a `currency`,
     only those from or to it, and with an `account`, only those of that account. Each
     row of a cross conversion (see conversion_pairs) has the `pair` of the other one.
+    With `initial`, the initial movements too (see initial_conversions), the oldest on their date.
     """
     after = snapshot.conversion_balances()
     pairs = conversion_pairs(snapshot)
-    conversions = []
+    conversions = initial_conversions(snapshot) if initial else []
     ids = [snapshot.ids[ix] for ix in snapshot.conversion_rows.index]  # in the order of the CSV
     for i, (ix, row) in enumerate(snapshot.conversions.iterrows()):
         base_amount = float(row[BASE_AMOUNT].replace(",", "") or 0)
@@ -52,6 +93,7 @@ def build_conversions(snapshot: Snapshot, currency: str = "", account: str = "")
             "index": i,
             "id": ids[i],
             "fingerprint": conversion_fingerprint(row),
+            "initial": False,
             "date": row["move_date"],
             "base": row["base_movement"],
             "debit": debit.name,
@@ -76,7 +118,7 @@ def build_conversions(snapshot: Snapshot, currency: str = "", account: str = "")
     ]
 
 
-def conversion_filter(snapshot: Snapshot, currency: str = "", account: str = "") -> dict:
+def conversion_filter(snapshot: Snapshot, currency: str = "", account: str = "", initial: bool = False) -> dict:
     """
     The conversions of the currency and the account picked in the filter (all without
     them), with the currencies to pick from and the accounts in another currency (of
@@ -90,7 +132,8 @@ def conversion_filter(snapshot: Snapshot, currency: str = "", account: str = "")
     ]
     account = account if account in accounts else ""
     return {
-        "conversions": build_conversions(snapshot, currency, account),
+        "conversions": build_conversions(snapshot, currency, account, initial),
+        "conversion_initial": initial,
         "conversion_currencies": others,
         "conversion_currency": currency,
         "conversion_accounts": accounts,

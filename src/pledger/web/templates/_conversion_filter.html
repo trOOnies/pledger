@@ -14,4 +14,7 @@
       {% for a in conversion_accounts %}<option {% if a == conversion_account %}selected{% endif %}>{{ a }}</option>{% endfor %}
     </select>
   </label>
+  <label class="check" title="Movements that set the initial amounts of the accounts in other currencies; they are left out by default">
+    <input type="checkbox" name="initial" value="true" {% if conversion_initial %}checked{% endif %}> Initial movements
+  </label>
 </form>

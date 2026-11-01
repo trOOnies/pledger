@@ -124,12 +124,12 @@ def work(request: Request, store: StoreDep):
 
 
 @router.get("/currencies")
-def currencies(request: Request, store: StoreDep, currency: str = "", account: str = ""):
+def currencies(request: Request, store: StoreDep, currency: str = "", account: str = "", initial: bool = False):
     snapshot = store.load()
     context = {
         **build_currencies(snapshot),
         "settings": store.settings,
-        **conversion_filter(snapshot, currency, account),
+        **conversion_filter(snapshot, currency, account, initial),
         "conversion_form": (
             render_conversion_form(request, snapshot, {}).body.decode() if len(snapshot.currencies) > 1 else None
         ),

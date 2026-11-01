@@ -14,9 +14,9 @@
       <tbody>
         {% for c in conversions %}
         <tr{% if c.id %} id="{{ row_anchor('movement', c.id) }}"{% endif %}>
-          {{ id_cell(c.id, ledger_link(c.id, c.date) if c.id) }}
+          {{ id_cell(c.id, ledger_link(c.id, c.date, c.initial) if c.id) }}
           <td class="nowrap">{{ c.date }}</td>
-          <td><span class="badge transfer" title="{{ c.currency }} {{ 'bought' if c.bought else 'sold' }}">T</span> {{ c.base }}
+          <td>{% if c.initial %}<span class="badge {{ 'gain' if c.bought else 'loss' }}" title="The initial amount of {{ c.account }}">{{ "G" if c.bought else "L" }}</span>{% else %}<span class="badge transfer" title="{{ c.currency }} {{ 'bought' if c.bought else 'sold' }}">T</span>{% endif %} {{ c.base }}
             {% if c.pair is not none %}<small class="muted" title="A conversion between two other currencies through {{ c.through }}, with {{ c.pair_id or 'the other row' }}: edited and deleted together">⇄ {{ c.pair_id or "" }}</small>{% endif %}</td>
           <td>{{ c.debit }}</td>
           <td class="num money" data-sort="{{ c.amount }}">{{ c.amount | money }}</td>
@@ -27,6 +27,7 @@
           <td class="num money balance {{ 'loss' if c.other_balance < -0.00005 }}" data-sort="{{ c.other_balance }}" title="{{ c.account }}">{{ c.currency }} {{ "{:,.4f}".format(c.other_balance) }}</td>{% endif %}
           <td class="muted">{{ c.comment }}</td>
           <td class="nowrap">
+            {% if not c.initial %}
             {{ edit_button("/conversions/%d/edit" % c.index, c.fingerprint, "conversion-form") }}
             <button class="icon" title="Delete" aria-label="Delete conversion"
               hx-post="/conversions/{{ c.index }}/delete"
@@ -34,6 +35,7 @@
               hx-confirm="Delete {{ c.date }} {{ c.base }} ({{ c.amount | money }}){{ ' and ' ~ (c.pair_id or 'its other row') ~ ', its other half' if c.pair is not none }}?"
               data-confirm-money="{{ c.amount | money }}"
               hx-swap="none">&times;</button>
+            {% endif %}
           </td>
         </tr>
         {% else %}

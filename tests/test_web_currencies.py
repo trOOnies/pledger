@@ -177,6 +177,29 @@ class TestConversions:
         assert snapshot.ledger().balances()["Bk"] == pytest.approx(2281.2)
         assert snapshot.other_balances == {"Bk": pytest.approx(1.901)}
 
+    def test_the_initial_movements_are_left_out_by_default(self, conv):
+        snapshot = LedgerStore(conv).load()
+        assert [c["initial"] for c in build_conversions(snapshot)] == [False]
+        (first, initial) = build_conversions(snapshot, initial=True)  # the initial one is older
+        assert first["date"] == "2026-01-05" and not first["initial"]
+        assert initial["id"] == "A-Bk" and initial["initial"] and initial["index"] is None
+        assert (initial["currency"], initial["account"], initial["debit"]) == ("USD", "Bk", "Bk")
+        assert initial["other_amount"] == initial["other_balance"] == pytest.approx(0.1005)
+        assert initial["rate"] == pytest.approx(1000, rel=1e-3)
+        assert build_conversions(snapshot, "EUR", initial=True) == []
+        assert [c["initial"] for c in build_conversions(snapshot, account="Bk", initial=True)] == [False, True]
+
+    def test_the_filter_shows_the_initial_movements(self, conv_client):
+        unchecked = conv_client.get("/currencies").text
+        assert 'name="initial" value="true" >' in unchecked and 'id="movement-A-Bk"' not in unchecked
+        text = conv_client.get("/conversions", params={"initial": True}).text
+        filter_form = text.split('id="conversion-filter"')[1]
+        assert 'name="initial" value="true" checked' in filter_form
+        row = text.split('id="movement-A-Bk"')[1].split("</tr>")[0]
+        assert "/?month=2025-12&amp;initial=true#movement-A-Bk" in row  # to the Ledger tab, with them
+        assert "hx-post" not in row and "hx-get" not in row  # generated: never edited or deleted here
+        assert 'id="movement-A-Bk"' in conv_client.get("/currencies", params={"initial": True}).text
+
     def test_assets_and_liabilities_are_apart(self, conv):
         conv.accounts_path.write_text(conv.accounts_path.read_text(encoding="utf-8").replace(
             "liability:\n", "liability:\n  Lo:\n    description: Dollar loan\n    currency: USD\n    initial_amount: 0\n", 1,
