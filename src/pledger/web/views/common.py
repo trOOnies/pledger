@@ -136,13 +136,16 @@ def movement_rows(snapshot: Snapshot, rows: DataFrame, ledger: Ledger) -> list[d
 
 
 def grouped_composition(totals: dict[str, dict[str, float]]) -> list[dict]:
-    """Ordered composition of groups, each with its rows as children, on the groups' scale."""
-    rows = composition({g: sum(items.values()) for g, items in totals.items()}, ordered=True)
-    if not rows:
-        return rows
-    scale = {"total": sum(r["value"] for r in rows), "top": max(r["value"] for r in rows)}
+    """
+    Ordered composition of groups, each with its rows as children, all on the scale of
+    the largest of them: with negative rows, a row can be larger than its group.
+    """
+    groups = {g: sum(items.values()) for g, items in totals.items()}
+    top = max((v for items in (groups, *totals.values()) for v in items.values()), default=0.0)
+    rows = composition(groups, ordered=True, top=top)
+    total = sum(r["value"] for r in rows)
     for row in rows:
-        row["children"] = composition(totals[row["name"]], ordered=True, **scale)
+        row["children"] = composition(totals[row["name"]], ordered=True, total=total, top=top)
     return rows
 
 

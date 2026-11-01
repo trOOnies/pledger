@@ -23,6 +23,7 @@ from pledger.web.views import (
     build_results,
     composition,
     equity_series,
+    grouped_composition,
     nice_ticks,
 )
 
@@ -437,6 +438,13 @@ class TestCharts:
         assert rows[-1]["value"] == 20 and rows[-1]["share"] == 20
         assert [r["name"] for r in rows[-1]["rest"]] == ["c", "d", "e"]
         assert rows[0]["width"] == 100 and rows[1]["width"] == 60
+
+    def test_grouped_composition_fits_rows_larger_than_every_group(self):
+        # What is owed to us (a negative liability) leaves ARS below the rows it has
+        rows = grouped_composition({"ARS": {"De": -1000, "Vi": 90, "MM": 36}, "USD": {"ViD": 15}})
+        children = {c["name"]: c["width"] for r in rows for c in r["children"]}
+        assert children == {"De": 0, "Vi": 100, "MM": 40, "ViD": pytest.approx(100 / 6)}
+        assert [r["width"] for r in rows] == [0, pytest.approx(100 / 6)]
 
     def test_composition_ordered_keeps_order_and_everything(self):
         rows = composition({"b": 0, "a": 50, "c": -5, "d": 10}, limit=2, ordered=True)
