@@ -13,7 +13,9 @@ from pledger.web.views.accounts import (
     over_time_charts,
 )
 from pledger.web.views.audit import (
+    audit_entries,
     audit_form,
+    audit_history,
     audit_results,
 )
 from pledger.web.views.charts import (
@@ -143,7 +145,9 @@ __all__ = [
     "account_form",
     "account_movements",
     "account_values",
+    "audit_entries",
     "audit_form",
+    "audit_history",
     "audit_results",
     "balance_groupings",
     "base_fields",

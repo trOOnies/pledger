@@ -9,6 +9,7 @@ from pathlib import Path
 from pledger.models import INFLATION_COLUMN
 from pledger.web.store.common import _header
 from pledger.web.store.constants import (
+    AUDIT_COLUMNS,
     CONVERSION_COLUMNS,
     ID_COLUMN,
     INTEREST_COLUMNS,
@@ -46,6 +47,7 @@ class Settings:
     interest_path: Path | None = None  # missing: no interest on money yet (created when adding some)
     prices_path: Path | None = None  # missing: no prices of the investments yet (created when adding one)
     services_path: Path | None = None  # missing: no monthly values of the services yet (created when adding one)
+    audits_path: Path | None = None  # None: the audits aren't kept; missing: none yet (created with the first one)
     currency: str = "$"
     allowed_hosts: tuple[str, ...] | None = LOCAL_HOSTS  # None: any host
 
@@ -70,6 +72,7 @@ class Settings:
             interest_path=Path(os.environ.get("PLEDGER_INTEREST", "info/movements/interest.csv")),
             prices_path=Path(os.environ.get("PLEDGER_PRICES", "info/movements/prices.csv")),
             services_path=Path(os.environ.get("PLEDGER_SERVICES", "info/services.csv")),
+            audits_path=Path(os.environ.get("PLEDGER_AUDITS", "info/audits.csv")),
             currency=os.environ.get("PLEDGER_CURRENCY", "$"),
             allowed_hosts=allowed_hosts(os.environ.get("PLEDGER_ALLOWED_HOSTS", "")),
         )
@@ -105,6 +108,7 @@ class Settings:
             self.interest_path: _header([*INTEREST_COLUMNS, ID_COLUMN]),
             self.prices_path: _header(PRICE_COLUMNS),
             self.services_path: _header([SERVICE_MONTH]),
+            self.audits_path: _header(AUDIT_COLUMNS),
         }
         return {path: text for path, text in files.items() if path is not None}
 

@@ -9,8 +9,14 @@ import pytest
 from fastapi.testclient import TestClient
 from helpers import CORRECTION_YAML, HTMX, INVEST_TRANSFERS_YAML, rows, with_internal
 
+from pledger.models import AuditEntry
 from pledger.web.app import create_app
-from pledger.web.store import LedgerStore, row_fingerprint
+from pledger.web.store import (
+    AUDIT_COLUMNS,
+    LedgerDataError,
+    LedgerStore,
+    row_fingerprint,
+)
 
 
 def balance(**values):
@@ -18,26 +24,28 @@ def balance(**values):
     return {f"balance:{name}": value for name, value in values.items()}
 
 
+@pytest.fixture
+def settings(settings, tmp_path):
+    text = settings.accounts_path.read_text(encoding="utf-8")
+    settings.accounts_path.write_text(
+        text.replace("liability:\n", "  Br:\n    description: Broker\nliability:\n"), encoding="utf-8"
+    )
+    path = settings.base_movements_path
+    with_internal(path, CORRECTION_YAML, INVEST_TRANSFERS_YAML)
+    investments = tmp_path / "investment.yaml"
+    investments.write_text("Br:\n  investments:\n    T: stock\n", encoding="utf-8")
+    return replace(
+        settings, investments_path=investments, investment_movements_path=tmp_path / "investment.csv",
+        interest_path=tmp_path / "interest.csv", audits_path=tmp_path / "audits.csv",
+    )
+
+
+@pytest.fixture
+def client(settings):
+    return TestClient(create_app(settings))
+
+
 class TestAudit:
-    @pytest.fixture
-    def settings(self, settings, tmp_path):
-        text = settings.accounts_path.read_text(encoding="utf-8")
-        settings.accounts_path.write_text(
-            text.replace("liability:\n", "  Br:\n    description: Broker\nliability:\n"), encoding="utf-8"
-        )
-        path = settings.base_movements_path
-        with_internal(path, CORRECTION_YAML, INVEST_TRANSFERS_YAML)
-        investments = tmp_path / "investment.yaml"
-        investments.write_text("Br:\n  investments:\n    T: stock\n", encoding="utf-8")
-        return replace(
-            settings, investments_path=investments, investment_movements_path=tmp_path / "investment.csv",
-            interest_path=tmp_path / "interest.csv",
-        )
-
-    @pytest.fixture
-    def client(self, settings):
-        return TestClient(create_app(settings))
-
     @staticmethod
     def last(settings) -> list:
         return rows(settings).iloc[-1][["move_date", "base_movement", "acc_debit", "amount", "acc_credit"]].tolist()
@@ -164,3 +172,90 @@ class TestAudit:
         fp = row_fingerprint(rows(settings).iloc[4])
         assert client.post("/movements/4/delete", data={"fingerprint": fp}).status_code == 200
         assert len(rows(settings)) == 4
+
+
+class TestAuditHistory:
+    @staticmethod
+    def history(text) -> str:
+        return text.split("audit-history")[1]
+
+    def test_confirming_saves_every_amount(self, settings, client):
+        actual = LedgerStore(settings).load().balances_today()
+        before = settings.ledger_path.read_text()
+        r = client.post("/audit", data=balance(Ca="100", Cc=f"{actual['Cc']:.2f}", Bk="1"))
+        assert settings.ledger_path.read_text() == before
+        (audit,) = LedgerStore(settings).load_audits()
+        assert audit.id == 1 and (audit.differences, audit.corrected) == (2, 0)
+        by_account = {e.account: e for e in audit.entries}
+        assert list(by_account) == ["Ca", "Bk", "Cc"]  # the ones filled in
+        ca = by_account["Ca"]
+        assert (ca.currency, ca.inputted) == ("ARS", 100) and ca.actual == pytest.approx(actual["Ca"])
+        assert ca.difference == pytest.approx(100 - actual["Ca"]) and not ca.corrected
+        assert by_account["Cc"].matches and by_account["Bk"].currency == "USD"
+        assert 'id="audit-1"' in r.text and "Not corrected" in self.history(r.text)
+
+    def test_invalid_balances_save_nothing(self, settings, client):
+        client.post("/audit", data=balance(Ca="x"))
+        client.post("/audit", data={})
+        assert LedgerStore(settings).load_audits() == [] and not settings.audits_path.exists()
+
+    def test_a_correction_is_marked_in_its_audit(self, settings, client):
+        form = balance(Ca="100", Cc="1")
+        first = client.post("/audit", data=form).text
+        client.post("/audit", data=balance(Bk="1"))  # a later audit, that stays as it was
+        assert 'name="audit" value="1"' in first
+        r = client.post("/audit/correct", data={**form, "account": "Ca", "audit": "1"})
+        assert "Corrected Ca" in r.text and 'name="audit" value="1"' in r.text
+        store = LedgerStore(settings)
+        one, two = store.load_audits()
+        assert len(store.load_audits()) == 2  # correcting is no new audit
+        ca = next(e for e in one.entries if e.account == "Ca")
+        assert ca.corrected and ca.base_movement in {"Correction (G)", "Correction (L)"}
+        assert ca.movement_id == store.load().rows.iloc[-1]["id"] and ca.amount > 0
+        assert (one.corrected, one.differences, two.corrected) == (1, 2, 0)
+        # The amounts stay those of the audit, though the balance is now right
+        assert ca.difference != 0
+        history = self.history(r.text)
+        assert f"#movement-{ca.movement_id}" in history and "Not corrected" in history
+
+    def test_a_correction_deleted_shows_in_its_audit(self, settings, client):
+        form = balance(Ca="100")
+        client.post("/audit", data=form)
+        client.post("/audit/correct", data={**form, "account": "Ca", "audit": "1"})
+        store = LedgerStore(settings)
+        index = len(store.load().rows) - 1
+        store.delete(index, row_fingerprint(store.load().rows.iloc[index]), correction=True)
+        assert "(deleted)" in self.history(client.get("/audit").text)
+
+    def test_an_unknown_audit_still_corrects(self, settings, client):
+        r = client.post("/audit/correct", data={**balance(Ca="100"), "account": "Ca", "audit": "9"})
+        assert "Corrected Ca" in r.text and LedgerStore(settings).load_audits() == []
+
+    def test_the_form_stays_blind_with_its_amounts_closed(self, settings, client):
+        store = LedgerStore(settings)
+        actual = store.load().balances_today()["Ca"]
+        client.post("/audit", data=balance(Ca="100"))
+        text = client.get("/audit").text
+        form, history = text.split("audit-history")
+        assert f"{actual:,.2f}" not in form
+        summary = history.split("<details")[0]
+        assert f"{actual:,.2f}" not in summary and "<details open" not in history
+
+    def test_newest_first(self, client):
+        client.post("/audit", data=balance(Ca="1"))
+        text = client.post("/audit", data=balance(Ca="2")).text
+        assert text.index('id="audit-2"') < text.index('id="audit-1"')
+
+    def test_a_broken_csv_is_a_data_error(self, settings):
+        settings.audits_path.write_text(";".join(AUDIT_COLUMNS) + "\nx;2026-01-01;Ca;ARS;1;1;0;;;\n")
+        with pytest.raises(LedgerDataError, match="audits CSV is invalid"):
+            LedgerStore(settings).load_audits()
+        settings.audits_path.write_text("audit;date\n1;2026-01-01\n")
+        with pytest.raises(LedgerDataError, match="missing the columns"):
+            LedgerStore(settings).load_audits()
+
+    def test_with_no_csv_set_nothing_is_kept(self, settings):
+        store = LedgerStore(replace(settings, audits_path=None))
+        assert store.add_audit([AuditEntry("Ca", "ARS", 1, 1, 0)]) is None
+        assert store.load_audits() == [] and not store.mark_correction("1", "Ca", "Correction (G)", 1.0)
+

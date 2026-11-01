@@ -22,6 +22,7 @@ from pledger.web.templating import (
 )
 from pledger.web.views import (
     audit_form,
+    audit_history,
     build_accounts,
     build_credit_cards,
     build_currencies,
@@ -150,7 +151,9 @@ def results(request: Request, store: StoreDep, month: str | None = None, initial
 
 @router.get("/audit")
 def audit(request: Request, store: StoreDep):
-    return templates.TemplateResponse(request, "audit.html", audit_form(store.load()))
+    snapshot = store.load()
+    context = {**audit_form(snapshot), "history": audit_history(snapshot, store.load_audits())}
+    return templates.TemplateResponse(request, "audit.html", context)
 
 
 # The sections of the Help tab, in reading order: the id of its page and template, its emoji and title

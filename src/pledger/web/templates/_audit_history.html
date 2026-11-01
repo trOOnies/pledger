@@ -1,0 +1,52 @@
+{# The audits made (see views.audit_history), newest first. The amounts of each one stay closed
+   until opened, as the actual balances of a past audit could influence the one being filled in. #}
+{% macro amount(value, e) %}<span class="money">{{ e.currency }} {{ "{:,.{}f}".format(value, e.decimals) }}</span>{% endmacro %}
+{% if history %}
+<section class="panel audit-history">
+  <h2>History <small>{{ history | length }}</small></h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Audit</th><th>Date</th><th class="num">Audited</th><th class="num">With a difference</th><th class="num">Corrected</th></tr></thead>
+      {% for a in history %}
+      <tbody id="audit-{{ a.id }}">
+        <tr>
+          <td class="muted small">#{{ a.id }}</td>
+          <td class="nowrap">{{ a.date }}</td>
+          <td class="num">{{ a.audited }}</td>
+          <td class="num {{ 'loss' if a.differences }}">{{ a.differences }}</td>
+          <td class="num">{{ a.corrected }}</td>
+        </tr>
+        <tr>
+          <td colspan="5">
+            <details>
+              <summary class="muted small">Amounts</summary>
+              <table>
+                <thead><tr><th>Account</th><th class="num">Inputted</th><th class="num">Actual</th><th class="num" title="Inputted minus actual">Difference</th><th>Correction</th></tr></thead>
+                <tbody>
+                {% for e in a.entries %}
+                <tr>
+                  <td class="nowrap">{{ e.account }}</td>
+                  <td class="num">{{ amount(e.inputted, e) }}</td>
+                  <td class="num">{{ amount(e.actual, e) }}</td>
+                  <td class="num {{ 'muted' if e.matches else 'loss' }}">{{ amount(e.difference, e) }}</td>
+                  <td class="nowrap">
+                    {% if e.corrected %}
+                    ✓ {{ e.base }} of {{ e.amount | money }}
+                    {% if e.link %}<a class="id-link" href="{{ e.link }}" title="Go to this movement in the Ledger tab">{{ e.movement_id }}</a>
+                    {% else %}<span class="muted" title="It is no longer in the ledger">(deleted)</span>{% endif %}
+                    {% elif e.matches %}<span class="muted">Matches</span>
+                    {% else %}<span class="muted">Not corrected</span>{% endif %}
+                  </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+              </table>
+            </details>
+          </td>
+        </tr>
+      </tbody>
+      {% endfor %}
+    </table>
+  </div>
+</section>
+{% endif %}

@@ -39,7 +39,9 @@ from pledger.web.views import (
     account_fields,
     account_form,
     account_values,
+    audit_entries,
     audit_form,
+    audit_history,
     audit_results,
     base_fields,
     base_sides,
@@ -668,36 +670,46 @@ def audit_values(form) -> dict[str, str]:
     return {k.removeprefix("balance:"): str(v) for k, v in form.items() if k.startswith("balance:")}
 
 
-def render_audit(request: Request, store: LedgerStore, values: dict[str, str], **extra):
-    """The results of an audit, or the form again with what is wrong with it (see views.audit_results)."""
+def render_audit(request: Request, store: LedgerStore, values: dict[str, str], save: bool = False, **extra):
+    """
+    The results of an audit, saved to the history with `save`, or the form again with what
+    is wrong with it (see views.audit_results).
+    """
     snapshot = store.load()
     try:
         context = audit_results(snapshot, values)
+        if save:
+            context["audit_id"] = store.add_audit(audit_entries(context["results"]))
     except ValueError as e:
         context = {**audit_form(snapshot, values), "audit_error": str(e)}
+    context["history"] = audit_history(snapshot, store.load_audits())
     return templates.TemplateResponse(request, "_audit.html", {**context, **extra})
 
 
 @router.post("/audit")
 async def audit(request: Request, store: StoreDep):
-    """Confirm the balances filled in: only now are they shown next to the actual ones."""
-    return render_audit(request, store, audit_values(await request.form()))
+    """Confirm the balances filled in: only now are they shown next to the actual ones, and saved as an audit."""
+    return render_audit(request, store, audit_values(await request.form()), save=True)
 
 
 @router.post("/audit/correct")
 async def correct_balance(request: Request, store: StoreDep):
-    """Correct an account to its balance filled in (see LedgerStore.correct_balance), keeping the results."""
+    """
+    Correct an account to its balance filled in (see LedgerStore.correct_balance), marking
+    it in its audit, keeping the results.
+    """
     form = await request.form()
-    name, values = str(form.get("account", "")), audit_values(form)
+    name, values, audit_id = str(form.get("account", "")), audit_values(form), str(form.get("audit", ""))
     try:
         corrected = store.correct_balance(name, values.get(name, ""))
     except ValueError as e:
-        return render_audit(request, store, values, audit_failure=str(e))
+        return render_audit(request, store, values, audit_failure=str(e), audit_id=audit_id)
     if corrected is None:
-        return render_audit(request, store, values, audit_success=f"The balance of {name} was already right")
+        return render_audit(request, store, values, audit_success=f"The balance of {name} was already right", audit_id=audit_id)
     base_movement, amount = corrected
+    store.mark_correction(audit_id, name, base_movement, amount)
     return render_audit(
-        request, store, values,
+        request, store, values, audit_id=audit_id,
         audit_success=f"Corrected {name}: {base_movement} of {money(amount, store.settings.currency)}",
     )
 

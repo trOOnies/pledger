@@ -18,6 +18,7 @@ from pledger.web.store.common import (
     work_fingerprint,
 )
 from pledger.web.store.constants import (
+    AUDIT_COLUMNS,
     BASE_AMOUNT,
     BEFORE_COLUMN,
     BOM,
@@ -122,6 +123,7 @@ from pledger.web.store.yaml_edit import (
 )
 
 __all__ = [
+    "AUDIT_COLUMNS",
     "BASE_AMOUNT",
     "BEFORE_COLUMN",
     "BOM",

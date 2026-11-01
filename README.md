@@ -116,6 +116,7 @@ with an environment variable:
 | `movements/investment.csv` | | `PLEDGER_INVESTMENT_MOVEMENTS` | The movements of the investments |
 | `movements/interest.csv` | | `PLEDGER_INTEREST` | The interest on money of the regular accounts |
 | `movements/prices.csv` | | `PLEDGER_PRICES` | The prices of the investments |
+| `audits.csv` | | `PLEDGER_AUDITS` | The history of the audits |
 | `currencies.yaml` | ✅ | `PLEDGER_CURRENCIES` | Base and other currencies (with `base_currency.csv` and `currencies.csv` next to it) |
 | `investment.yaml` | | `PLEDGER_INVESTMENTS` | The investments of each investment account |
 | `creditors.yaml` | | `PLEDGER_CREDITORS` | Who each debt account is owed by or owes to |
@@ -253,10 +254,16 @@ The Audit tab compares your asset and liability accounts with what you checked b
 them without their balances, so you **fill them in blind**, each in the currency of the account. An
 account left empty isn't audited, while a `0.00` is audited as zero.
 
-Confirming shows each balance filled in next to the actual one at the end of today, and nothing is
-written. Each difference has a button to add a correction, which is optional: you can fix the
-difference yourself in your data files instead. Investment accounts are compared too, but aren't
-corrected, because their balance comes from their investments.
+Confirming shows each balance filled in next to the actual one at the end of today. Each difference
+has a button to add a correction, which is optional: you can fix the difference yourself in your
+data files instead. Investment accounts are compared too, but aren't corrected, because their
+balance comes from their investments.
+
+Each confirmation is saved as an audit in `audits.csv`, with the amounts of every account audited
+as they were then, and listed in the **History** of the tab, newest first. A correction you accept
+is marked in its audit, with its movement; if you later delete it from the ledger, it shows as
+deleted. The amounts of past audits stay closed until you open them, as seeing them could influence
+the balances you are filling in.
 
 A correction is a movement dated today, in the ledger CSV, of one of these internal base movements:
 

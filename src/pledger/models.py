@@ -1255,6 +1255,77 @@ def next_month(month: str) -> str:
 
 
 @dataclass
+class AuditEntry:
+    """
+    An account in an audit: the balance `inputted` by hand and the `actual` one then, in
+    `currency`, and their `difference`, 0 if they match. With a correction accepted, its
+    `base_movement`, its `amount` in the base currency and its `movement_id`.
+    """
+
+    account: str
+    currency: str
+    inputted: float
+    actual: float
+    difference: float
+    base_movement: str | None = None
+    amount: float | None = None
+    movement_id: str | None = None
+
+    @property
+    def matches(self) -> bool:
+        return self.difference == 0
+
+    @property
+    def corrected(self) -> bool:
+        return self.base_movement is not None
+
+
+@dataclass
+class Audit:
+    """The balances checked by hand on a date and time, by account, as they were compared then."""
+
+    id: int
+    date: dt.datetime
+    entries: list[AuditEntry] = field(default_factory=list)
+
+    @property
+    def differences(self) -> int:
+        return sum(not e.matches for e in self.entries)
+
+    @property
+    def corrected(self) -> int:
+        return sum(e.corrected for e in self.entries)
+
+    def rows(self) -> list[dict[str, str]]:
+        """Its rows of the audits CSV, one per entry."""
+        return [
+            {
+                "audit": str(self.id), "date": self.date.isoformat(), "account": e.account, "currency": e.currency,
+                "inputted": f"{e.inputted:.4f}", "actual": f"{e.actual:.4f}", "difference": f"{e.difference:.4f}",
+                "correction": e.base_movement or "", "amount": "" if e.amount is None else f"{e.amount:.2f}",
+                "correction_id": e.movement_id or "",
+            }
+            for e in self.entries
+        ]
+
+    @classmethod
+    def from_rows(cls, rows: pd.DataFrame) -> list[Audit]:
+        """The audits of the rows of the audits CSV, as strings, in their order."""
+        audits: dict[int, Audit] = {}
+        for row in rows.to_dict("records"):
+            audit_id = int(row["audit"])
+            audit = audits.setdefault(audit_id, cls(audit_id, dt.datetime.fromisoformat(row["date"])))
+            audit.entries.append(AuditEntry(
+                account=row["account"], currency=row["currency"], inputted=float(row["inputted"]),
+                actual=float(row["actual"]), difference=float(row["difference"]),
+                base_movement=row["correction"] or None,
+                amount=float(row["amount"]) if row["amount"] else None,
+                movement_id=row["correction_id"] or None,
+            ))
+        return list(audits.values())
+
+
+@dataclass
 class WorkMonth:
     """
     A month (YYYY-MM) of the work history: the company and job position worked at,

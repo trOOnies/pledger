@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from pledger.enums import AccountType
-from pledger.models import InvestmentAccount, is_foreign
-from pledger.web.store import Snapshot, _parse_number
+from pledger.models import Audit, AuditEntry, InvestmentAccount, is_foreign
+from pledger.web.store import LEDGER_ID, Snapshot, _parse_number, stored_ids
+from pledger.web.views.common import ledger_link
 
 AUDITED_TYPES = [AccountType.ASSET, AccountType.LIABILITY]
 
@@ -69,3 +70,33 @@ def audit_results(snapshot: Snapshot, values: dict[str, str]) -> dict:
         "differences": sum(not r["matches"] for r in results),
         "skipped": len(_audited_accounts(snapshot)) - len(results),
     }
+
+
+def audit_entries(results: list[dict]) -> list[AuditEntry]:
+    """The entries of an audit, to save, from its results (see audit_results)."""
+    return [AuditEntry(r["name"], r["currency"], r["inputted"], r["actual"], r["difference"]) for r in results]
+
+
+def audit_history(snapshot: Snapshot, audits: list[Audit]) -> list[dict]:
+    """
+    The audits made, newest first, with the amounts of each account as they were then.
+    A correction links to its movement, unless it was deleted from the ledger.
+    """
+    dates = dict(zip(stored_ids(snapshot.rows, LEDGER_ID), snapshot.rows["move_date"]))
+    base = snapshot.base_currency.name
+
+    def entry(e: AuditEntry) -> dict:
+        return {
+            "account": e.account, "currency": e.currency, "decimals": 2 if e.currency == base else 4,
+            "inputted": e.inputted, "actual": e.actual, "difference": e.difference, "matches": e.matches,
+            "corrected": e.corrected, "base": e.base_movement, "amount": e.amount, "movement_id": e.movement_id,
+            "link": ledger_link(e.movement_id, dates[e.movement_id]) if e.movement_id and e.movement_id in dates else None,
+        }
+
+    return [
+        {
+            "id": a.id, "date": a.date.strftime("%Y-%m-%d %H:%M"), "audited": len(a.entries),
+            "differences": a.differences, "corrected": a.corrected, "entries": [entry(e) for e in a.entries],
+        }
+        for a in reversed(audits)
+    ]

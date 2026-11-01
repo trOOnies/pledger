@@ -62,6 +62,13 @@ LEDGER_CSV_COLUMNS = ["move_date", "base_movement", "acc_debit", "amount", "acc_
 BASE_AMOUNT, OTHER_AMOUNT = "amount_base_currency", "amount_other_currency"
 
 
+# The audits CSV: a row per account audited, of the audit of that id. The difference is the
+# inputted balance minus the actual one, then, 0 if they match. A correction accepted adds
+# its base movement, its amount in the base currency and the id of its movement.
+AUDIT_COLUMNS = [
+    "audit", "date", "account", "currency", "inputted", "actual", "difference", "correction", "amount", "correction_id",
+]
+
 CONVERSION_COLUMNS = ["move_date", "base_movement", "acc_debit", BASE_AMOUNT, "acc_credit", "comment", OTHER_AMOUNT]
 
 
