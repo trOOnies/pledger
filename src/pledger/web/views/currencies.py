@@ -325,6 +325,14 @@ def build_currencies(snapshot: Snapshot, today: dt.date | None = None) -> dict:
     return {
         "base": {"name": base.name, "description": base.description, **base_totals},
         "others": others,
+        # The accounts revalued in each currency, assets and liabilities apart
+        "own_by_type": {
+            title: [
+                {**a, "currency": c["name"], "slot": c["slot"]}
+                for c in others for a in c["own"] if a["type"] == acc_type.value
+            ]
+            for title, acc_type in (("Assets", AccountType.ASSET), ("Liabilities", AccountType.LIABILITY))
+        },
         "other_equity": other_equity,
         "other_equity_share": other_equity / equity if equity > 1e-9 and others else None,
         "last_month": known[-1] if known else None,  # the last month ended

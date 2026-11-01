@@ -177,6 +177,19 @@ class TestConversions:
         assert snapshot.ledger().balances()["Bk"] == pytest.approx(2281.2)
         assert snapshot.other_balances == {"Bk": pytest.approx(1.901)}
 
+    def test_assets_and_liabilities_are_apart(self, conv):
+        conv.accounts_path.write_text(conv.accounts_path.read_text(encoding="utf-8").replace(
+            "liability:\n", "liability:\n  Lo:\n    description: Dollar loan\n    currency: USD\n    initial_amount: 0\n", 1,
+        ), encoding="utf-8")
+        data = build_currencies(LedgerStore(conv).load())
+        assert {t: [a["name"] for a in accs] for t, accs in data["own_by_type"].items()} == {
+            "Assets": ["Bk"], "Liabilities": ["Lo"],
+        }
+        text = TestClient(create_app(conv)).get("/currencies").text
+        section = text.split("<h2>Accounts in other currencies")[1]
+        assets, liabilities = section.split("<h3>Liabilities</h3>")
+        assert "<h3>Assets</h3>" in assets and 'id="account-Bk"' in assets and 'id="account-Lo"' in liabilities
+
     def test_a_lower_value_is_a_loss(self, conv, tmp_path):
         (tmp_path / "currencies.csv").write_text("date;USD\n2026-01-01;1000\n2026-01-10;900\n2026-01-20;900\n")
         snapshot = LedgerStore(conv).load()

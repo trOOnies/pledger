@@ -74,12 +74,13 @@
       <code>{{ settings.currencies_path.name }}</code>, each with its column in <code>currencies.csv</code>.</p>{% endif %}
   </section>
 
-  {% set own_accounts = others | selectattr("own") | list %}
-  {% if own_accounts %}
+  {% if own_by_type.values() | select | list %}
   <section class="panel">
     <h2>Accounts in other currencies <small>their balance in their currency, all time</small></h2>
+    {% for title, accounts in own_by_type.items() if accounts %}
+    <h3>{{ title }}</h3>
     <div class="table-wrap">
-      <table data-sortable="currencies-accounts">
+      <table data-sortable="currencies-accounts-{{ title | lower }}">
         <thead><tr>
           <th>Account</th><th>Description</th><th>Currency</th>
           <th class="num" title="In its currency: its conversions, with their amount in it, and its other movements at the value of the currency on their date">Balance</th>
@@ -87,19 +88,20 @@
           <th class="num" title="Of the Foreign currency (G) and (L) movements: the change of its value in {{ base.name }}">Result</th>
         </tr></thead>
         <tbody>
-        {% for c in own_accounts %}{% for a in c.own %}
+        {% for a in accounts %}
         <tr id="{{ row_anchor('account', a.name) }}">
           <td>{{ a.name }}</td>
           <td>{{ a.description }}</td>
-          <td><span class="swatch" style="background: var(--series-{{ c.slot }})"></span> {{ c.name }}</td>
+          <td><span class="swatch" style="background: var(--series-{{ a.slot }})"></span> {{ a.currency }}</td>
           <td class="num money" data-sort="{{ a.balance }}">{{ "{:,.4f}".format(a.balance) }}</td>
           <td class="num money" data-sort="{{ a.base_balance }}">{{ a.base_balance | money }}</td>
           <td class="num money {{ 'gain' if a.result > 0 else 'loss' if a.result < 0 }}" data-sort="{{ a.result }}">{{ a.result | money }}</td>
         </tr>
-        {% endfor %}{% endfor %}
+        {% endfor %}
         </tbody>
       </table>
     </div>
+    {% endfor %}
     <p class="muted small">At the end of each date of <code>currencies.csv</code>, each account is revalued: a
       <strong>Foreign currency (G)</strong> or <strong>(L)</strong> gain or loss brings its balance in {{ base.name }} to its balance in its currency at
       that value. Investment accounts are left out, as their capital gains and losses already do that.</p>
