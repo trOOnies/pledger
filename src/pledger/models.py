@@ -58,6 +58,9 @@ INITIAL_DATE = "initial_date"  # of an account in the accounts YAML
 # movements of the accounts, and nothing else (see Account.load_yaml).
 PREVIOUS_MONTH = "previous_month"
 
+# The keys of an investment account in the investments YAML
+INVESTMENTS, BALANCE_ACCOUNTS = "investments", "balance_accounts"
+
 INFLATION_COLUMN = "monthly_inflation"  # of the base currency, in base_currency.csv
 CPI_BASE = 100.0  # the CPI at the end of the day before the first month of base_currency.csv
 # The reserved word of a cell of base_currency.csv, currencies.csv or the services CSV: there
@@ -389,7 +392,8 @@ class Account:
         De, in the base currency, and the equity Eq, the only equity account.
 
         Investment accounts are the asset accounts listed in the investments YAML
-        (if given), and De is the debt account, with its creditors in the creditors
+        (if given, see InvestmentAccount.config_from_dict), and De is the debt account,
+        with its creditors in the creditors
         YAML (if given, with no other account). They must not set an `initial_amount`
         either: theirs is the sum of the initial amounts of their investments (their
         initial quantity at their initial price, of `initial_prices`: account name to
@@ -524,11 +528,13 @@ class Account:
                 if name in (INTERMEDIARY, DEBT_ACCOUNT) and not fields["currency"].is_base_currency:
                     raise ValueError(f"The internal account {name!r} must be in the base currency")
                 if name in investments_data:
-                    investments = InvestmentAccount.investments_from_dict(
-                        name, investments_data[name] or {}, (initial_prices or {}).get(name, {})
+                    investments, balance_accounts = InvestmentAccount.config_from_dict(
+                        name, investments_data[name], (initial_prices or {}).get(name, {})
                     )
                     fields["initial_amount"] = sum(i["total_amount"] for i in investments.values())
-                    accounts[name] = InvestmentAccount(**fields, investments=investments)
+                    accounts[name] = InvestmentAccount(
+                        **fields, investments=investments, balance_accounts=balance_accounts
+                    )
                 elif name == DEBT_ACCOUNT:
                     creditors = DebtAccount.creditors_from_dict(name, creditors_data.get(name) or {}, companies)
                     fields["initial_amount"] = sum(c.amount for c in creditors.values())
@@ -539,6 +545,9 @@ class Account:
         unknown = sorted(set(investments_data) - set(accounts))
         if unknown:
             raise ValueError(f"The investments YAML has accounts not in the accounts YAML: {unknown}")
+        for account in accounts.values():
+            if isinstance(account, InvestmentAccount):
+                account.check_balance_accounts(accounts)
         return accounts
 
 
@@ -616,16 +625,39 @@ class InvestmentAccount(Account):
     `investment` (Investment), `total_amount` ($) and `total_quantity` (float).
     A `total_quantity` never drops below 0.0. Its `results` are the totals of
     other movements about an investment, such as its dividends or broker fees:
-    investment name to base movement name to total ($).
+    investment name to base movement name to total ($). Its `balance_accounts` are
+    the only accounts it moves money with (see interacts_with); None for any.
     """
 
     investments: dict[str, dict] = field(default_factory=dict)
     results: dict[str, dict[str, float]] = field(default_factory=dict)
+    balance_accounts: tuple[str, ...] | None = None
 
     def __post_init__(self):
         super().__post_init__()
         for name, holding in self.investments.items():
             holding["total_quantity"] = self._checked_quantity(name, holding["total_quantity"])
+
+    def interacts_with(self, account: Account) -> bool:
+        """
+        Whether a movement can have this account on its other side: one of its
+        `balance_accounts`, if it has them. They only limit the regular accounts: the
+        internal ones and the other investment accounts are never left out.
+        """
+        return (
+            self.balance_accounts is None or account.internal or isinstance(account, InvestmentAccount)
+            or account.name in self.balance_accounts
+        )
+
+    def check_balance_accounts(self, accounts: dict[str, Account]) -> None:
+        """Its `balance_accounts` must be regular accounts of these."""
+        for name in self.balance_accounts or ():
+            account = accounts.get(name)
+            what = f"Investment account {self.name!r} {BALANCE_ACCOUNTS}"
+            if account is None:
+                raise ValueError(f"{what} has an unknown account: {name!r}")
+            if account.internal or isinstance(account, InvestmentAccount):
+                raise ValueError(f"{what} only lists regular accounts, not {name!r}: that one is never left out")
 
     def _checked_quantity(self, name: str, quantity: float) -> float:
         if quantity < -1e-9:
@@ -664,6 +696,38 @@ class InvestmentAccount(Account):
             raise ValueError(f"Investment {name!r} is not in the account '{self.name}'")
         totals = self.results.setdefault(name, {})
         totals[base_movement] = totals.get(base_movement, 0.0) + amount
+
+    @staticmethod
+    def config_from_dict(
+        acc_name: str, data: dict | None, prices: dict[str, float] | None = None
+    ) -> tuple[dict[str, dict], tuple[str, ...] | None]:
+        """
+        The investments (see investments_from_dict) and `balance_accounts` of an
+        account from its investments YAML dict, of those two keys. Without
+        `balance_accounts` it moves money with any account; with an empty list, only
+        with the ones that are never left out (see interacts_with).
+        """
+        data = {} if data is None else data
+        if not isinstance(data, dict):
+            raise ValueError(f"Investment account {acc_name!r} must be a mapping of {INVESTMENTS} and {BALANCE_ACCOUNTS}")  # noqa: TRY004 (a bad config value)
+        unknown = sorted(str(k) for k in set(data) - {INVESTMENTS, BALANCE_ACCOUNTS})
+        if unknown:
+            raise ValueError(
+                f"Investment account {acc_name!r} has unknown keys {unknown}: "
+                f"its investments go under {INVESTMENTS!r}"
+            )
+        investments = data.get(INVESTMENTS) or {}
+        if not isinstance(investments, dict):
+            raise ValueError(f"The {INVESTMENTS} of the account {acc_name!r} must be a mapping of name: type")  # noqa: TRY004 (a bad config value)
+        balance_accounts = data.get(BALANCE_ACCOUNTS)
+        if BALANCE_ACCOUNTS in data and not isinstance(balance_accounts, list):
+            raise ValueError(f"The {BALANCE_ACCOUNTS} of the account {acc_name!r} must be a list: {balance_accounts!r}")
+        if balance_accounts is not None and len(set(balance_accounts)) != len(balance_accounts):
+            raise ValueError(f"The {BALANCE_ACCOUNTS} of the account {acc_name!r} are repeated: {balance_accounts}")
+        return (
+            InvestmentAccount.investments_from_dict(acc_name, investments, prices),
+            None if balance_accounts is None else tuple(balance_accounts),
+        )
 
     @staticmethod
     def investments_from_dict(acc_name: str, data: dict, prices: dict[str, float] | None = None) -> dict[str, dict]:
@@ -711,6 +775,23 @@ class InvestmentAccount(Account):
                 "total_quantity": float(quantity),
             }
         return investments
+
+
+def interact(acc_a: Account, acc_b: Account) -> bool:
+    """Whether two accounts can be the sides of a movement (see InvestmentAccount.interacts_with)."""
+    return all(
+        not isinstance(acc, InvestmentAccount) or acc.interacts_with(other)
+        for acc, other in ((acc_a, acc_b), (acc_b, acc_a))
+    )
+
+
+def check_interact(acc_a: Account, acc_b: Account, move_date) -> None:
+    """Raise if two accounts can't be the sides of a movement (see interact)."""
+    if interact(acc_a, acc_b):
+        return
+    held, other = (acc_a, acc_b) if isinstance(acc_a, InvestmentAccount) and not acc_a.interacts_with(acc_b) else (acc_b, acc_a)
+    allowed = ", ".join(held.balance_accounts) or "no regular accounts"
+    raise ValueError(f"{held.name} cannot move money with {other.name}, only with {allowed} ({move_date})")
 
 
 def rounds_to_zero(amount: float) -> bool:
@@ -1147,6 +1228,8 @@ class Movement:
                 f"{ledger_side.value.capitalize()} account must be "
                 f"{'an' if kind[0] in 'aeiou' else 'a'} {kind} account: {input_acc.name} is not ({self.move_date})"
             )
+
+        check_interact(self.input_acc_debit, self.input_acc_credit, self.move_date)
 
         self.acc_debit = self.input_acc_debit
         self.acc_credit = self.input_acc_credit

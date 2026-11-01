@@ -364,6 +364,25 @@
       }
     });
 
+    // Next to data-blocked-accounts (account to those it can't be with, see Snapshot.blocked_accounts),
+    // the account of one side leaves out those of the other side, dropping a picked one that
+    // no longer fits, rather than the one just picked.
+    document.addEventListener("change", (e) => {
+      const form = e.target.form;
+      const holder = form?.querySelector("[data-blocked-accounts]");
+      if (!holder || !e.target.matches("select[name=acc_debit], select[name=acc_credit], select[data-narrows]")) return;
+      const blocked = JSON.parse(holder.dataset.blockedAccounts);
+      const [debit, credit] = ["acc_debit", "acc_credit"].map((n) => form.elements.namedItem(n));
+      const isSelect = (side) => side?.tagName === "SELECT";
+      const sides = [[debit, credit], [credit, debit]].sort(([a], [b]) => (a.value === e.target.value) - (b.value === e.target.value));
+      for (const [side, other] of sides) {
+        if (!isSelect(side)) continue;
+        const left = blocked[other?.value] ?? [];
+        for (const option of side.options) option.hidden = option.disabled = left.includes(option.value);
+        if (side.selectedOptions[0]?.disabled) side.value = "";
+      }
+    });
+
     // Autofill buttons (data-autofill): fill in the fields of their form with these
     // values by name, in the browser only; nothing is saved until the form is sent.
     document.addEventListener("click", (e) => {

@@ -22,7 +22,8 @@
   {% endif %}
 </label>
 {% endmacro %}
-<div class="pair">
+{# data-blocked-accounts: see base.html #}
+<div class="pair"{% if fields.blocked %} data-blocked-accounts='{{ fields.blocked | tojson }}'{% endif %}>
   {{ side("acc_debit", "Debit", fields.debit_fixed, fields.debit_options, fields.debit_special, fields.debit_groups) }}
   {{ side("acc_credit", "Credit", fields.credit_fixed, fields.credit_options, fields.credit_special, fields.credit_groups) }}
 </div>

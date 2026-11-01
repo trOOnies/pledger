@@ -7,7 +7,13 @@ from dataclasses import replace
 from pandas import DataFrame, concat, read_csv
 
 from pledger.enums import AccountType, LedgerSide, MovementType
-from pledger.models import INTERMEDIARY, Account, InvestmentAccount, is_foreign
+from pledger.models import (
+    INTERMEDIARY,
+    Account,
+    InvestmentAccount,
+    check_interact,
+    is_foreign,
+)
 from pledger.web.store.common import (
     _amount_of,
     _fit_row,
@@ -152,6 +158,9 @@ class LinkedStore(MovementStore):
         )
         debit, credit = acc_debit, acc_credit
         if routed:
+            # The account picked, not the INTERMEDIARY one that takes its place in the rows
+            if debit in snapshot.accounts and credit in snapshot.accounts:
+                check_interact(snapshot.accounts[debit], snapshot.accounts[credit], move_date)
             debit, credit = (INTERMEDIARY, credit) if side == "debit" else (debit, INTERMEDIARY)
         if not routed and not fee:
             self.add(

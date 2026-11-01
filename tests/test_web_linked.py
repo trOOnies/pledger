@@ -13,8 +13,9 @@ from helpers import (
     with_internal,
 )
 
+from pledger.enums import LedgerSide
 from pledger.web.app import create_app
-from pledger.web.store import LedgerStore, row_fingerprint
+from pledger.web.store import LedgerDataError, LedgerStore, row_fingerprint
 from pledger.web.views import build_accounts, build_credit_cards, build_investments
 
 BOUGHT, SOLD, PAY, SURPLUS = "Investment - Bought", "Investment - Sold", "Credit card - Payment", "Credit card - Surplus"
@@ -42,7 +43,7 @@ def settings(revalued, tmp_path, monkeypatch):
     yaml = settings.currencies_path
     yaml.write_text(yaml.read_text(encoding="utf-8") + "  - name: EUR\n    description: Euro\n", encoding="utf-8")
     investments = tmp_path / "investment.yaml"
-    investments.write_text("Br:\n  T: stock\n", encoding="utf-8")
+    investments.write_text("Br:\n  investments:\n    T: stock\n", encoding="utf-8")
     cards = tmp_path / "credit_cards.yaml"
     cards.write_text(
         "Vd:\n  description: Visa\n  currency: USD\n  initial_amount: 100\n  initial_date: 2026-01-01\n", encoding="utf-8"
@@ -463,3 +464,71 @@ class TestBalanceInItsCurrency:
         equity = table_html.split('data-sortable="balances-equity"')[1].split("</table>")[0]
         assert "Balance in its currency" in asset and ">500.00</td>" in asset
         assert "Balance in its currency" not in equity
+
+
+class TestBalanceAccounts:
+    """An investment account limited to Ud, among the regular accounts."""
+
+    @pytest.fixture
+    def settings(self, settings):
+        settings.investments_path.write_text(
+            "Br:\n  balance_accounts:\n  - Ud\n  investments:\n    T: stock\n", encoding="utf-8"
+        )
+        return settings
+
+    def test_only_its_accounts_and_the_internal_ones(self, store):
+        store.add_investment_movement("2026-02-02", BOUGHT, "Br", "Ud", "10", investment="T", quantity="1")
+        accounts = store.load().accounts
+        assert accounts["Br"].interacts_with(accounts["Fi"]) and accounts["Br"].interacts_with(accounts["Eq"])
+        with pytest.raises(ValueError, match=r"Br cannot move money with Ca, only with Ud \(2026-02-04\)"):
+            store.add_investment_movement("2026-02-04", BOUGHT, "Br", "Ca", "10", investment="T", quantity="1")
+
+    def test_a_movement_of_another_currency_counts_the_account_picked(self, store):
+        with pytest.raises(ValueError, match="Br cannot move money with Eu"):
+            store.add_investment_movement("2026-02-02", BOUGHT, "Br", "Eu", "10", investment="T", quantity="1", currency="EUR")
+        assert not store.load().conversions.shape[0]
+        store.add_investment_movement("2026-02-02", BOUGHT, "Br", "Ud", "10", investment="T", quantity="1", currency="USD")
+        assert store.load().investments["acc_credit"].tolist() == ["Fi"]
+
+    def test_editing_is_limited_too(self, store):
+        store.add_investment_movement("2026-02-02", BOUGHT, "Br", "Ud", "10", investment="T", quantity="1")
+        row = store.load().investments.iloc[0]
+        with pytest.raises(ValueError, match="Br cannot move money with Ca"):
+            store.edit_investment(
+                "investments", 0, row_fingerprint(row), "2026-02-02", BOUGHT, "Br", "Ca", "10", "", "T", "1",
+            )
+
+    def test_stored_movements_are_checked_when_loading(self, store, settings):
+        settings.investment_movements_path.write_text(
+            "move_date;base_movement;acc_debit;amount;acc_credit;quantity;investment;comment\n"
+            f"2026-02-02;{BOUGHT};Br;10;Ca;1;T;\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(LedgerDataError, match="Br cannot move money with Ca"):
+            store.load()
+
+    def test_no_regular_account_at_all(self, store, settings):
+        settings.investments_path.write_text("Br:\n  balance_accounts: []\n  investments:\n    T: stock\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="only with no regular accounts"):
+            store.add_investment_movement("2026-02-02", BOUGHT, "Br", "Ud", "10", investment="T", quantity="1")
+
+    def test_a_new_investment_keeps_the_balance_accounts(self, store, settings):
+        store.add_investment("Br", "SPY", "etf")
+        assert settings.investments_path.read_text(encoding="utf-8") == (
+            "Br:\n  balance_accounts:\n  - Ud\n  investments:\n    T: stock\n    SPY: etf\n"
+        )
+        assert store.load().accounts["Br"].balance_accounts == ("Ud",)
+
+    def test_the_forms_know_the_accounts_left_out(self, store, settings):
+        blocked = store.load().blocked_accounts()
+        assert "Ca" in blocked["Br"] and "Ud" not in blocked["Br"] and "Fi" not in blocked["Br"]
+        assert blocked["Ca"] == ["Br"] and "Ud" not in blocked
+        r = TestClient(create_app(settings)).get("/form/invest-fields", params={"base_movement": BOUGHT})
+        assert "data-blocked-accounts=" in r.text
+
+    def test_the_accounts_of_a_side_fixed_to_it_are_left_out(self, store):
+        snapshot = store.load()
+        base = snapshot.base_movements[BOUGHT]
+        fixed = replace(base, acc_debit=snapshot.accounts["Br"], debit_special=None)
+        names = [a.name for a in snapshot.side_accounts(fixed, LedgerSide.CREDIT)]
+        assert "Ud" in names and "Fi" in names and "Ca" not in names

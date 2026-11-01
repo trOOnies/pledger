@@ -26,6 +26,7 @@ def account_fields(snapshot: Snapshot, base_name: str) -> dict:
             "debit_fixed": None, "credit_fixed": None, "debit_options": free,
             "credit_options": free, "debit_special": None, "credit_special": None, "type": "",
             "debit_groups": by_currency(snapshot, free), "credit_groups": by_currency(snapshot, free),
+            "blocked": snapshot.blocked_accounts(),
         }
     debit = [a.name for a in snapshot.side_accounts(base, LedgerSide.DEBIT)]
     credit = [a.name for a in snapshot.side_accounts(base, LedgerSide.CREDIT)]
@@ -39,6 +40,7 @@ def account_fields(snapshot: Snapshot, base_name: str) -> dict:
         "debit_special": SPECIAL_LABELS.get(base.debit_special),
         "credit_special": SPECIAL_LABELS.get(base.credit_special),
         "type": base.move_type.value,
+        "blocked": snapshot.blocked_accounts(),
     }
 
 

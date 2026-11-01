@@ -28,7 +28,7 @@ class TestAudit:
         path = settings.base_movements_path
         with_internal(path, CORRECTION_YAML, INVEST_TRANSFERS_YAML)
         investments = tmp_path / "investment.yaml"
-        investments.write_text("Br:\n  T: stock\n", encoding="utf-8")
+        investments.write_text("Br:\n  investments:\n    T: stock\n", encoding="utf-8")
         return replace(
             settings, investments_path=investments, investment_movements_path=tmp_path / "investment.csv",
             interest_path=tmp_path / "interest.csv",

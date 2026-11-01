@@ -23,6 +23,7 @@ from pledger.models import (
     MovementBase,
     ResultType,
     initial_week,
+    interact,
     is_foreign,
 )
 from pledger.web.store import common
@@ -248,14 +249,24 @@ class Snapshot:
     def side_accounts(self, base: MovementBase, ledger_side: LedgerSide) -> list[Account]:
         """
         Accounts that can be picked on a non-fixed side of a base movement: never an
-        investment account on a free side of an investment base movement.
+        investment account on a free side of an investment base movement, and only
+        those that interact with the account fixed on its other side, if any.
         """
         special = SPECIAL_SIDES.get(base.side(ledger_side))
         if special:
-            return [a for a in self.accounts.values() if special(a)]
-        if base.name in self.invest_base_movements():
-            return [a for a in self.free_accounts() if not isinstance(a, InvestmentAccount)]
-        return self.free_accounts()
+            accounts = [a for a in self.accounts.values() if special(a)]
+        elif base.name in self.invest_base_movements():
+            accounts = [a for a in self.free_accounts() if not isinstance(a, InvestmentAccount)]
+        else:
+            accounts = self.free_accounts()
+        fixed = base.acc_credit if ledger_side == LedgerSide.DEBIT else base.acc_debit
+        return accounts if fixed is None else [a for a in accounts if interact(a, fixed)]
+
+    def blocked_accounts(self) -> dict[str, list[str]]:
+        """The accounts that can't be on the other side of a movement of each account, if any (see interact)."""
+        free = self.free_accounts()
+        blocked = {a.name: [b.name for b in free if not interact(a, b)] for a in free}
+        return {name: others for name, others in blocked.items() if others}
 
     @property
     def initial_base_names(self) -> set[str]:

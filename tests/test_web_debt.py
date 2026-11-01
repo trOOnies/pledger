@@ -219,7 +219,7 @@ class TestDebtSides:
             text.replace("liability:\n", "  Br:\n    description: Broker\nliability:\n"), encoding="utf-8"
         )
         path = tmp_path / "investment.yaml"
-        path.write_text("Br:\n  T: stock\n", encoding="utf-8")
+        path.write_text("Br:\n  investments:\n    T: stock\n", encoding="utf-8")
         r = TestClient(create_app(replace(settings, investments_path=path))).get("/accounts")
         assert "<th>Liquid</th><th>Special</th>" in r.text
         specials = {

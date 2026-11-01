@@ -41,7 +41,7 @@ class TestInvestments:
             text.replace("liability:\n", "  Br:\n    description: Broker\nliability:\n"), encoding="utf-8"
         )
         path = tmp_path / "investment.yaml"
-        path.write_text("Br:\n  T:\n    type: stock\n    quantity: 1\n", encoding="utf-8")
+        path.write_text("Br:\n  investments:\n    T:\n      type: stock\n      quantity: 1\n", encoding="utf-8")
         settings = with_prices(settings, "previous_month;Br;T;10\n")
         accounts = LedgerStore(replace(settings, investments_path=path)).load().accounts
         assert accounts["Br"].investments["T"]["total_quantity"] == 1.0
@@ -56,7 +56,7 @@ class TestInvestmentSides:
             text.replace("liability:\n", "  Br:\n    description: Broker\nliability:\n"), encoding="utf-8"
         )
         path = tmp_path / "investment.yaml"
-        path.write_text("Br:\n  T: stock\n", encoding="utf-8")
+        path.write_text("Br:\n  investments:\n    T: stock\n", encoding="utf-8")
         with settings.base_movements_path.open("a") as f:
             f.write("  Buy:\n    description: Buy investments\n    debit: INVESTMENT\n")
         return replace(settings, investments_path=path)
@@ -108,10 +108,10 @@ class TestInvestmentsPage:
         )
         path = tmp_path / "investment.yaml"
         path.write_text(
-            "Br:\n  T:\n    type: stock\n    quantity: 1.5\n"
-            "  AL30:\n    type: public_bond\n    quantity: 1000\n"
-            "Br2:\n  T:\n    type: stock\n    quantity: 0.25\n"
-            "  QQQ: etf\n",
+            "Br:\n  investments:\n    T:\n      type: stock\n      quantity: 1.5\n"
+            "    AL30:\n      type: public_bond\n      quantity: 1000\n"
+            "Br2:\n  investments:\n    T:\n      type: stock\n      quantity: 0.25\n"
+            "    QQQ: etf\n",
             encoding="utf-8",
         )
         settings = with_prices(settings, "previous_month;Br;T;200\nprevious_month;Br;AL30;0.1\nprevious_month;Br2;T;400\n")
@@ -161,7 +161,7 @@ class TestNewInvestment:
             text.replace("liability:\n", "  Br:\n    description: Broker\nliability:\n"), encoding="utf-8"
         )
         path = tmp_path / "investment.yaml"
-        path.write_text("Br:\n  T: stock\n", encoding="utf-8")
+        path.write_text("Br:\n  investments:\n    T: stock\n", encoding="utf-8")
         # No prices yet: created when adding the first one
         return replace(settings, investments_path=path, prices_path=tmp_path / "prices.csv")
 
@@ -172,7 +172,7 @@ class TestNewInvestment:
         # Its initial quantity at its initial price, in the prices CSV
         store.add_investment("Br", "AL30", "public_bond", "10", "1,500")
         assert settings.investments_path.read_text() == (
-            "Br:\n  T: stock\n  SPY: etf\n  AL30:\n    type: public_bond\n    quantity: 10.0\n"
+            "Br:\n  investments:\n    T: stock\n    SPY: etf\n    AL30:\n      type: public_bond\n      quantity: 10.0\n"
         )
         assert settings.prices_path.read_text() == "date;account;investment;price\nprevious_month;Br;AL30;1,500.00\n"
         held = store.load().accounts["Br"]
@@ -196,7 +196,7 @@ class TestNewInvestment:
         settings.prices_path.write_text(prices)
         with pytest.raises(ValueError, match="multi-line fields"):
             LedgerStore(settings).add_investment("Br", "X", "etf", "1", "2")
-        assert settings.investments_path.read_text() == "Br:\n  T: stock\n"
+        assert settings.investments_path.read_text() == "Br:\n  investments:\n    T: stock\n"
         assert settings.prices_path.read_text() == prices
 
     def test_new_investment_form(self, settings):
@@ -233,7 +233,7 @@ class TestInvestMovements:
         movements = tmp_path / "investment.csv"
         movements.write_text(INVESTMENT_HEADER + "2026-01-05;Dividends;Ca;5;Eq;;T;\n")
         investments = tmp_path / "investment.yaml"
-        investments.write_text("Br:\n  T:\n    type: stock\n    quantity: 10\n", encoding="utf-8")
+        investments.write_text("Br:\n  investments:\n    T:\n      type: stock\n      quantity: 10\n", encoding="utf-8")
         # T at 10 initially, then at 10.5: a capital gain of 5
         settings = with_prices(settings, "previous_month;Br;T;10\n2026-01-05;Br;T;10.5\n")
         return replace(
@@ -253,7 +253,7 @@ class TestInvestMovements:
     @staticmethod
     def add_u(settings):
         """Another investment of Br: 1 of U, at 50."""
-        settings.investments_path.write_text(settings.investments_path.read_text() + "  U:\n    type: etf\n    quantity: 1\n")
+        settings.investments_path.write_text(settings.investments_path.read_text() + "    U:\n      type: etf\n      quantity: 1\n")
         with settings.prices_path.open("a") as f:
             f.write("previous_month;Br;U;50\n")
 
@@ -588,7 +588,7 @@ class TestInvestMovements:
         assert "Added Investment - Bought of AL30" in r.text
         path = settings.investment_movements_path
         assert path.read_text().splitlines()[-1] == "2026-02-01;Investment - Bought;Br;30.00;Ca;1,234.50;AL30;;I-2"
-        assert "  AL30: public_bond\n" in settings.investments_path.read_text()
+        assert "    AL30: public_bond\n" in settings.investments_path.read_text()
         assert self.holding(settings, "AL30") == (InvestmentType.PUBLIC_BOND, 30, 1234.5)
         # Selling more than is held changes nothing
         before = path.read_text()
@@ -728,7 +728,7 @@ class TestInvestMovements:
 
     def test_add_price_creates_the_csv(self, settings):
         settings.prices_path.unlink()
-        settings.investments_path.write_text("Br:\n  T: stock\n")
+        settings.investments_path.write_text("Br:\n  investments:\n    T: stock\n")
         LedgerStore(settings).add_price("2026-01-06", "Br", "T", "11")
         assert settings.prices_path.read_text() == "date;account;investment;price\n2026-01-06;Br;T;11.00\n"
 

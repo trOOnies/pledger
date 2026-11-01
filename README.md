@@ -416,22 +416,33 @@ are left out: their capital gains and losses already do that.
 
 ### Investments
 
-Investment accounts are the asset accounts listed as top-level keys in `investment.yaml`. Each
-one maps its investments to their `type` and initial `quantity`, or just to their type (with no
-initial quantity). An initial quantity needs an initial price, in `movements/prices.csv` with
+Investment accounts are the asset accounts listed as top-level keys in `investment.yaml`. Under
+its `investments` key, each one maps its investments to their `type` and initial `quantity`, or
+just to their type (with no initial quantity). An initial quantity needs an initial price, in `movements/prices.csv` with
 `previous_month` as its date: the initial amount of the investment is its quantity at that price,
 and the account's initial amount is the sum of those amounts. A quantity can't go below 0.
 
 ```yaml
 BMI:
-  T:
-    type: stock
-    quantity: 65.00
-  GOOGL: stock
+  balance_accounts:
+  - BM
+  - BMC
+  investments:
+    T:
+      type: stock
+      quantity: 65.00
+    GOOGL: stock
 ```
 
 The type is one of `public_bond`, `private_bond`, `mutual_fund`, `etf`, `forex`, `stock`,
 `derivative` and `fixed_term`.
+
+**Which accounts it moves money with.** The optional `balance_accounts` are the only regular
+accounts a movement of the investment account can have on its other side, in any CSV and tab.
+Without the key, it can be any of them; with an empty list, none. The internal accounts (`Fi`,
+`De`, `Eq`) and the other investment accounts are never left out, so they aren't listed, while
+credit cards are regular accounts. A movement in another currency that goes through `Fi` must
+still pick one of them: it is the account of the money that counts.
 
 **How movements change the investments.** The movements of the investment base movements,
 but the interest on money, are kept in `movements/investment.csv`, with the columns of

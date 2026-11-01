@@ -365,13 +365,14 @@ class TestMovementBase:
 
 INVESTMENTS_YAML = """\
 Br:
-  BOND:
-    type: private_bond
-    quantity: 10
-  T:
-    type: stock
-    quantity: 2.5
-  EUR: forex
+  investments:
+    BOND:
+      type: private_bond
+      quantity: 10
+    T:
+      type: stock
+      quantity: 2.5
+    EUR: forex
 """
 # The initial prices of the investments, of the prices CSV
 INITIAL_PRICES = {"Br": {"BOND": 100.05, "T": 80.0}}
@@ -422,15 +423,20 @@ class TestInvestmentAccount:
         ("old", "new", "message"),
         [
             ("  EUR: forex\n", "  EUR: forex\nNope: {}\n", r"not in the accounts YAML: \['Nope'\]"),
-            ("  EUR: forex\n", "  EUR: forex\nCc: {}\n", "'Cc' must be an asset account"),
-            ("    quantity: 10\n", "    quantity: -1\n", "cannot be negative"),
-            ("    quantity: 10\n", "    quantity: ten\n", "quantity must be a number"),
-            ("    quantity: 2.5\n", "    quantity: 2.5\n    amount: 200\n", "'T' of the account 'Br' has an amount"),
-            ("    quantity: 2.5\n", "    quantity: 2.5\n    price: 80\n", r"unknown keys \['price'\]"),
-            ("  EUR: forex\n", "  EUR:\n    type: forex\n    quantity: 1\n", "'EUR' of the account 'Br' has an initial quantity but no initial price"),
-            ("    type: stock\n", "", "'T' of the account 'Br' must have a type"),
-            ("    type: stock\n", "    type: crypto\n", "'T' of the account 'Br' has an unknown type: 'crypto'"),
-            ("  EUR: forex\n", "  EUR: cash\n", "'EUR' of the account 'Br' has an unknown type: 'cash'"),
+            ("    EUR: forex\n", "    EUR: forex\nCc: {}\n", "'Cc' must be an asset account"),
+            ("      quantity: 10\n", "      quantity: -1\n", "cannot be negative"),
+            ("      quantity: 10\n", "      quantity: ten\n", "quantity must be a number"),
+            ("      quantity: 2.5\n", "      quantity: 2.5\n      amount: 200\n", "'T' of the account 'Br' has an amount"),
+            ("      quantity: 2.5\n", "      quantity: 2.5\n      price: 80\n", r"unknown keys \['price'\]"),
+            ("    EUR: forex\n", "    EUR:\n      type: forex\n      quantity: 1\n", "'EUR' of the account 'Br' has an initial quantity but no initial price"),
+            ("      type: stock\n", "", "'T' of the account 'Br' must have a type"),
+            ("      type: stock\n", "      type: crypto\n", "'T' of the account 'Br' has an unknown type: 'crypto'"),
+            ("    EUR: forex\n", "    EUR: cash\n", "'EUR' of the account 'Br' has an unknown type: 'cash'"),
+            ("  investments:\n", "  balance_accounts: Ca\n  investments:\n", "balance_accounts of the account 'Br' must be a list"),
+            ("  investments:\n", "  balance_accounts: [Ca, Ca]\n  investments:\n", "are repeated"),
+            ("  investments:\n", "  balance_accounts: [Nope]\n  investments:\n", "unknown account: 'Nope'"),
+            ("  investments:\n", "  balance_accounts: [Fi]\n  investments:\n", "only lists regular accounts, not 'Fi'"),
+            ("  investments:\n", "  balance_accounts: [Br]\n  investments:\n", "only lists regular accounts, not 'Br'"),
         ],
     )
     def test_load_yaml_rejects_invalid(self, paths, old, new, message):
@@ -442,6 +448,35 @@ class TestInvestmentAccount:
             Account.load_yaml(
                 accounts_yaml, *Currency.load_yaml(currencies_yaml), investments_yaml, initial_prices=INITIAL_PRICES
             )
+
+    @pytest.mark.parametrize(
+        ("text", "message"),
+        [
+            ("Br:\n  T: stock\n", r"unknown keys \['T'\]: its investments go under 'investments'"),
+            ("Br: stock\n", "'Br' must be a mapping"),
+            ("Br:\n  investments: [T]\n", "investments of the account 'Br' must be a mapping"),
+        ],
+    )
+    def test_load_yaml_rejects_other_layouts(self, paths, text, message):
+        accounts_yaml, currencies_yaml, investments_yaml = paths
+        Path(investments_yaml).write_text(text, encoding="utf-8")
+        with pytest.raises(ValueError, match=message):
+            Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml), investments_yaml)
+
+    @pytest.mark.parametrize(
+        ("text", "balance_accounts"),
+        [
+            ("Br:\n", None),
+            ("Br:\n  investments:\n    T: stock\n", None),
+            ("Br:\n  balance_accounts: []\n  investments:\n    T: stock\n", ()),
+            ("Br:\n  balance_accounts:\n  - Ca\n  investments:\n    T: stock\n", ("Ca",)),
+        ],
+    )
+    def test_load_yaml_balance_accounts(self, paths, text, balance_accounts):
+        accounts_yaml, currencies_yaml, investments_yaml = paths
+        Path(investments_yaml).write_text(text, encoding="utf-8")
+        accounts = Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml), investments_yaml)
+        assert accounts["Br"].balance_accounts == balance_accounts
 
     def test_load_yaml_rejects_initial_amount(self, paths):
         accounts_yaml, currencies_yaml, investments_yaml = paths

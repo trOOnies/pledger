@@ -9,7 +9,7 @@ from dataclasses import replace
 from pandas import DataFrame, concat
 
 from pledger.enums import InvestmentType
-from pledger.models import InvestmentAccount
+from pledger.models import INVESTMENTS, InvestmentAccount
 from pledger.web.store.base_store import StoreBase
 from pledger.web.store.common import (
     LedgerDataError,
@@ -62,7 +62,7 @@ class InvestmentStore(StoreBase):
         fields: str | dict = {"type": inv_type.value, "quantity": units} if units else inv_type.value
         before = path.read_bytes().decode("utf-8") if path.exists() else None
         prices_before = prices_path.read_bytes() if prices_path is not None and prices_path.exists() else None
-        _atomic_write(path, _insert_yaml_entry(before or "", (account,), name, fields))
+        _atomic_write(path, _insert_yaml_entry(before or "", (account, INVESTMENTS), name, fields))
         try:
             if value is not None:
                 self._append_price(snapshot, INITIAL_PRICE, account, name, value)
