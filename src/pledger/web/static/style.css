@@ -85,7 +85,7 @@ code { font-size: .9em; }
   padding: .75rem 1.5rem;
   background: var(--surface); border-bottom: 1px solid var(--border);
 }
-.brand { font-weight: 700; color: var(--text); text-decoration: none; font-size: 1.1rem; }
+.brand { display: inline-flex; align-items: center; gap: .4rem; font-weight: 700; color: var(--text); text-decoration: none; font-size: 1.1rem; }
 .topbar nav { display: flex; gap: 1rem; }
 .topbar nav a { color: var(--muted); text-decoration: none; }
 .topbar nav a[aria-current="page"] { color: var(--text); font-weight: 600; }

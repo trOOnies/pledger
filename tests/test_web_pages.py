@@ -29,6 +29,14 @@ from pledger.web.views import (
 
 
 class TestPages:
+    def test_ledger_is_opened_from_the_logo(self, client):
+        for path, current in (("/", True), ("/accounts", False)):
+            header = client.get(path).text.split("</header>")[0]
+            brand = header.split('<a class="brand"')[1].split("</a>")[0]
+            assert 'href="/"' in brand and "favicon.svg" in brand and brand.endswith(">pledger")
+            assert ('aria-current="page"' in brand) == current
+            assert ">Ledger</a>" not in header and 'href="/accounts"' in header
+
     def test_index(self, client):
         r = client.get("/")
         assert r.status_code == 200

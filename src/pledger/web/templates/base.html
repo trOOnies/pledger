@@ -18,9 +18,8 @@
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="/">pledger</a>
+    <a class="brand" href="/" title="Ledger" {% if request.url.path == '/' %}aria-current="page"{% endif %}><img src="{{ url_for('static', path='favicon.svg') }}?v={{ static_version('favicon.svg') }}" alt="" width="24" height="24">pledger</a>
     <nav>
-      <a href="/" {% if request.url.path == '/' %}aria-current="page"{% endif %}>Ledger</a>
       <a href="/accounts" {% if request.url.path == '/accounts' %}aria-current="page"{% endif %}>Accounts</a>
       <a href="/currencies" {% if request.url.path == '/currencies' %}aria-current="page"{% endif %}>Currencies</a>
       <a href="/results" {% if request.url.path == '/results' %}aria-current="page"{% endif %}>Results</a>
