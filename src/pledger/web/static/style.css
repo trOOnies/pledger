@@ -460,3 +460,8 @@ tfoot th { position: static; color: var(--text); border-top: 2px solid var(--bor
   .help-toc { position: static; }
   .cards { grid-template-columns: 1fr; }
 }
+
+/* The prices form shows every investment, with a compact date and new price */
+#prices-form .table-wrap { max-height: none; }
+#prices-form .prices-date { max-width: 12rem; }
+#prices-form .money-input { min-width: 9rem; }

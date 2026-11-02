@@ -294,12 +294,6 @@
       <h2>New investment</h2>
       {{ new_investment_form | safe }}
     </section>
-    <section class="panel">
-      <h2>New price</h2>
-      <div hx-get="/form/price" hx-trigger="investment-added from:body" hx-target="#price-form" hx-swap="outerHTML">
-        {{ price_form | safe }}
-      </div>
-    </section>
     {% if invest_form %}
     <section class="panel">
       {{ invest_form | safe }}
@@ -307,10 +301,19 @@
     {% endif %}
   </aside>
   {% if invest_form %}
-  <section id="invest-movements" hx-get="/investments/movements" hx-include="#invest-filter" hx-trigger="investments-changed from:body">
+  <section id="invest-movements" hx-get="/investments/movements" hx-include="#invest-filter" hx-trigger="investments-changed from:body, prices-changed from:body">
     {% include "_invest_movements.html" %}
   </section>
   {% endif %}
 </div>
+{% if has_prices %}
+<section class="panel">
+  <h2>Update prices</h2>
+  {# Refreshed with the investments, keeping what was typed in #}
+  <div hx-get="/form/prices" hx-trigger="investment-added from:body, investments-changed from:body" hx-include="#prices-form" hx-target="#prices-form" hx-swap="outerHTML">
+    {{ prices_form | safe }}
+  </div>
+</section>
+{% endif %}
 </div>
 {% endblock %}

@@ -85,6 +85,36 @@ class InvestmentStore(StoreBase):
         investment has one price on each date at most.
         """
         snapshot = self.load()
+        self._write_prices(snapshot, date, [self._checked_price(snapshot, date, account, investment, price)])
+
+    def add_prices(self, date: str, prices: list[tuple[str, str, str | float]]) -> tuple[int, int]:
+        """
+        Add these prices (account, investment, price) to the prices CSV on the same date,
+        all of them or none, like add_price. A blank price is ignored, and so is one that
+        wouldn't revalue the investment, as it generates no movement (see _capital_rows):
+        it isn't added either. Returns how many were added, and how many left out for that.
+        """
+        snapshot = self.load()
+        held = {a.name: a.investments for a in snapshot.investment_accounts()}
+        checked, unchanged = [], 0
+        for account, investment, price in prices:
+            if not str(price).strip():
+                continue
+            row = self._checked_price(snapshot, date, account, investment, price)
+            holding = held[account][row[1]]
+            if abs(round(holding["total_quantity"] * row[2] - holding["total_amount"], 2)) < 0.005:
+                unchanged += 1
+            else:
+                checked.append(row)
+        if checked:
+            self._write_prices(snapshot, date, checked)
+        return len(checked), unchanged
+
+    @staticmethod
+    def _checked_price(
+        snapshot: Snapshot, date: str, account: str, investment: str, price: str | float,
+    ) -> tuple[str, str, float]:
+        """A valid new price of an investment on a date: its account, investment and value."""
         if _parse_date(date, "date") is None:
             raise ValueError("The date is required")
         accounts = {a.name: a for a in snapshot.investment_accounts()}
@@ -98,23 +128,36 @@ class InvestmentStore(StoreBase):
         taken = zip(snapshot.prices["date"], snapshot.prices["account"], snapshot.prices[INVESTMENT_COLUMN])
         if (date, account, investment) in {(d.strip(), a.strip(), n.strip()) for d, a, n in taken}:
             raise ValueError(f"{investment} of {account} already has a price on {date}: change it in the prices CSV")
-        new_row = {"date": date, "account": account, INVESTMENT_COLUMN: investment, "price": _quantity_text(value)}
-        changed = replace(snapshot, prices=concat([snapshot.prices, DataFrame([new_row])], ignore_index=True))
+        return account, investment, value
+
+    def _write_prices(self, snapshot: Snapshot, date: str, prices: list[tuple[str, str, float]]) -> None:
+        """Check these valid prices against the ledger, then add them all to the prices CSV."""
+        date = date.strip()
+        new_rows = [
+            {"date": date, "account": account, INVESTMENT_COLUMN: investment, "price": _quantity_text(value)}
+            for account, investment, value in prices
+        ]
+        changed = replace(snapshot, prices=concat([snapshot.prices, DataFrame(new_rows)], ignore_index=True))
         changed.ledger().check_accounts()
         changed.investment_accounts()
-        self._append_price(snapshot, date, account, investment, value)
+        self._append_prices(snapshot, [(date, *price) for price in prices])
 
     def _append_price(self, snapshot: Snapshot, date: str, account: str, investment: str, price: float) -> None:
         """Append a price to the prices CSV, created with its header if missing."""
+        self._append_prices(snapshot, [(date, account, investment, price)])
+
+    def _append_prices(self, snapshot: Snapshot, prices: list[tuple[str, str, str, float]]) -> None:
+        """Append these prices (date, account, investment, price) to the prices CSV, created with its header if missing."""
         path = self.settings.prices_path
         if path is None:
             raise ValueError("No prices CSV is set")
         csv_file = self._read_file(len(snapshot.prices), path, header=PRICE_COLUMNS)
         header = next(csv.reader([csv_file.lines[0]], delimiter=";"))
-        values = {"date": date, "account": account, INVESTMENT_COLUMN: investment, "price": _quantity_text(price)}
-        buf = io.StringIO()
-        csv.writer(buf, delimiter=";", lineterminator="").writerow([values.get(c, "") for c in header])
-        csv_file.lines.append(buf.getvalue())
+        for date, account, investment, price in prices:
+            values = {"date": date, "account": account, INVESTMENT_COLUMN: investment, "price": _quantity_text(price)}
+            buf = io.StringIO()
+            csv.writer(buf, delimiter=";", lineterminator="").writerow([values.get(c, "") for c in header])
+            csv_file.lines.append(buf.getvalue())
         self._write_file(csv_file)
 
     def edit_investment(

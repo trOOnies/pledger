@@ -31,7 +31,18 @@ from pledger.web.views import (
     build_invest_movements,
     build_investments,
     investment_charts,
+    price_rows,
 )
+
+
+def generated_capital(settings):
+    """The capital gains and losses generated from the prices."""
+    return LedgerStore(settings).load().capital_rows
+
+
+def current_price(settings, name="T"):
+    """The price of an investment as the prices form shows it."""
+    return next(r["price"] for r in price_rows(LedgerStore(settings).load()) if r["name"] == name)
 
 
 class TestInvestments:
@@ -712,19 +723,55 @@ class TestInvestMovements:
 
         # From the Investments tab, and the API
         r = client.get("/investments")
-        form = r.text.split('id="price-form"')[1].split("</form>")[0]
-        assert "<h2>New price</h2>" in r.text and 'name="price"' in form and '<optgroup label="Br">' in form
-        assert 'hx-get="/form/price" hx-trigger="investment-added from:body"' in r.text
+        form = r.text.split('id="prices-form"')[1].split("</form>")[0]
+        assert "<h2>New price</h2>" not in r.text and "<h2>Update prices</h2>" in r.text
+        assert 'name="price"' in form and 'name="date"' in form and form.count('name="date"') == 1
+        assert r.text.index("<h2>Update prices</h2>") > r.text.index('id="invest-movements"')  # at the bottom
+        assert 'hx-get="/form/prices" hx-trigger="investment-added from:body, investments-changed from:body"' in r.text
+        assert "prices-changed from:body" in r.text
         data = {"date": "2026-01-07", "account": "Br", "investment": "T", "price": "11.5"}
         r = client.post("/investments/prices", data=data)
-        assert "Added the price of T on 2026-01-07: $11.50" in r.text and r.headers["HX-Trigger"] == "investments-changed"
-        assert 'value="2026-01-07"' in r.text and "<option selected>Br</option>" in r.text  # kept
-        r = client.post("/investments/prices", data=data)
+        assert "Added 1 price on 2026-01-07" in r.text and r.headers["HX-Trigger"] == "prices-changed"
+        assert 'value="2026-01-07"' in r.text  # kept
+        r = client.post("/investments/prices", data={**data, "price": "12"})
         assert 'class="msg error"' in r.text and "already has a price on 2026-01-07" in r.text
+        assert 'value="12"' in r.text  # what was typed in stays
+        data = {"date": "2026-01-08", "account": "Br", "investment": "T"}
         body = {**data, "date": "2026-01-08", "price": 12}
         assert client.post("/api/investments/prices", json=body).status_code == 201
         assert client.post("/api/investments/prices", json=body).status_code == 422
         assert self.holding(settings) == (InvestmentType.STOCK, 120, 10)
+
+    def test_add_prices_skips_blanks_and_no_changes(self, settings, client):
+        lines = settings.prices_path.read_text().count("\n")
+        count = len(generated_capital(settings))
+        assert LedgerStore(settings).add_prices("2026-01-07", [("Br", "T", "  ")]) == (0, 0)
+        current = current_price(settings)
+        assert LedgerStore(settings).add_prices("2026-01-07", [("Br", "T", current)]) == (0, 1)
+        assert settings.prices_path.read_text().count("\n") == lines  # no row, no movement
+        assert len(generated_capital(settings)) == count
+        r = client.post("/investments/prices", data={"date": "2026-01-07", "account": "Br", "investment": "T", "price": ""})
+        assert "Fill in a new price" in r.text and "HX-Trigger" not in r.headers
+        r = client.post("/investments/prices", data={"date": "2026-01-07", "account": "Br", "investment": "T", "price": current})
+        assert "No price changed" in r.text and "HX-Trigger" not in r.headers
+
+    def test_add_prices_makes_the_movement(self, settings):
+        count = len(generated_capital(settings))
+        assert LedgerStore(settings).add_prices("2026-01-07", [("Br", "T", "20")]) == (1, 0)
+        assert settings.prices_path.read_text().rstrip().endswith("2026-01-07;Br;T;20.00")
+        assert len(generated_capital(settings)) == count + 1
+
+    def test_add_prices_is_all_or_nothing(self, settings):
+        lines = settings.prices_path.read_text().count("\n")
+        with pytest.raises(ValueError, match="'Nope' is not an investment of Br"):
+            LedgerStore(settings).add_prices("2026-01-07", [("Br", "T", "20"), ("Br", "Nope", "20")])
+        with pytest.raises(ValueError, match="The price cannot be negative"):
+            LedgerStore(settings).add_prices("2026-01-07", [("Br", "T", "20"), ("Br", "T", "-1")])
+        assert settings.prices_path.read_text().count("\n") == lines
+
+    def test_prices_form_keeps_what_was_typed_in(self, client):
+        r = client.get("/form/prices", params={"date": "2026-02-02", "account": "Br", "investment": "T", "price": "33"})
+        assert 'value="2026-02-02"' in r.text and 'value="33"' in r.text and 'id="prices-form"' in r.text
 
     def test_add_price_creates_the_csv(self, settings):
         settings.prices_path.unlink()

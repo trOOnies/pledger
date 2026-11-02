@@ -497,8 +497,11 @@ account, `Capital losses` crediting it, against equity) whenever an investment g
 
 A revaluation with no quantity held, or that changes nothing, generates no movement. The
 Investments tab lists the generated ones among the investment movements (not editable), and its
-*New price* form (or `POST /api/investments/prices`) adds a price, one per investment and date at
-most. `prices.csv` is created with the first one.
+*Update prices* section, at the bottom, adds the prices typed in for the investments held, on a
+shared date (or `POST /api/investments/prices`, one at a time), one per investment and date at most.
+Those left blank are ignored, and in that section those that wouldn't change the amount held by a
+cent are left out, with no row in `prices.csv` nor movement. Either all the others are added or, if
+any is invalid, none. `prices.csv` is created with the first one.
 
 A free side (neither fixed nor `INVESTMENT`) of an investment base movement can't be an
 investment account, in the form or in `investment.csv`. What pays for an investment bought, gets

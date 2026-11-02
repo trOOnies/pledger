@@ -22,6 +22,7 @@ from pledger.web.store import (
     is_capital,
     row_fingerprint,
 )
+from pledger.web.store.common import _quantity_text
 from pledger.web.views.charts import column_chart, line_chart, with_real
 from pledger.web.views.common import grouped_composition, month_end, movement_rows
 from pledger.web.views.forms import account_fields, bases_by_type, default_move_type
@@ -437,16 +438,24 @@ def invest_fields(snapshot: Snapshot, base_movement: str = "", move_type: str = 
     }
 
 
-def price_fields(snapshot: Snapshot) -> dict:
+def price_rows(snapshot: Snapshot, entered: dict[tuple[str, str], str] | None = None) -> list[dict]:
     """
-    The investments to pick from for a new price, by investment account: those of the
-    investments YAML and those only in the ledger.
+    The investments held, of the investments YAML and those only in the ledger, each with
+    its price (amount over quantity) and the new price `entered` for it, by account and name.
     """
-    return {
-        "investments_by_account": {
-            a.name: sorted(a.investments) for a in snapshot.investment_accounts() if a.investments
-        },
-    }
+    return [
+        {
+            "account": a.name,
+            "name": name,
+            "type": INVESTMENT_TYPE_LABELS.get(h["investment"].type, NO_TYPE),
+            "quantity": h["total_quantity"],
+            "price": _quantity_text(round(h["total_amount"] / h["total_quantity"], 4)) if h["total_quantity"] else None,
+            "value": (entered or {}).get((a.name, name), ""),
+        }
+        for a in snapshot.investment_accounts()
+        for name, h in sorted(a.investments.items())
+        if not is_closed(h)
+    ]
 
 
 def new_investment_fields(snapshot: Snapshot) -> dict:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime as dt
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
 
 from pledger.models import INTERMEDIARY, DebtAccount
@@ -29,7 +29,7 @@ from pledger.web.templating import (
     render_form,
     render_invest_form,
     render_new_investment_form,
-    render_price_form,
+    render_prices_form,
     render_service_form,
     templates,
 )
@@ -365,32 +365,48 @@ async def save_service_month(request: Request, store: StoreDep, month: Annotated
     return response
 
 
-@router.get("/form/price")
-def price_form(request: Request, store: StoreDep):
-    """A new price form, e.g. with the investments of a new investment."""
-    return render_price_form(request, store.load(), {})
+def entered_prices(account: list[str] | None, investment: list[str] | None, price: list[str] | None) -> dict:
+    """What the prices form has typed in, row by row, by account and investment."""
+    rows = zip(account or [], investment or [], price or [])
+    return {(a, name): value for a, name, value in rows}
+
+
+@router.get("/form/prices")
+def prices_form(
+    request: Request,
+    store: StoreDep,
+    date: str = "",
+    account: Annotated[list[str] | None, Query()] = None,
+    investment: Annotated[list[str] | None, Query()] = None,
+    price: Annotated[list[str] | None, Query()] = None,
+):
+    """The prices form, up to date with the investments, keeping what was typed in."""
+    return render_prices_form(request, store.load(), date, entered_prices(account, investment, price))
 
 
 @router.post("/investments/prices")
-def create_price(
+def update_prices(
     request: Request,
     store: StoreDep,
     date: Annotated[str, Form()],
-    account: Annotated[str, Form()],
-    investment: Annotated[str, Form()],
-    price: Annotated[str, Form()],
+    account: Annotated[list[str] | None, Form()] = None,
+    investment: Annotated[list[str] | None, Form()] = None,
+    price: Annotated[list[str] | None, Form()] = None,
 ):
-    values = {"date": date, "account": account, "investment": investment, "price": price}
+    entered = entered_prices(account, investment, price)
     try:
-        store.add_price(date, account, investment, price)
+        added, unchanged = store.add_prices(date, [(*key, value) for key, value in entered.items()])
     except ValueError as e:
-        return render_price_form(request, store.load(), values, error=str(e))
-    # Keep the date and account to speed up entering the prices of the other investments.
-    response = render_price_form(
-        request, store.load(), {"date": date, "account": account},
-        success=f"Added the price of {investment.strip()} on {date}: {money(float(price.replace(',', '')), store.settings.currency)}",
+        return render_prices_form(request, store.load(), date, entered, error=str(e))
+    # Keep the date, for other investments priced on it.
+    skipped = f"; {unchanged} unchanged left out" if unchanged else ""
+    if not added:
+        message = "No price changed: nothing to add" if unchanged else "Fill in a new price to add it"
+        return render_prices_form(request, store.load(), date, entered, error=message)
+    response = render_prices_form(
+        request, store.load(), date, success=f"Added {added} price{'s' if added > 1 else ''} on {date}{skipped}",
     )
-    response.headers["HX-Trigger"] = "investments-changed"
+    response.headers["HX-Trigger"] = "prices-changed"
     return response
 
 

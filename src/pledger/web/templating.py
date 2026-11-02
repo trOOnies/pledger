@@ -22,7 +22,7 @@ from pledger.web.views import (
     invest_fields,
     ledger_link,
     new_investment_fields,
-    price_fields,
+    price_rows,
     row_anchor,
     service_form,
 )
@@ -163,21 +163,19 @@ def render_new_investment_form(request: Request, snapshot: Snapshot, values: dic
     )
 
 
-def render_price_form(request: Request, snapshot: Snapshot, values: dict, **extra):
-    """The new price form of the Investments tab, for the prices CSV."""
+def render_prices_form(
+    request: Request, snapshot: Snapshot, date: str = "", entered: dict[tuple[str, str], str] | None = None, **extra,
+):
+    """The prices form of the Investments tab, for the prices CSV: today's by default."""
     settings = request.app.state.store.settings
-    values.setdefault("date", dt.date.today().isoformat())
-    fields = price_fields(snapshot)
-    if values.get("account") not in fields["investments_by_account"]:
-        values["account"] = next(iter(fields["investments_by_account"]), "")
     return templates.TemplateResponse(
         request,
-        "_price_form.html",
+        "_prices_form.html",
         {
             "currency": settings.currency,
             "path": settings.prices_path.name if settings.prices_path else "prices.csv",
-            "values": values,
-            **fields,
+            "date": date or dt.date.today().isoformat(),
+            "rows": price_rows(snapshot, entered),
             **extra,
         },
     )

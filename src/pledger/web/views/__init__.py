@@ -98,7 +98,7 @@ from pledger.web.views.investments import (
     investment_charts,
     is_closed,
     new_investment_fields,
-    price_fields,
+    price_rows,
     result_signs,
 )
 from pledger.web.views.ledger import (
@@ -204,7 +204,7 @@ __all__ = [
     "over_time_charts",
     "owed_charts",
     "percent",
-    "price_fields",
+    "price_rows",
     "ratio_series",
     "real_values",
     "result_signs",
