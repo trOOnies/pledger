@@ -541,7 +541,7 @@ class TestDebtPage:
         assert '<strong>Bank</strong></td>\n        <td class="nowrap hint warn" title="Expected to be a creditor">⚠ Debtor</td>' in r.text
         alerts = r.text.split('<details class="msg warn alert" role="alert">')[1:]
         assert len(alerts) == 2
-        assert "Unassigned debt of" in alerts[0] and "<li>Zurich 1/24: <span class=\"money\">-$5.00</span></li>" in alerts[0]
+        assert "Unassigned debt of" in alerts[0] and "<li><span class=\"money\">Zurich 1/24</span>: <span class=\"money\">-$5.00</span></li>" in alerts[0]
         assert "1 is not in the expected role" in alerts[1] and "<strong>Bank</strong>" in alerts[1]
         assert "is a debtor (" in alerts[1] and "but is expected to be a creditor" in alerts[1]
 

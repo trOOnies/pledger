@@ -26,7 +26,7 @@
           {% if value is none %}<td class="num muted balance">-</td>{% else %}<td class="num money balance {{ 'loss' if value < -0.005 }}" data-sort="{{ value }}">{{ value | money }}</td>{% endif %}
           {% endfor %}
           {% if m.investment_quantity is none %}<td class="num muted balance">-</td>{% else %}<td class="num balance" data-sort="{{ m.investment_quantity }}">{{ m.investment_quantity | quantity }}</td>{% endif %}
-          <td class="muted">{{ m.comment }}</td>
+          <td class="muted money">{{ m.comment }}</td>
           <td class="nowrap">
             {% if not m.editable %}
             <span class="muted" title="{{ movement_sources[m.source][1] }}">{{ movement_sources[m.source][0] }}</span>

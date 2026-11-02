@@ -25,7 +25,7 @@
           <td class="num {{ 'muted' if c.rate is none }}" data-sort="{{ c.rate if c.rate is not none else '' }}">{{ (c.rate | number) if c.rate is not none else "-" }}</td>
           {% if c.other_balance is none %}<td class="num muted">-</td>{% else %}
           <td class="num money balance {{ 'loss' if c.other_balance < -0.00005 }}" data-sort="{{ c.other_balance }}" title="{{ c.account }}">{{ c.currency }} {{ "{:,.4f}".format(c.other_balance) }}</td>{% endif %}
-          <td class="muted">{{ c.comment }}</td>
+          <td class="muted money">{{ c.comment }}</td>
           <td class="nowrap">
             {% if not c.initial %}
             {{ edit_button("/conversions/%d/edit" % c.index, c.fingerprint, "conversion-form") }}

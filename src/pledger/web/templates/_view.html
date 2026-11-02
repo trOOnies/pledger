@@ -22,7 +22,7 @@
           {% for balance in (m.debit_balance, m.credit_balance) %}
           <td class="num money balance {{ 'loss' if balance < -0.005 }}" data-sort="{{ balance }}">{{ balance | money }}</td>
           {% endfor %}
-          <td class="muted">{{ m.comment }}</td>
+          <td class="muted money">{{ m.comment }}</td>
           <td class="nowrap">
             {% if m.source %}
             {% set emoji, title = movement_sources[m.source] %}

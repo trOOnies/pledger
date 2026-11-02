@@ -86,7 +86,7 @@
           <td class="num money" data-sort="{{ m.amount }}">{{ m.amount | money }}</td>
           <td>{{ m.credit }}</td>
           {% if m.debt is none %}<td class="num muted balance">-</td>{% else %}<td class="num money balance {{ 'gain' if m.debt < -0.005 }}" data-sort="{{ m.debt }}">{{ m.debt | money }}</td>{% endif %}
-          <td class="muted">{{ m.comment }}</td>
+          <td class="muted money">{{ m.comment }}</td>
         </tr>
         {% else %}
         <tr><td colspan="9" class="muted">No movements.</td></tr>

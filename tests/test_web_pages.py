@@ -37,6 +37,14 @@ class TestPages:
             assert ('aria-current="page"' in brand) == current
             assert ">Ledger</a>" not in header and 'href="/accounts"' in header
 
+    def test_comments_are_hidden_with_the_amounts(self, client):
+        client.post("/movements", data={
+            "move_date": "2026-02-01", "move_type": "loss", "base_movement": "Food", "acc_debit": "Eq", "acc_credit": "Ca",
+            "amount": "1", "comment": "secret note",
+        })
+        assert '<td class="muted money">secret note</td>' in client.get("/", params={"month": ""}).text
+        assert 'title="Hide amounts and comments"' in client.get("/").text
+
     def test_index(self, client):
         r = client.get("/")
         assert r.status_code == 200

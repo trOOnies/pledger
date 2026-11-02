@@ -9,7 +9,7 @@
     {% for a in unassigned_accounts %}
     <ul class="small">
       {% for comment, amount in a.comments %}
-      <li>{{ comment }}{% if unassigned_accounts | length > 1 %} <span class="muted">({{ a.name }})</span>{% endif %}: <span class="money">{{ amount | money }}</span></li>
+      <li><span class="money">{{ comment }}</span>{% if unassigned_accounts | length > 1 %} <span class="muted">({{ a.name }})</span>{% endif %}: <span class="money">{{ amount | money }}</span></li>
       {% endfor %}
     </ul>
     {% endfor %}

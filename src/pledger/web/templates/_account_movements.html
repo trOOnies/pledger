@@ -30,7 +30,7 @@
           {% if value is none %}<td class="num muted balance">-</td>{% else %}
           <td class="num money balance {{ 'gain' if value < -0.005 }}" data-sort="{{ value }}">{{ value | money }}</td>{% endif %}
           {% endif %}
-          <td class="muted">{{ m.comment }}</td>
+          <td class="muted money">{{ m.comment }}</td>
           {% if edit %}
           <td class="nowrap">
             {% if m.editable %}
