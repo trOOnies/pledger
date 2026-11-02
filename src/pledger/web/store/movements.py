@@ -68,6 +68,7 @@ def _movement_row(
     debt: bool,
     card_payment: bool,
     correction: bool = False,
+    difference: bool = False,
 ) -> tuple[str, dict]:
     """
     Validate a movement (see LedgerStore.add) and give the Snapshot field of the CSV
@@ -80,7 +81,7 @@ def _movement_row(
     if base_movement not in snapshot.base_movements:
         raise ValueError(f"Unknown base movement: {base_movement!r}")
     _check_invest(snapshot, base_movement, invest, "added")
-    _check_tab(snapshot, base_movement, invest, debt, card_payment, correction=correction)
+    _check_tab(snapshot, base_movement, invest, debt, card_payment, correction=correction, difference=difference)
     has_details = str(investment).strip() or str(quantity).strip()
     if has_details and (not invest or base_movement in INTEREST):
         raise ValueError("Only movements of the investments have an investment and a quantity")
@@ -137,14 +138,16 @@ def _movement_row(
 
 def _check_tab(
     snapshot: Snapshot, base_name: str, invest: bool, debt: bool, card_payment: bool, action: str = "added",
-    correction: bool = False,
+    correction: bool = False, difference: bool = False,
 ) -> None:
     """
     Each tab adds (or edits, or deletes: the `action`) the movements of its own base
     movements: the conversions are only added from the Currencies tab, the debt
     movements from the Debt tab, the card payments from the Credit Cards tab, the
     balance corrections from the Audit tab (`correction`; the Ledger tab deletes
-    them with it too), and all the others from the Ledger tab (or the Investments tab,
+    them with it too), the differences with their debt movement (`difference`; the Ledger and Debt
+    tabs delete them with it too), and
+    all the others from the Ledger tab (or the Investments tab,
     see _check_invest).
     """
     if base_name in snapshot.conversion_base_names:
@@ -153,6 +156,7 @@ def _check_tab(
         (debt, snapshot.debt_base_movements(), "debt", "Debt"),
         (card_payment, snapshot.card_payment_base_movements(), "card payment", "Credit Cards"),
         (correction, snapshot.correction_base_movements(), "balance correction", "Audit"),
+        (difference, snapshot.difference_base_movements(), "debt difference", "Debt"),
     ):
         if wanted and base_name not in bases:
             raise ValueError(f"Base movement {base_name!r} is not a {what} base movement")

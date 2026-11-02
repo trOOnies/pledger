@@ -8,10 +8,12 @@ from pledger.web.store import (
     DEBT_BASES,
     DEBT_INCURRED,
     DEBT_PAID,
+    DIFFERENCES,
     LOAN_COLLECTED,
     LOAN_GIVEN,
     Snapshot,
 )
+from pledger.web.store.common import _parse_amount
 from pledger.web.views.common import account_movements, grouped_composition, months_of
 from pledger.web.views.forms import account_fields
 
@@ -68,7 +70,8 @@ def build_debts(snapshot: Snapshot, month: str = "", who: str = "") -> dict:
 
     # Each movement is about whoever its comment names, in its debt account.
     movements = account_movements(
-        snapshot, [a.name for a in accounts], month, editable=snapshot.debt_base_movements()
+        snapshot, [a.name for a in accounts], month, editable=snapshot.debt_base_movements(),
+        deletable=snapshot.difference_base_movements(),
     )
     for m in movements:
         debt = next(a for a in accounts if a.name in (m["debit"], m["credit"]))
@@ -212,4 +215,26 @@ def debt_form_fields(snapshot: Snapshot, base_movement: str = "", kind: str = ""
         "missing": missing,
         "fields": account_fields(snapshot, base_movement),
         "who": {label: sorted(names) for label, names in who.items() if names},
+        "difference_missing": sorted(DIFFERENCES.keys() - snapshot.difference_base_movements().keys()),
+    }
+
+
+def debt_difference(snapshot: Snapshot, base_movement: str, who: str, amount: str) -> dict:
+    """
+    What the debt movement form would do to the balance with `who`, positive if we owe them
+    (see Snapshot.debt_remaining), and the Difference settling it, if any. Empty until the
+    form has someone and a valid amount.
+    """
+    known = any(who in a.creditors for a in snapshot.debt_accounts())
+    if base_movement not in DEBT_BASES or not known or not amount.strip():
+        return {}
+    try:
+        value = _parse_amount(amount, "amount")
+    except ValueError:
+        return {}
+    balance, remaining = snapshot.debt_remaining(base_movement, value, who)
+    difference = snapshot.difference_of(remaining)
+    return {
+        "who": who, "balance": balance, "remaining": remaining,
+        "base": difference[0] if difference else None, "amount": difference[1] if difference else 0.0,
     }

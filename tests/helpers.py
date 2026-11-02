@@ -104,6 +104,13 @@ DEBT_YAML = (
 )
 
 
+# The internal result type of the Difference of the Debt tab (see with_internal)
+DIFFERENCE_YAML = (
+    "    Corr:\n      id: 4\n      long_name: Corrections\n      description: d\n"
+    "      base_movements:\n        gain:\n          Difference (G): d\n        loss:\n          Difference (L): d\n"
+)
+
+
 INVESTMENT_HEADER = "move_date;base_movement;acc_debit;amount;acc_credit;quantity;investment;comment\n"
 
 

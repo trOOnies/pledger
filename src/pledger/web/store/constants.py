@@ -151,6 +151,16 @@ CORRECTION_LOSS = "Correction (L)"
 CORRECTIONS = {CORRECTION_GAIN: MovementType.GAIN, CORRECTION_LOSS: MovementType.LOSS}
 
 
+# Internal base movements settling what remains with someone after a debt movement, against
+# the equity account: added from the Debt tab with that movement (see
+# LedgerStore.add_debt_movement), and deleted from there or the Ledger tab. A gain if what
+# remained is what we owed them.
+DIFFERENCE_GAIN, DIFFERENCE_LOSS = "Difference (G)", "Difference (L)"
+
+
+DIFFERENCES = {DIFFERENCE_GAIN: MovementType.GAIN, DIFFERENCE_LOSS: MovementType.LOSS}
+
+
 # Columns of the investments CSV, of the movements of the investment base movements
 # but the interest on money: those of the ledger CSV, plus the investment (its name
 # in the investment account) and its quantity, like 1,234.50.

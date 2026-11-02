@@ -36,12 +36,25 @@
   <label>Amount
     <span class="money-input">
       <span class="prefix">{{ currency }}</span>
-      <input name="amount" inputmode="decimal" min="0" value="{{ values.amount }}" placeholder="0.00" required autocomplete="off" data-money>
+      <input id="debt-amount" name="amount" inputmode="decimal" min="0" value="{{ values.amount }}" placeholder="0.00" required autocomplete="off" data-money>
     </span>
   </label>
   <label><span>Comment <em class="optional">(optional)</em></span>
     <input name="comment" value="{{ values.comment }}" autocomplete="off">
   </label>
+  {% if not editing %}
+  {% if difference_missing %}
+  <p class="msg warn small">Setting the remaining as a Difference needs these internal base movements, a gain and a
+    loss, in the base movements YAML: {{ difference_missing | join(", ") }}.</p>
+  {% else %}
+  <label class="check" title="Settle what would remain with them after this movement, against equity, so their balance ends at 0.00">
+    <input type="checkbox" name="remaining_as_difference" value="true" {% if values.remaining_as_difference %}checked{% endif %}> Set remaining as Difference
+  </label>
+  {# Refreshed with the form, and when the kind of movement swaps its base movements #}
+  <div id="debt-difference" class="stack" aria-live="polite" hx-get="/form/debt-difference" hx-include="#debt-form" hx-swap="innerHTML"
+    hx-trigger="{{ 'load, ' if values.remaining_as_difference }}change from:#debt-form, input changed delay:300ms from:#debt-amount, htmx:afterSettle from:#debt-bases"></div>
+  {% endif %}
+  {% endif %}
   <p class="muted small">The comment names who it is about first, so their debt adds it. The debt with companies
     comes from the salaries of the <a href="/work">Work</a> tab.</p>
   <button type="submit">{{ "Save changes" if editing else "Add debt movement" }}</button>

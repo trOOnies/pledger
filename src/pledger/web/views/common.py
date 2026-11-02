@@ -8,7 +8,7 @@ from pandas import DataFrame, Period
 
 from pledger.enums import AccountType, MovementType
 from pledger.ledger import Ledger
-from pledger.models import Account, is_foreign, next_month
+from pledger.models import DEBT_ACCOUNT, Account, is_foreign, next_month
 from pledger.web.store import Snapshot, row_fingerprint
 
 # The tab where each kind of movement that can't be deleted from the Ledger tab is
@@ -23,6 +23,7 @@ MOVEMENT_SOURCES = {
     "accounts": ("🟣", "Generated from the initial amount of the account, in the Accounts tab"),
     "corrections": ("🟣", "A balance correction, added from the Audit tab; it can be deleted here"),
     "debt": ("🟡", "Added, edited and deleted from the Debt tab"),
+    "differences": ("🟡", "A Difference added with a debt movement, in the Debt tab; it can be deleted here"),
     "services": ("🟡", "Generated from the monthly value of the service, in the Services tab"),
     "credit-cards": ("🔴", "Added, edited and deleted from the Credit Cards tab"),
 }
@@ -50,7 +51,8 @@ def source_link(source: str, move, move_id: str | None) -> str:
     tab = {
         "investments": "/investments", "prices": "/investments", "currencies": "/currencies",
         "services": "/services",
-        "debt": f"/debt?month={move.move_date[:7]}", "credit-cards": f"/credit-cards?month={move.move_date[:7]}",
+        "debt": f"/debt?month={move.move_date[:7]}", "differences": f"/debt?month={move.move_date[:7]}",
+        "credit-cards": f"/credit-cards?month={move.move_date[:7]}",
     }[source]
     return f"{tab}#{row_anchor('movement', move_id)}" if move_id else tab
 
@@ -79,7 +81,7 @@ def movement_rows(snapshot: Snapshot, rows: DataFrame, ledger: Ledger) -> list[d
     initials = set(snapshot.initial_rows.index)
     ledger_bases = snapshot.ledger_base_movements()
     debt_bases, card_bases = snapshot.debt_base_movements(), snapshot.card_payment_base_movements()
-    corrections = snapshot.correction_base_movements()
+    corrections, differences = snapshot.correction_base_movements(), snapshot.difference_base_movements()
 
     def source(ix, move) -> str | None:
         if ix in capital:
@@ -102,6 +104,8 @@ def movement_rows(snapshot: Snapshot, rows: DataFrame, ledger: Ledger) -> list[d
             return "credit-cards"
         if move.move_base.name in corrections:
             return "corrections"
+        if move.move_base.name in differences and DEBT_ACCOUNT in (move.acc_debit.name, move.acc_credit.name):
+            return "differences"
         return None
 
     movements = [
@@ -124,7 +128,7 @@ def movement_rows(snapshot: Snapshot, rows: DataFrame, ledger: Ledger) -> list[d
             # Can be edited from the movement form of the Ledger tab
             "editable": move.move_base.name in ledger_bases and not move.move_base.internal,
             # Can be deleted from the Ledger tab, though added from another tab
-            "correction": move.move_base.name in corrections,
+            "correction": move.move_base.name in corrections or move.move_base.name in differences,
         }
         for (ix, row), move in zip(rows.iterrows(), ledger.movements)
     ]
@@ -168,12 +172,14 @@ def signed_composition(totals: dict[str, dict[str, float]]) -> list[dict]:
 
 
 def account_movements(
-    snapshot: Snapshot, names: list[str], month: str = "", editable: dict | None = None
+    snapshot: Snapshot, names: list[str], month: str = "", editable: dict | None = None,
+    deletable: dict | None = None,
 ) -> list[dict]:
     """
     The movements with any of these accounts on a side, newest first, in `month`
     (all the ledger by default), the initial movements included. Those of the ledger
-    CSV of the `editable` base movements can be edited from the tab.
+    CSV of the `editable` base movements can be edited from the tab, and those of them
+    or of the `deletable` ones deleted.
     """
     rows = snapshot.all_rows
     mask = rows.acc_debit.isin(names) | rows.acc_credit.isin(names)
@@ -186,6 +192,7 @@ def account_movements(
     for m in movements:
         m["initial"] = m["base"] in snapshot.initial_base_names
         m["editable"] = m["index"] >= 0 and m["base"] in (editable or {})
+        m["deletable"] = m["editable"] or (m["index"] >= 0 and m["base"] in (deletable or {}))
         m["balance"] = after[m["index"]][0 if m["debit"] in names else 1]
     return movements
 

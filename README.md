@@ -618,6 +618,32 @@ asks who the movement is about, and names them first in the comment: people and 
 a company, whose debt comes from the salaries of the Work tab (it is still listed as usual). The
 Ledger tab shows them with a 🟡 linking there.
 
+**Set remaining as Difference.** A new debt movement can settle what would remain with whoever it
+is about: e.g. paying 90 of a debt of 100 and forgetting about the other 10. The form then shows
+their balance now, after the movement, and the `Difference (G)` (what we owed them) or
+`Difference (L)` (what they owed us) it adds, in the same date and with the same comment, to leave
+them at 0.00 in all the ledger. Both rows are added together, or none of them, and nothing is added
+if nothing remains. It needs these internal base movements of any internal result type but
+`Invest`, against the equity account:
+
+```yaml
+internal:
+  result_types:
+    Corr:
+      id: 9
+      long_name: Corrections
+      description: Results because of corrections and differences
+      base_movements:
+        gain:
+          Difference (G): Money difference in favour of oneself
+        loss:
+          Difference (L): Money difference against oneself
+```
+
+A Difference can't be edited, and is deleted from the Debt or Ledger tabs, on its own: deleting the
+movement it came with leaves it there. The Ledger tab shows the ones of `De` with a 🟡 linking to the Debt tab. `/api/debt/movements` takes it as `remaining_as_difference`, and
+answers with the `difference` added.
+
 Like Accounts, the Debt tab shows everyone as of the end of the month picked. It lists people,
 services and companies apart, and the movements naming no one as unassigned. It alerts when
 there is unassigned debt (listing it by comment) and when anyone is in the opposite role to the

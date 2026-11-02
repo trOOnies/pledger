@@ -73,6 +73,7 @@ from pledger.web.views.debt import (
     UNASSIGNED,
     build_debts,
     debt_after,
+    debt_difference,
     debt_form_fields,
 )
 from pledger.web.views.forms import (
@@ -175,6 +176,7 @@ __all__ = [
     "cpi_chart",
     "cumulative_composition",
     "debt_after",
+    "debt_difference",
     "debt_form_fields",
     "default_move_type",
     "equity_metrics",

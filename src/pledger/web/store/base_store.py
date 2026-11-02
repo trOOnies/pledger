@@ -291,7 +291,7 @@ class StoreBase:
 
     def _delete_row(
         self, field: str, index: int, fingerprint: str | None, debt: bool = False, card_payment: bool = False,
-        correction: bool = False,
+        correction: bool = False, difference: bool = False,
     ) -> None:
         """
         Delete a row by position from the CSV of a Snapshot `field` ("rows",
@@ -303,7 +303,9 @@ class StoreBase:
         self.current_row(snapshot, field, index, fingerprint)
         if field == "rows":
             _check_invest(snapshot, rows.iloc[index]["base_movement"], False, "deleted")
-            _check_tab(snapshot, rows.iloc[index]["base_movement"], False, debt, card_payment, "deleted", correction)
+            _check_tab(
+                snapshot, rows.iloc[index]["base_movement"], False, debt, card_payment, "deleted", correction, difference,
+            )
         group = None if field == "interest" else self._linked_group(snapshot, field, index)
         if group:
             self._delete_group(snapshot, group)

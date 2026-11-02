@@ -1,7 +1,7 @@
 {# The movements of some accounts (views.account_movements). With `who`, the movements say who
    their comment names, and with `account`, which of the accounts they are of. With `edit` and
    `delete` URLs (with the row index as %d), the editable ones (the movements added in the tab)
-   get their ✎ button, filling the form `form_id`, and their × one. With `running`, a (header, tooltip,
+   get their ✎ button, filling the form `form_id`, and their × one (the deletable ones only the latter). With `running`, a (header, tooltip,
    key) triple, a column shows that key of each movement: a running total, green if negative (owed to
    us), "-" if None. #}
 {% from "_id.html" import id_cell, id_header %}
@@ -35,6 +35,8 @@
           <td class="nowrap">
             {% if m.editable %}
             {{ edit_button(edit % m.index, m.fingerprint, form_id) }}
+            {% endif %}
+            {% if m.deletable %}
             <button class="icon" title="Delete" aria-label="Delete movement"
               hx-post="{{ delete % m.index }}"
               hx-vals='{{ {"fingerprint": m.fingerprint} | tojson }}'

@@ -7,6 +7,7 @@ import pytest
 from fastapi.testclient import TestClient
 from helpers import (
     DEBT_YAML,
+    DIFFERENCE_YAML,
     HTMX,
     WORK_CSV,
     card_labels,
@@ -26,6 +27,194 @@ from pledger.web.views import (
     build_debts,
     debt_form_fields,
 )
+
+FORM = {"move_date": "2026-02-10", "acc_debit": "Ca", "acc_credit": "De", "who": "Dad", "remaining_as_difference": "true"}
+
+
+class TestRemainingAsDifference:
+    """Settling what remains with someone after a debt movement, in the Debt tab."""
+
+
+    @pytest.fixture
+    def settings(self, settings, tmp_path):
+        path = tmp_path / "creditors.yaml"
+        path.write_text("De:\n  people:\n    Dad: 0\n    Mum: 0\n", encoding="utf-8")
+        with_internal(settings.base_movements_path, DIFFERENCE_YAML, DEBT_YAML)
+        return replace(settings, creditors_path=path)
+
+    @pytest.fixture
+    def client(self, settings):
+        return TestClient(create_app(settings))
+
+    @staticmethod
+    def balance(settings, who="Dad"):
+        return next(a for a in LedgerStore(settings).load().debt_accounts()).creditors[who].amount
+
+    def test_we_owe_less_is_a_gain(self, settings):
+        store = LedgerStore(settings)
+        store.add_debt_movement("2026-02-01", "Debt - Incurred", "Ca", "De", "100", "Dad")
+        assert store.add_debt_movement(
+            "2026-02-05", "Debt - Paid", "De", "Ca", "90", "Dad", "last payment", remaining_as_difference=True,
+        ) == ("Difference (G)", 10.0)
+        last = rows(settings).iloc[-1]
+        assert (last.move_date, last.base_movement, last.acc_debit, last.acc_credit) == ("2026-02-05", "Difference (G)", "De", "Eq")
+        assert last.comment == "Dad: last payment" and last.amount == "10.00"
+        assert self.balance(settings) == pytest.approx(0)
+
+    def test_they_owe_us_less_is_a_loss(self, settings):
+        store = LedgerStore(settings)
+        store.add_debt_movement("2026-02-01", "Loan - Given", "De", "Ca", "100", "Dad")
+        assert store.add_debt_movement(
+            "2026-02-05", "Loan - Collected", "Ca", "De", "90", "Dad", remaining_as_difference=True,
+        ) == ("Difference (L)", 10.0)
+        last = rows(settings).iloc[-1]
+        assert (last.base_movement, last.acc_debit, last.acc_credit, last.comment) == ("Difference (L)", "Eq", "De", "Dad")
+        assert self.balance(settings) == pytest.approx(0)
+
+    def test_paying_too_much_is_a_loss(self, settings):
+        store = LedgerStore(settings)
+        store.add_debt_movement("2026-02-01", "Debt - Incurred", "Ca", "De", "100", "Dad")
+        assert store.add_debt_movement(
+            "2026-02-05", "Debt - Paid", "De", "Ca", "120", "Dad", remaining_as_difference=True,
+        ) == ("Difference (L)", 20.0)
+        assert self.balance(settings) == pytest.approx(0)
+
+    def test_nothing_remaining_adds_no_difference(self, settings):
+        store = LedgerStore(settings)
+        store.add_debt_movement("2026-02-01", "Debt - Incurred", "Ca", "De", "100", "Dad")
+        before = len(rows(settings))
+        assert store.add_debt_movement(
+            "2026-02-05", "Debt - Paid", "De", "Ca", "100", "Dad", remaining_as_difference=True,
+        ) is None
+        assert len(rows(settings)) == before + 1
+
+    def test_off_by_default(self, settings):
+        store = LedgerStore(settings)
+        store.add_debt_movement("2026-02-01", "Debt - Incurred", "Ca", "De", "100", "Dad")
+        assert store.add_debt_movement("2026-02-05", "Debt - Paid", "De", "Ca", "90", "Dad") is None
+        assert self.balance(settings) == pytest.approx(10)
+
+    def test_only_of_that_person(self, settings):
+        store = LedgerStore(settings)
+        store.add_debt_movement("2026-02-01", "Debt - Incurred", "Ca", "De", "100", "Mum")
+        store.add_debt_movement("2026-02-01", "Debt - Incurred", "Ca", "De", "100", "Dad")
+        store.add_debt_movement("2026-02-05", "Debt - Paid", "De", "Ca", "90", "Dad", remaining_as_difference=True)
+        assert self.balance(settings) == pytest.approx(0) and self.balance(settings, "Mum") == pytest.approx(100)
+
+    def test_neither_row_added_if_invalid(self, settings):
+        store = LedgerStore(settings)
+        store.add_debt_movement("2026-02-01", "Debt - Incurred", "Ca", "De", "100", "Dad")
+        before = len(rows(settings))
+        with pytest.raises(ValueError, match="Invalid date"):
+            store.add_debt_movement("nope", "Debt - Paid", "De", "Ca", "90", "Dad", remaining_as_difference=True)
+        assert len(rows(settings)) == before
+
+    def test_needs_the_base_movement_only_when_used(self, settings):
+        path = settings.base_movements_path
+        path.write_text(path.read_text().replace("          Difference (G): d\n", ""))
+        store = LedgerStore(settings)
+        store.add_debt_movement("2026-02-01", "Debt - Incurred", "Ca", "De", "100", "Dad")
+        before = len(rows(settings))
+        with pytest.raises(ValueError, match=re.escape("needs 'Difference (G)', an internal gain")):
+            store.add_debt_movement("2026-02-05", "Debt - Paid", "De", "Ca", "90", "Dad", remaining_as_difference=True)
+        assert len(rows(settings)) == before
+        form = TestClient(create_app(settings)).get("/debt").text.split('id="debt-form"')[1].split("</form>")[0]
+        assert 'name="remaining_as_difference"' not in form and "Difference (G)" in form
+
+    def test_not_added_on_its_own(self, settings, client):
+        store = LedgerStore(settings)
+        with pytest.raises(ValueError, match="'Difference \\(G\\)' is not a debt base movement"):
+            store.add_debt_movement("2026-02-05", "Difference (G)", "De", "Eq", "1", "Dad")
+        with pytest.raises(ValueError, match="are added from the Debt tab"):
+            store.add("2026-02-05", "Difference (G)", "De", "Eq", "1", "Dad")
+        assert "Difference" not in client.get("/form/bases", params={"move_type": "gain"}).text
+
+    def test_form(self, settings, client):
+        LedgerStore(settings).add_debt_movement("2026-02-01", "Debt - Incurred", "Ca", "De", "100", "Dad")
+        form = client.get("/debt").text.split('id="debt-form"')[1].split("</form>")[0]
+        assert 'name="remaining_as_difference"' in form and "Set remaining as Difference" in form
+        assert 'hx-get="/form/debt-difference"' in form and "load," not in form
+        r = client.post("/debt/movements", data={**FORM, "base_movement": "Debt - Paid", "acc_debit": "De", "acc_credit": "Ca", "amount": "90"})
+        assert "Added Debt - Paid (Dad): $90.00 and Difference (G): $10.00" in r.text
+        assert 'name="remaining_as_difference" value="true" >' in r.text  # not kept for the next one
+        assert self.balance(settings) == pytest.approx(0)
+
+    def test_form_keeps_it_on_an_error(self, client):
+        r = client.post("/debt/movements", data={**FORM, "base_movement": "Debt - Paid", "acc_debit": "De", "acc_credit": "Ca", "amount": "-1"})
+        assert 'class="msg error"' in r.text and 'value="true" checked' in r.text and "hx-trigger=\"load," in r.text
+
+    def test_api(self, settings, client):
+        LedgerStore(settings).add_debt_movement("2026-02-01", "Debt - Incurred", "Ca", "De", "100", "Dad")
+        r = client.post("/api/debt/movements", json={
+            "move_date": "2026-02-05", "base_movement": "Debt - Paid", "acc_debit": "De", "acc_credit": "Ca",
+            "amount": 90, "who": "Dad", "remaining_as_difference": True,
+        })
+        assert r.status_code == 201
+        assert r.json() == {"ok": True, "difference": {"base_movement": "Difference (G)", "amount": 10.0}}
+
+    def test_preview(self, settings, client):
+        LedgerStore(settings).add_debt_movement("2026-02-01", "Debt - Incurred", "Ca", "De", "100", "Dad")
+
+        def preview(**params):
+            return client.get("/form/debt-difference", params={"base_movement": "Debt - Paid", "who": "Dad", **params}).text
+
+        assert preview(amount="90").strip() == ""  # toggled off
+        on = {"remaining_as_difference": "true"}
+        assert "Pick who and the amount" in preview(**on, amount="")
+        assert "Pick who and the amount" in preview(**on, amount="abc")
+        assert "Pick who and the amount" in preview(**on, amount="90", who="")
+        text = re.sub(r"<[^>]+>", "", preview(**on, amount="1,090.00"))
+        assert "we owe them $100.00 now" in text and "they owe us $990.00" in text
+        assert "It also adds Difference (L) of $990.00, leaving their balance at 0.00" in text
+        text = re.sub(r"<[^>]+>", "", preview(**on, amount="90"))
+        assert "we owe them $10.00" in text and "Difference (G) of $10.00" in text
+        assert 'class="money"' in preview(**on, amount="90")  # hidden with the other amounts
+        assert "No Difference is needed" in preview(**on, amount="100")
+        assert len(rows(settings)) == 5  # nothing added
+
+    def test_shown_and_deleted_from_the_debt_tab(self, settings, client):
+        store = LedgerStore(settings)
+        store.add_debt_movement("2026-02-01", "Debt - Incurred", "Ca", "De", "100", "Dad")
+        store.add_debt_movement("2026-02-05", "Debt - Paid", "De", "Ca", "90", "Dad", remaining_as_difference=True)
+        index = len(rows(settings)) - 1
+        debt = client.get("/debt", params={"month": ""}).text
+        assert "Difference (G)" in debt and f'hx-post="/debt/movements/{index}/delete"' in debt
+        assert f"/debt/movements/{index}/edit" not in debt  # deleted only
+        fp = row_fingerprint(rows(settings).iloc[index])
+        ledger = client.get("/", params={"month": ""}).text
+        assert "A Difference added with a debt movement" in ledger
+        r = client.post(f"/debt/movements/{index}/delete", data={"fingerprint": fp})
+        assert r.status_code == 200 and r.headers["HX-Trigger"] == "debt-changed"
+        assert self.balance(settings) == pytest.approx(10)
+
+    def test_deleted_from_the_ledger_tab(self, settings, client):
+        store = LedgerStore(settings)
+        store.add_debt_movement("2026-02-01", "Debt - Incurred", "Ca", "De", "100", "Dad")
+        store.add_debt_movement("2026-02-05", "Debt - Paid", "De", "Ca", "90", "Dad", remaining_as_difference=True)
+        index = len(rows(settings)) - 1
+        assert f'hx-post="/movements/{index}/delete"' in client.get("/", params={"month": ""}).text
+        fp = row_fingerprint(rows(settings).iloc[index])
+        assert client.post(f"/movements/{index}/delete", data={"fingerprint": fp}).status_code == 200
+        assert self.balance(settings) == pytest.approx(10)
+
+    def test_one_outside_the_debt_account_stays_in_the_ledger_tab(self, settings, client):
+        with settings.ledger_path.open("a", encoding="utf-8") as f:
+            f.write("2026-02-05;Difference (G);Ca;5.00;Eq;\n")
+        index = len(rows(settings)) - 1
+        ledger = client.get("/", params={"month": ""}).text
+        assert f'hx-post="/movements/{index}/delete"' in ledger
+        assert "A Difference added with a debt movement" not in ledger
+        fp = row_fingerprint(rows(settings).iloc[index])
+        assert client.post(f"/movements/{index}/delete", data={"fingerprint": fp}).status_code == 200
+
+    def test_settles_the_results(self, settings):
+        store = LedgerStore(settings)
+        store.add_debt_movement("2026-02-01", "Debt - Incurred", "Ca", "De", "100", "Dad")
+        before = store.load().balances_today()
+        store.add_debt_movement("2026-02-05", "Debt - Paid", "De", "Ca", "90", "Dad", remaining_as_difference=True)
+        after = store.load().balances_today()
+        assert after["De"] == pytest.approx(before["De"] - 100)
+        assert after["Ca"] == pytest.approx(before["Ca"] - 90)  # the 10 not paid is a result, not money
 
 
 class TestDebtSides:

@@ -17,17 +17,17 @@ router = APIRouter(prefix="/api/debt", tags=["debt"])
 def create_debt_movement(store: StoreDep, movement: DebtMovementIn):
     """Added to the ledger CSV like the others."""
     try:
-        store.add_debt_movement(**movement.model_dump())
+        difference = store.add_debt_movement(**movement.model_dump())
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from None
-    return {"ok": True}
+    return {"ok": True, "difference": dict(zip(("base_movement", "amount"), difference)) if difference else None}
 
 
 @router.delete("/movements/{index}")
 def delete(store: StoreDep, index: int, fingerprint: Annotated[str | None, Query()] = None):
     """Deleted from the ledger CSV, but only here."""
     try:
-        store.delete(index, fingerprint, debt=True)
+        store.delete_debt_movement(index, fingerprint)
     except StaleRowError as e:
         raise HTTPException(status_code=409, detail=str(e)) from None
     except ValueError as e:

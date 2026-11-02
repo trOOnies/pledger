@@ -37,6 +37,9 @@ from pledger.web.store.constants import (
     CORRECTION_LOSS,
     CORRECTIONS,
     DEBT_BASES,
+    DIFFERENCE_GAIN,
+    DIFFERENCE_LOSS,
+    DIFFERENCES,
     GENERATED,
     ID_COLUMN,
     INITIAL_GAIN,
@@ -217,6 +220,23 @@ class Snapshot:
         gain = (difference > 0) == (account.acc_type == AccountType.ASSET)
         return CORRECTION_GAIN if gain else CORRECTION_LOSS, amount
 
+    def debt_remaining(self, base_movement: str, amount: float, who: str) -> tuple[float, float]:
+        """
+        What we owe `who` in all the ledger (negative: what they owe us), and what would
+        remain after a movement of this amount of this one of DEBT_BASES.
+        """
+        balance = next((a.creditors[who].amount for a in self.debt_accounts() if who in a.creditors), 0.0)
+        sign = 1 if DEBT_BASES[base_movement] == LedgerSide.CREDIT else -1
+        return balance, round(balance + sign * amount, 2)
+
+    @staticmethod
+    def difference_of(remaining: float) -> tuple[str, float] | None:
+        """The DIFFERENCES base movement and the amount settling what remains with someone (see debt_remaining). None if under a cent."""
+        amount = round(abs(remaining), 2)
+        if amount < 0.005:
+            return None
+        return DIFFERENCE_GAIN if remaining > 0 else DIFFERENCE_LOSS, amount
+
     def conversion_balances(self) -> dict[int, float]:
         """
         The balance in its currency of the account in another currency of each conversion,
@@ -376,6 +396,13 @@ class Snapshot:
             if (b := self.base_movements.get(n)) is not None and b.internal and b.move_type == t
         }
 
+    def difference_base_movements(self) -> dict[str, MovementBase]:
+        """The base movements of the differences of the Debt tab (DIFFERENCES) that are internal ones of their type."""
+        return {
+            n: b for n, t in DIFFERENCES.items()
+            if (b := self.base_movements.get(n)) is not None and b.internal and b.move_type == t
+        }
+
     def ledger_base_movements(self) -> dict[str, MovementBase]:
         """The base movements that can be picked in the Ledger tab: the manual ones but those of other tabs."""
         other_tabs = (
@@ -386,13 +413,13 @@ class Snapshot:
     def invest_base_movements(self) -> dict[str, MovementBase]:
         """
         The internal base movements handled in the Investments tab: those of the
-        INVEST result type (but the CORRECTIONS) and the transfers with an INVESTMENT side. The movements of
+        INVEST result type (but the CORRECTIONS and DIFFERENCES) and the transfers with an INVESTMENT side. The movements of
         the INTEREST ones are in the interest CSV, and those of the others in the
         investments CSV.
         """
         return {
             n: b for n, b in self.base_movements.items()
-            if b.internal and n not in CORRECTIONS and (
+            if b.internal and n not in CORRECTIONS and n not in DIFFERENCES and (
                 b.result_type.name == INVEST if b.result_type is not None
                 else INVESTMENT in {b.debit_special, b.credit_special}
             )

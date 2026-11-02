@@ -59,6 +59,7 @@ def _check_invest(snapshot: Snapshot, base_name: str, invest: bool, action: str)
     tab_bases = (
         snapshot.debt_base_movements().keys() | snapshot.card_payment_base_movements().keys()
         | snapshot.correction_base_movements().keys() | snapshot.conversion_base_movements().keys()
+        | snapshot.difference_base_movements().keys()
     )
     if snapshot.base_movements[base_name].internal and not is_invest and base_name not in tab_bases:
         raise ValueError(f"Base movement {base_name!r} is internal and its movements cannot be {action} by hand")

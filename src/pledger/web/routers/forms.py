@@ -50,6 +50,7 @@ from pledger.web.views import (
     build_work,
     conversion_fields,
     conversion_filter,
+    debt_difference,
     debt_form_fields,
     invest_fields,
     invest_filter,
@@ -231,12 +232,15 @@ def edit_movement(
 
 @router.post("/movements/{index}/delete", response_class=Response)
 def delete_movement(store: StoreDep, index: int, fingerprint: Annotated[str, Form()]):
-    """Delete a movement of the Ledger tab, or a balance correction (see LedgerStore.correct_balance)."""
+    """Delete a movement of the Ledger tab, a balance correction (see LedgerStore.correct_balance) or a Difference."""
     snapshot = store.load()
     rows = snapshot.rows
-    correction = 0 <= index < len(rows) and rows.iloc[index]["base_movement"] in snapshot.correction_base_movements()
+    base = rows.iloc[index]["base_movement"] if 0 <= index < len(rows) else None
     try:
-        store.delete(index, fingerprint, correction=correction)
+        store.delete(
+            index, fingerprint, correction=base in snapshot.correction_base_movements(),
+            difference=base in snapshot.difference_base_movements(),
+        )
     except StaleRowError as e:
         raise HTTPException(status_code=409, detail=str(e)) from None
     except ValueError as e:
@@ -501,13 +505,17 @@ def create_debt_movement(
     acc_debit: Annotated[str, Form()] = "",
     acc_credit: Annotated[str, Form()] = "",
     comment: Annotated[str, Form()] = "",
+    remaining_as_difference: Annotated[bool, Form()] = False,
 ):
     values = {
         "move_date": move_date, "base_movement": base_movement, "acc_debit": acc_debit,
         "acc_credit": acc_credit, "amount": amount, "who": who, "comment": comment,
+        "remaining_as_difference": remaining_as_difference,
     }
     try:
-        store.add_debt_movement(move_date, base_movement, acc_debit, acc_credit, amount, who, comment)
+        difference = store.add_debt_movement(
+            move_date, base_movement, acc_debit, acc_credit, amount, who, comment, remaining_as_difference,
+        )
     except ValueError as e:
         return render_debt_form(request, store.load(), values, error=str(e))
     # Keep date and base movement to speed up entering similar movements.
@@ -515,6 +523,7 @@ def create_debt_movement(
     response = render_debt_form(
         request, store.load(), keep,
         success=f"Added {base_movement} ({who.strip()}): {money(float(amount.replace(',', '')), store.settings.currency)}"
+        + (f" and {difference[0]}: {money(difference[1], store.settings.currency)}" if difference else "")
         + (" (dated in the future)" if move_date > dt.date.today().isoformat() else ""),
     )
     response.headers["HX-Trigger"] = "debt-changed"
@@ -972,6 +981,16 @@ def form_debt_bases(request: Request, store: StoreDep, debt_kind: str = ""):
     )
 
 
+@router.get("/form/debt-difference")
+def form_debt_difference(
+    request: Request, store: StoreDep, base_movement: str = "", who: str = "", amount: str = "",
+    remaining_as_difference: bool = False,
+):
+    """What the debt movement form would leave with someone, and the Difference settling it."""
+    context = debt_difference(store.load(), base_movement, who, amount) if remaining_as_difference else {}
+    return templates.TemplateResponse(request, "_debt_difference.html", {"asked": remaining_as_difference, **context})
+
+
 @router.get("/form/debt-movement")
 def debt_movement_form(request: Request, store: StoreDep):
     """A new debt movement form, e.g. to cancel editing one."""
@@ -1079,7 +1098,7 @@ def edit_card_payment(
 @router.post("/debt/movements/{index}/delete", response_class=Response)
 def delete_debt_movement(store: StoreDep, index: int, fingerprint: Annotated[str, Form()]):
     try:
-        store.delete(index, fingerprint, debt=True)
+        store.delete_debt_movement(index, fingerprint)
     except StaleRowError as e:
         raise HTTPException(status_code=409, detail=str(e)) from None
     except ValueError as e:

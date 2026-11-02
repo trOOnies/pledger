@@ -50,6 +50,7 @@ class PriceIn(BaseModel):
 
 class DebtMovementIn(MovementIn):
     who: str  # someone of its debt account, named first in its comment
+    remaining_as_difference: bool = False  # settle what remains with them with a Difference
 
 
 class ConversionIn(BaseModel):

@@ -1,0 +1,11 @@
+{# The effect of the debt movement form on the balance with someone (views.debt_difference). #}
+{% macro balance_with(value) %}{% if value > 0.005 %}we owe them <span class="money">{{ value | money }}</span>{% elif value < -0.005 %}they owe us <span class="money">{{ (-value) | money }}</span>{% else %}settled{% endif %}{% endmacro %}
+{% if asked %}
+{% if who is defined %}
+<p class="msg warn small"><strong>{{ who }}</strong>: {{ balance_with(balance) }} now; after this movement, {{ balance_with(remaining) }}.
+  {% if base %}It also adds <strong>{{ base }}</strong> of <span class="money">{{ amount | money }}</span>, leaving their balance at 0.00.
+  {% else %}No Difference is needed.{% endif %}</p>
+{% else %}
+<p class="muted small">Pick who and the amount to see the Difference.</p>
+{% endif %}
+{% endif %}
