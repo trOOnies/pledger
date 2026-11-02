@@ -35,17 +35,17 @@
 </label>
 {% endmacro %}
 <div class="pair">
-  {{ currency_select("sold", "Sold currency", sold) }}
   {{ currency_select("bought", "Bought currency", bought) }}
+  {{ currency_select("sold", "Sold currency", sold) }}
 </div>
 {% if missing %}<p class="msg warn">{{ missing }}</p>{% endif %}
 <div class="pair">
-  {{ account("acc_from", "From (" ~ sold ~ ")", fields.from_fixed, fields.from_options) }}
   {{ account("acc_to", "To (" ~ bought ~ ")", fields.to_fixed, fields.to_options) }}
+  {{ account("acc_from", "From (" ~ sold ~ ")", fields.from_fixed, fields.from_options) }}
 </div>
 <div class="pair">
-  {{ amount("amount_sold", "Amount sold in " ~ sold, sold) }}
   {{ amount("amount_bought", "Amount bought in " ~ bought, bought) }}
+  {{ amount("amount_sold", "Amount sold in " ~ sold, sold) }}
 </div>
 {% if base_movement %}<p class="muted small">Saved as a <strong>{{ base_movement }}</strong> conversion.</p>
 {% elif cross and not missing %}<p class="muted small">Saved as a <strong>Foreign currency - Sold</strong> conversion of

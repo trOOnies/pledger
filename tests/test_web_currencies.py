@@ -432,6 +432,12 @@ class TestConversions:
         store.delete_conversion(1, conversion_fingerprint(snapshot.conversions.iloc[1]))
         assert len(store.load().conversions) == 1
 
+    def test_conversion_form_is_bought_then_sold(self, cross):
+        client = TestClient(create_app(cross))
+        text = client.get("/form/conversion-fields", params={"sold": "USD", "bought": "EUR"}).text
+        for bought, sold in (('name="bought"', 'name="sold"'), ('name="acc_to"', 'name="acc_from"'), ('name="amount_bought"', 'name="amount_sold"')):
+            assert text.index(bought) < text.index(sold)
+
     def test_no_cpi_card(self, cross):
         text = TestClient(create_app(cross)).get("/currencies").text
         assert '<span class="label">CPI</span>' not in text
