@@ -6,10 +6,6 @@
 {% block content %}
 <div class="view">
   <div class="cards">
-    <div class="card" title="Customer price index of {{ base.name }} at the end of the last month ended: 100 before the first month of base_currency.csv">
-      <span class="label">CPI</span><span class="num">{{ (last_month.cpi | number) if last_month else "-" }}</span>
-      {% if last_month %}<span class="muted small">at the end of {{ last_month.month }}</span>{% endif %}
-    </div>
     <div class="card" title="The inflation of {{ base.name }} in the last month ended">
       <span class="label">Inflation{% if last_month %} <small>in {{ last_month.month }}</small>{% endif %}</span>
       <span class="num">{{ ("%.2f%%" | format(100 * last_month.value)) if last_month else "-" }}</span>

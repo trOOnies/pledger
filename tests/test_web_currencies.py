@@ -432,6 +432,10 @@ class TestConversions:
         store.delete_conversion(1, conversion_fingerprint(snapshot.conversions.iloc[1]))
         assert len(store.load().conversions) == 1
 
+    def test_no_cpi_card(self, cross):
+        text = TestClient(create_app(cross)).get("/currencies").text
+        assert '<span class="label">CPI</span>' not in text
+
     def test_cross_conversion_form(self, cross):
         client = TestClient(create_app(cross))
         r = client.get("/form/conversion-fields", params={"sold": "USD", "bought": "EUR"})
