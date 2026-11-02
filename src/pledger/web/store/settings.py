@@ -48,6 +48,10 @@ class Settings:
     prices_path: Path | None = None  # missing: no prices of the investments yet (created when adding one)
     services_path: Path | None = None  # missing: no monthly values of the services yet (created when adding one)
     audits_path: Path | None = None  # None: the audits aren't kept; missing: none yet (created with the first one)
+    budgets_path: Path | None = None  # missing: no budgets yet (created when setting one)
+    goals_path: Path | None = None  # missing: no saving goals yet (created when adding one)
+    trips_path: Path | None = None  # missing: no trips yet (created when adding one)
+    trip_items_path: Path | None = None  # missing: no planned expenses yet (created when adding one)
     currency: str = "$"
     allowed_hosts: tuple[str, ...] | None = LOCAL_HOSTS  # None: any host
 
@@ -73,6 +77,10 @@ class Settings:
             prices_path=Path(os.environ.get("PLEDGER_PRICES", "info/movements/prices.csv")),
             services_path=Path(os.environ.get("PLEDGER_SERVICES", "info/services.csv")),
             audits_path=Path(os.environ.get("PLEDGER_AUDITS", "info/audits.csv")),
+            budgets_path=Path(os.environ.get("PLEDGER_BUDGETS", "info/budgets.csv")),
+            goals_path=Path(os.environ.get("PLEDGER_GOALS", "info/goals.csv")),
+            trips_path=Path(os.environ.get("PLEDGER_TRIPS", "info/trips.csv")),
+            trip_items_path=Path(os.environ.get("PLEDGER_TRIP_ITEMS", "info/trip_items.csv")),
             currency=os.environ.get("PLEDGER_CURRENCY", "$"),
             allowed_hosts=allowed_hosts(os.environ.get("PLEDGER_ALLOWED_HOSTS", "")),
         )
@@ -89,8 +97,9 @@ class Settings:
 
     def expected_files(self) -> dict[Path, str]:
         """
-        Every data file, with what it is created with when missing: the YAMLs empty,
-        the CSVs with just their header.
+        Every data file of the Snapshot, with what it is created with when missing: the YAMLs
+        empty, the CSVs with just their header. The plans (see PlanStore) aren't part of it:
+        they are created when saving the first one, so they never stop pledger from starting.
         """
         files = {
             self.accounts_path: "",

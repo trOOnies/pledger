@@ -32,6 +32,8 @@ web app.
 - [Reference](#-reference)
   - [Accounts](#accounts)
   - [Audit](#audit)
+  - [Budget](#budget)
+  - [Trip](#trip)
   - [Base movements and internal movements](#base-movements-and-internal-movements)
   - [Currencies and inflation](#currencies-and-inflation)
   - [Investments](#investments)
@@ -78,6 +80,8 @@ A FastAPI + HTMX UI, one tab per area:
 | 🤝 **Debt** | Who we owe and who owes us in the debt account `De` (people, services and companies), with alerts and the movements of the month, each with what we owe whoever it names after it. The debt movements are added and edited here. |
 | 🧾 **Services** | The services of the debt account with their base movements and monthly values, what was owed to them this month and in all, and what we owe them now, with the table of monthly values and the movements owed to each one. The monthly values are set here. |
 | 💳 **Credit Cards** | What we owe on each card (also in its currency, for a card in another one), what was charged and paid in the month, a chart of the monthly charges, the net owed over equity, and the movements of the month, each with what we owe on its card after it. The card payments are added and edited here. |
+| 🎯 **Budget** | Monthly budgets by loss base movement against what was spent, and saving goals tracking the balance of an account. See [Budget](#budget). |
+| ✈️ **Trip** | The planned expenses of a trip, in any currency, against what was spent on it in the ledger. See [Trip](#trip). |
 | 🔍 **Audit** | Fill in the balances you checked by hand, without seeing pledger's, then compare them with the actual ones and, if you want, add a correction for each difference. |
 | ❓ **Help** | The concepts, explained for everyday users, in sections with an index and Previous and Next links. |
 
@@ -117,6 +121,10 @@ with an environment variable:
 | `movements/interest.csv` | | `PLEDGER_INTEREST` | The interest on money of the regular accounts |
 | `movements/prices.csv` | | `PLEDGER_PRICES` | The prices of the investments |
 | `audits.csv` | | `PLEDGER_AUDITS` | The history of the audits |
+| `budgets.csv` | | `PLEDGER_BUDGETS` | The monthly budgets |
+| `goals.csv` | | `PLEDGER_GOALS` | The saving goals |
+| `trips.csv` | | `PLEDGER_TRIPS` | The trips |
+| `trip_items.csv` | | `PLEDGER_TRIP_ITEMS` | The planned expenses of the trips |
 | `currencies.yaml` | ✅ | `PLEDGER_CURRENCIES` | Base and other currencies (with `base_currency.csv` and `currencies.csv` next to it) |
 | `investment.yaml` | | `PLEDGER_INVESTMENTS` | The investments of each investment account |
 | `creditors.yaml` | | `PLEDGER_CREDITORS` | Who each debt account is owed by or owes to |
@@ -282,6 +290,32 @@ internal:
 ```
 
 The Ledger tab shows them with a 🟣 linking to their account, and can delete them.
+
+### Budget
+
+The Budget tab compares the budgets of a month with what was spent then. A budget is a monthly
+amount for a loss base movement in the base currency, kept in `budgets.csv`. It holds from its
+month on, until a later month of that base movement changes it, so past months keep the budget they
+had. Stopping one writes a 0 from the month picked on, or removes it if it had no earlier budget.
+Refunds aren't taken off what was spent, as they are gains of their own base movements.
+
+A saving goal, in `goals.csv`, is a target in the currency of an asset account, optionally by a due
+date. What is saved is the balance of that account today, so goals on the same account each count
+all of it, and are flagged. With a due date, it shows what to save each month to get there.
+
+Neither of them adds movements to the ledger, and saving a goal with the name of another updates it.
+
+### Trip
+
+The Trip tab plans a trip, in `trips.csv`, with its expenses, in `trip_items.csv`. Each expense has a
+category and its own currency, and adds up in the base currency at today's value of it.
+
+What was spent is the movements of the base movement picked for the trip, e.g. `Going out - Trips
+(L)`, listed in the tab. As the ledger can date movements on the Monday of their week, they count
+from the Monday of the week the trip starts to the first Monday after it ends, so with movements
+dated by day a few days around the trip count too. Before it starts, the tab shows what to set
+aside each month. Nothing here adds movements to the ledger, and saving a trip with the name of
+another updates it, keeping its expenses.
 
 ### Base movements and internal movements
 

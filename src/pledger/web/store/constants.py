@@ -69,6 +69,21 @@ AUDIT_COLUMNS = [
     "audit", "date", "account", "currency", "inputted", "actual", "difference", "correction", "amount", "correction_id",
 ]
 
+# The plans of the Budget and Trip tabs. A budget holds from its month on, until a later one
+# of its base movement. The amount of a goal is in the currency of its account, and that
+# of a planned expense in its own one.
+BUDGET_COLUMNS = ["month", "base_movement", "amount"]
+
+
+GOAL_COLUMNS = ["name", "account", "target", "due"]
+
+
+TRIP_COLUMNS = ["name", "start", "end", "base_movement"]
+
+
+TRIP_ITEM_COLUMNS = ["id", "trip", "category", "description", "amount", "currency"]
+
+
 CONVERSION_COLUMNS = ["move_date", "base_movement", "acc_debit", BASE_AMOUNT, "acc_credit", "comment", OTHER_AMOUNT]
 
 

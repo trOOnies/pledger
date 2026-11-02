@@ -18,6 +18,7 @@ from pledger.web.views.audit import (
     audit_history,
     audit_results,
 )
+from pledger.web.views.budget import budget_form_fields, build_budgets, build_goals
 from pledger.web.views.charts import (
     MAX_CHART_POINTS,
     column_chart,
@@ -117,6 +118,7 @@ from pledger.web.views.services import (
     build_services,
     service_form,
 )
+from pledger.web.views.trip import build_trips, ledger_weeks
 from pledger.web.views.work import (
     build_work,
     last_month_fields,
@@ -154,16 +156,20 @@ __all__ = [
     "base_fields",
     "base_sides",
     "bases_by_type",
+    "budget_form_fields",
     "build_accounts",
+    "build_budgets",
     "build_conversions",
     "build_credit_cards",
     "build_currencies",
     "build_debts",
+    "build_goals",
     "build_interest",
     "build_invest_movements",
     "build_investments",
     "build_results",
     "build_services",
+    "build_trips",
     "build_view",
     "build_work",
     "card_payment_fields",
@@ -192,6 +198,7 @@ __all__ = [
     "is_closed",
     "last_month_fields",
     "ledger_link",
+    "ledger_weeks",
     "line_chart",
     "matches",
     "month_end",

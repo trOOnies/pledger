@@ -179,7 +179,7 @@ main { padding: 1rem 1.5rem 3rem; max-width: 1400px; width: 100%; margin: 0 auto
 /* Result types and base movements one on top of the other when their tables don't fit side by side */
 @media (max-width: 1200px) { .layout.setup { grid-template-columns: minmax(0, 1fr); } }
 .layout .column { display: grid; gap: 1rem; min-width: 0; }
-#view, #audit, .layout > .view, main > .view, #debt-view > .view, #credit-cards-view > .view, #services-view > .view { display: grid; gap: 1rem; min-width: 0; }
+#view, #audit, #budget, #trip, .layout > .view, main > .view, #debt-view > .view, #credit-cards-view > .view, #services-view > .view { display: grid; gap: 1rem; min-width: 0; }
 
 .panel {
   background: var(--surface); border: 1px solid var(--border);
@@ -460,6 +460,11 @@ tfoot th { position: static; color: var(--text); border-top: 2px solid var(--bor
   .help-toc { position: static; }
   .cards { grid-template-columns: 1fr; }
 }
+
+/* The progress bars of the budgets and saving goals. Wide tables scroll inside their panel. */
+#budget .view, #trip .view { grid-template-columns: minmax(0, 1fr); }
+th.budget-bar, td.budget-bar { width: 8rem; min-width: 6rem; }
+td.budget-bar .bar-track { display: block; }
 
 /* The prices form shows every investment, with a compact date and new price */
 #prices-form .table-wrap { max-height: none; }

@@ -410,6 +410,10 @@ class Snapshot:
         )
         return {n: b for n, b in self.manual_base_movements().items() if n not in other_tabs}
 
+    def loss_base_movements(self) -> dict[str, MovementBase]:
+        """The manual loss base movements, that money is spent on: what the Budget and Trip tabs plan."""
+        return {n: b for n, b in self.manual_base_movements().items() if b.move_type == MovementType.LOSS}
+
     def invest_base_movements(self) -> dict[str, MovementBase]:
         """
         The internal base movements handled in the Investments tab: those of the

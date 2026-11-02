@@ -1,0 +1,124 @@
+{# The Budget tab: the budgets of a month against what was spent, and the saving goals (views.budget). #}
+{% macro progress(share, over=False) %}<span class="bar-track"><span class="bar {{ 'loss' if over else 'gain' }}" style="width: {{ '%.1f' | format(share if share < 100 else 100) }}%"></span></span>{% endmacro %}
+{% macro own(value, currency) %}<span class="money">{{ currency }} {{ "{:,.2f}".format(value) }}</span>{% endmacro %}
+<div class="layout">
+  <aside class="column">
+    <section class="panel">
+      <form class="stack" hx-post="/budget/budgets" hx-target="#budget">
+        <h2>Set a budget</h2>
+        {% if budget_error %}<p class="msg error">{{ budget_error }}</p>{% endif %}
+        {% if budget_success %}<p class="msg success">{{ budget_success }}</p>{% endif %}
+        <input type="hidden" name="month" value="{{ month }}">
+        <label>Base movement
+          <select name="base_movement" required>
+            <option value="">Choose…</option>
+            {% for b in loss_bases %}<option {% if b == values.base_movement %}selected{% endif %}>{{ b }}</option>{% endfor %}
+          </select>
+        </label>
+        <label>Monthly amount
+          <span class="money-input">
+            <span class="prefix">{{ currency }}</span>
+            <input name="amount" inputmode="decimal" min="0" value="{{ values.amount }}" placeholder="0.00" required autocomplete="off" data-money>
+          </span>
+        </label>
+        <p class="muted small">From {{ month }} on, until you change it: the months before keep their budget.</p>
+        <button type="submit">Set budget</button>
+      </form>
+    </section>
+    <section class="panel">
+      <form class="stack" hx-post="/budget/goals" hx-target="#budget">
+        <h2>Saving goal</h2>
+        {% if goal_error %}<p class="msg error">{{ goal_error }}</p>{% endif %}
+        {% if goal_success %}<p class="msg success">{{ goal_success }}</p>{% endif %}
+        <input type="hidden" name="month" value="{{ month }}">
+        <label>Name
+          <input name="name" value="{{ values.name }}" required autocomplete="off" list="goal-names">
+        </label>
+        <datalist id="goal-names">{% for g in goals %}<option value="{{ g.name }}">{% endfor %}</datalist>
+        <label>Account
+          <select name="account" required>
+            <option value="">Choose…</option>
+            {% for a in goal_accounts %}<option {% if a == values.account %}selected{% endif %}>{{ a }}</option>{% endfor %}
+          </select>
+        </label>
+        <div class="pair">
+          <label>Target
+            <input name="target" inputmode="decimal" min="0" value="{{ values.target }}" placeholder="0.00" required autocomplete="off" data-money>
+          </label>
+          <label><span>Due <em class="optional">(optional)</em></span>
+            <input type="date" name="due" value="{{ values.due }}">
+          </label>
+        </div>
+        <p class="muted small">The target is in the currency of the account, and its balance is what is saved. Saving the same name again updates that goal.</p>
+        <button type="submit">Save goal</button>
+      </form>
+    </section>
+  </aside>
+  <div class="view">
+    <div class="filters">
+      <label>Month
+        <input type="month" name="month" value="{{ month }}" hx-get="/budget" hx-target="#budget" hx-trigger="change" hx-push-url="true">
+      </label>
+    </div>
+    <div class="cards">
+      <div class="card" title="What the budgets of {{ month }} add up to"><span class="label">Budgeted</span><span class="num money">{{ budgeted | money }}</span></div>
+      <div class="card" title="What was spent in {{ month }} on the base movements with a budget"><span class="label">Spent</span><span class="num money">{{ spent | money }}</span></div>
+      <div class="card" title="Budgeted minus spent"><span class="label">Left</span><span class="num money {{ 'loss' if left < 0 }}">{{ left | money }}</span></div>
+    </div>
+    <section class="panel">
+      <h2>Budgets <small>{{ month }}{% if over %}, {{ over }} over budget{% endif %}</small></h2>
+      <div class="table-wrap">
+        <table data-sortable="budgets">
+          <thead><tr><th>Base movement</th><th class="num">Budget</th><th class="num">Spent</th><th class="num">Left</th><th class="num">Used</th><th class="budget-bar"></th><th></th></tr></thead>
+          <tbody>
+          {% for b in budgets %}
+          <tr>
+            <td class="nowrap"><strong>{{ b.base }}</strong></td>
+            <td class="num money" data-sort="{{ b.budget }}">{{ b.budget | money }}</td>
+            <td class="num money" data-sort="{{ b.spent }}">{{ b.spent | money }}</td>
+            <td class="num money {{ 'loss' if b.over }}" data-sort="{{ b.left }}">{{ b.left | money }}</td>
+            <td class="num {{ 'loss' if b.over }}" data-sort="{{ b.share }}">{{ "%.0f%%" | format(b.share) }}</td>
+            <td class="budget-bar">{{ progress(b.share, b.over) }}</td>
+            <td><button class="icon" title="Stop budgeting it from {{ month }} on" aria-label="Stop budgeting {{ b.base }}"
+              hx-post="/budget/budgets/stop" hx-vals='{{ {"month": month, "base_movement": b.base} | tojson }}' hx-target="#budget"
+              hx-confirm="Stop budgeting {{ b.base }} from {{ month }} on?">&times;</button></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="7" class="muted">No budgets in {{ month }}: set one with the form.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="muted small">Spending on base movements without a budget in {{ month }}: <span class="money">{{ not_budgeted | money }}</span>.
+        Refunds aren't taken off, as they are gains of their own base movements.</p>
+    </section>
+    <section class="panel">
+      <h2>Saving goals <small>{{ goals | length }}</small></h2>
+      <div class="table-wrap">
+        <table data-sortable="goals">
+          <thead><tr><th>Goal</th><th>Account</th><th class="num">Saved</th><th class="num">Target</th><th class="num">Left</th><th class="num">Reached</th><th class="budget-bar"></th><th>Due</th><th class="num" title="What is left over the months up to the due date">A month</th><th></th></tr></thead>
+          <tbody>
+          {% for g in goals %}
+          <tr>
+            <td class="nowrap"><strong>{{ g.name }}</strong></td>
+            {% if g.shared %}<td class="nowrap hint warn" title="Other goals are on this account: each one counts all of its balance">⚠ {{ g.account }}</td>{% else %}<td>{{ g.account }}</td>{% endif %}
+            <td class="num" data-sort="{{ g.saved }}">{{ own(g.saved, g.currency) }}</td>
+            <td class="num" data-sort="{{ g.target }}">{{ own(g.target, g.currency) }}</td>
+            <td class="num" data-sort="{{ g.left }}">{{ own(g.left, g.currency) }}</td>
+            <td class="num {{ 'gain' if g.done }}" data-sort="{{ g.share }}">{{ "%.0f%%" | format(g.share) }}</td>
+            <td class="budget-bar">{{ progress(g.share) }}</td>
+            {% if g.overdue %}<td class="nowrap hint warn" title="Its due date went by before reaching it">⚠ {{ g.due }}</td>{% else %}<td class="nowrap {{ 'muted' if not g.due }}">{{ g.due or "-" }}</td>{% endif %}
+            {% if g.monthly is none or g.done %}<td class="num muted">-</td>{% else %}<td class="num" data-sort="{{ g.monthly }}">{{ own(g.monthly, g.currency) }}</td>{% endif %}
+            <td><button class="icon" title="Delete" aria-label="Delete the goal {{ g.name }}"
+              hx-post="/budget/goals/delete" hx-vals='{{ {"name": g.name, "month": month} | tojson }}' hx-target="#budget"
+              hx-confirm="Delete the goal {{ g.name }}?">&times;</button></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="10" class="muted">No saving goals yet: add one with the form.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>

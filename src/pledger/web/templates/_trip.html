@@ -1,0 +1,160 @@
+{# The Trip tab: the trips, and the planned expenses and movements of the one picked (views.trip). #}
+{% from "_id.html" import id_cell, id_header %}
+{% macro own(value, code) %}<span class="money">{{ code }} {{ "{:,.2f}".format(value) }}</span>{% endmacro %}
+<div class="layout">
+  <aside class="column">
+    <section class="panel">
+      <form class="stack" hx-post="/trip/trips" hx-target="#trip">
+        <h2>New trip</h2>
+        {% if trip_error %}<p class="msg error">{{ trip_error }}</p>{% endif %}
+        {% if trip_success %}<p class="msg success">{{ trip_success }}</p>{% endif %}
+        <label>Name
+          <input name="name" value="{{ values.name }}" required autocomplete="off" list="trip-names">
+        </label>
+        <datalist id="trip-names">{% for t in trips %}<option value="{{ t.name }}">{% endfor %}</datalist>
+        <div class="pair">
+          <label>Start <input type="date" name="start" value="{{ values.start }}" required></label>
+          <label>End <input type="date" name="end" value="{{ values.end }}" required></label>
+        </div>
+        <label><span>Base movement <em class="optional">(optional)</em></span>
+          <select name="base_movement">
+            <option value="">None</option>
+            {% set picked = values.base_movement if values.base_movement is defined else default_base %}
+            {% for b in loss_bases %}<option {% if b == picked %}selected{% endif %}>{{ b }}</option>{% endfor %}
+          </select>
+        </label>
+        <p class="muted small">Its movements in the ledger during the trip count as spent. Saving the same name again updates that trip.</p>
+        <button type="submit">Save trip</button>
+      </form>
+    </section>
+    {% if trip %}
+    <section class="panel">
+      <form class="stack" hx-post="/trip/items" hx-target="#trip">
+        <h2>Planned expense</h2>
+        {% if item_error %}<p class="msg error">{{ item_error }}</p>{% endif %}
+        {% if item_success %}<p class="msg success">{{ item_success }}</p>{% endif %}
+        <input type="hidden" name="trip" value="{{ trip.name }}">
+        <label>Category
+          <select name="category">
+            {% for c in category_names %}<option {% if c == values.category %}selected{% endif %}>{{ c }}</option>{% endfor %}
+          </select>
+        </label>
+        <label><span>Description <em class="optional">(optional)</em></span>
+          <input name="description" value="{{ values.description }}" autocomplete="off">
+        </label>
+        <div class="pair">
+          <label>Amount
+            <input name="amount" inputmode="decimal" min="0" value="{{ values.amount }}" placeholder="0.00" required autocomplete="off" data-money>
+          </label>
+          <label>Currency
+            <select name="currency">
+              {% for c in currencies %}<option {% if c == values.currency %}selected{% endif %}>{{ c }}</option>{% endfor %}
+            </select>
+          </label>
+        </div>
+        <button type="submit">Add expense</button>
+      </form>
+    </section>
+    {% endif %}
+  </aside>
+  <div class="view">
+    {% if not trip %}
+    <div class="panel"><h2>Trips</h2><p class="muted">No trips yet: add one with the form, then plan its expenses.</p></div>
+    {% else %}
+    <div class="filters">
+      <label>Trip
+        <select name="trip" hx-get="/trip" hx-target="#trip" hx-trigger="change" hx-push-url="true">
+          {% for t in trips %}<option {% if t.name == trip.name %}selected{% endif %}>{{ t.name }}</option>{% endfor %}
+        </select>
+      </label>
+    </div>
+    {% if no_value %}<p class="msg warn small">No value of {{ no_value | join(", ") }}: those expenses aren't in the totals.</p>{% endif %}
+    <div class="cards">
+      <div class="card" title="The planned expenses, in {{ base_currency }} at today's values"><span class="label">Planned</span><span class="num money">{{ trip.planned | money }}</span><span class="muted small"><span class="money">{{ trip.per_day | money }}</span> a day, {{ trip.days }} day{{ "s" if trip.days != 1 }}</span></div>
+      <div class="card" title="The movements of {{ trip.base_movement or 'its base movement' }} during the trip"><span class="label">Spent</span><span class="num money">{{ trip.spent | money }}</span></div>
+      <div class="card" title="Planned minus spent"><span class="label">Left</span><span class="num money {{ 'loss' if trip.left < 0 }}">{{ trip.left | money }}</span>{% if trip.monthly %}<span class="muted small"><span class="money">{{ trip.monthly | money }}</span> a month until it starts</span>{% endif %}</div>
+    </div>
+    <section class="panel">
+      <h2>{{ trip.name }} <small>{{ trip.start }} to {{ trip.end }}, {{ trip.status | lower }}</small></h2>
+      <div class="table-wrap">
+        <table data-sortable="trip-items">
+          <thead><tr><th>Category</th><th>Description</th><th class="num">Amount</th><th class="num">In {{ base_currency }}</th><th></th></tr></thead>
+          <tbody>
+          {% for i in items %}
+          <tr>
+            <td>{{ i.category or "Other" }}</td>
+            <td class="muted money">{{ i.description }}</td>
+            <td class="num" data-sort="{{ i.amount }}">{{ own(i.amount, i.currency) }}</td>
+            {% if i.base is none %}<td class="num muted">-</td>{% else %}<td class="num money" data-sort="{{ i.base }}">{{ i.base | money }}</td>{% endif %}
+            <td><button class="icon" title="Delete" aria-label="Delete this expense"
+              hx-post="/trip/items/delete" hx-vals='{{ {"trip": trip.name, "item": i.id} | tojson }}' hx-target="#trip"
+              hx-confirm="Delete this {{ (i.category or 'Other') | lower }} expense?">&times;</button></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="muted">Nothing planned yet: add expenses with the form.</td></tr>
+          {% endfor %}
+          </tbody>
+          {% if items %}<tfoot><tr><th colspan="3">Total</th><th class="num money">{{ trip.planned | money }}</th><th></th></tr></tfoot>{% endif %}
+        </table>
+      </div>
+      {% if categories | length > 1 %}
+      <div class="composition">
+        {% for c in categories %}
+        <div class="bar-row">
+          <span class="bar-name">{{ c.name }}</span>
+          <span class="num money">{{ c.value | money }}</span>
+          <span class="num muted share">{{ "%.1f%%" | format(c.share) }}</span>
+          <span class="bar-track"><span class="bar liability" style="width: {{ '%.1f' | format(c.share) }}%"></span></span>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </section>
+    <section class="panel">
+      <h2>Spent <small>{{ trip.movements | length }} movement{{ "s" if trip.movements | length != 1 }}{% if trip.base_movement %} of {{ trip.base_movement }}{% endif %}</small></h2>
+      <div class="table-wrap">
+        <table data-sortable="trip-movements">
+          <thead><tr>{{ id_header() }}<th>Date</th><th>Credit</th><th class="num">Amount</th><th>Comment</th></tr></thead>
+          <tbody>
+          {% for m in trip.movements %}
+          <tr>
+            {{ id_cell(m.id, ledger_link(m.id, m.date) if m.id) }}
+            <td class="nowrap">{{ m.date }}</td>
+            <td>{{ m.credit }}</td>
+            <td class="num money" data-sort="{{ m.amount }}">{{ m.amount | money }}</td>
+            <td class="muted money">{{ m.comment }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="5" class="muted">{{ "No movements yet." if trip.base_movement else "Save the trip with a base movement to see them." }}</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <p class="muted small">As the ledger can date movements on the Monday of their week, this counts from the Monday of the week it starts to the first Monday after it ends.</p>
+    </section>
+    <section class="panel">
+      <h2>All trips <small>{{ trips | length }}</small></h2>
+      <div class="table-wrap">
+        <table data-sortable="trips">
+          <thead><tr><th>Trip</th><th>Start</th><th>End</th><th>Status</th><th class="num">Planned</th><th class="num">Spent</th><th></th></tr></thead>
+          <tbody>
+          {% for t in trips %}
+          <tr>
+            <td class="nowrap"><strong><a href="/trip?trip={{ t.name | urlencode }}">{{ t.name }}</a></strong></td>
+            <td class="nowrap">{{ t.start }}</td>
+            <td class="nowrap">{{ t.end }}</td>
+            <td>{{ t.status }}</td>
+            <td class="num money" data-sort="{{ t.planned }}">{{ t.planned | money }}</td>
+            <td class="num money" data-sort="{{ t.spent }}">{{ t.spent | money }}</td>
+            <td><button class="icon" title="Delete" aria-label="Delete the trip {{ t.name }}"
+              hx-post="/trip/trips/delete" hx-vals='{{ {"name": t.name} | tojson }}' hx-target="#trip"
+              hx-confirm="Delete the trip {{ t.name }} and its planned expenses? The ledger stays as it is.">&times;</button></td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    {% endif %}
+  </div>
+</div>
