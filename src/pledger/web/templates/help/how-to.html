@@ -42,6 +42,61 @@
   accounts with one can have interest on money: the <a href="/investments">Investments</a> tab lists them in its
   <em>Interest on money</em> section and warns about each past week, or month, without a movement of interest of them.</p>
 
+<h3>🧭 Which kind of account?</h3>
+<p>Before adding an account, follow the questions from the top: the first <strong>Yes</strong> tells you what to
+  use. Some answers are not a new account at all, but an entry of an account that already exists.</p>
+<div class="flow" role="group" aria-label="Choosing the kind of a new account">
+  <p class="flow-start">Is it something you <strong>own</strong>, or something you <strong>owe</strong>?</p>
+  <div class="flow-branches">
+    <ol class="flow-branch asset" aria-label="Something you own: an asset">
+      <li class="flow-head">🟦 You own it: an <strong>asset</strong></li>
+      <li class="flow-step">
+        <span class="flow-q">Does it hold <strong>investments</strong> with a quantity and a price (bonds, stocks, funds, fixed terms…)?</span>
+        <span class="flow-yes"><em>Yes</em> → an <strong>investment account</strong>: an asset listed in
+          <code>investment.yaml</code>, with its investments. Its initial amount comes from them.</span>
+      </li>
+      <li class="flow-step">
+        <span class="flow-q">Is it money that <strong>someone owes you</strong> (a loan you gave)?</span>
+        <span class="flow-yes"><em>Yes</em> → <strong>no new account</strong>: add them to <code>De</code>, the debt
+          account, in <code>creditors.yaml</code>, with a negative amount, and use the <a href="/debt">Debt</a> tab.</span>
+      </li>
+      <li class="flow-step">
+        <span class="flow-q">Is it only a <strong>step between movements</strong> that always goes back to 0.00?</span>
+        <span class="flow-yes"><em>Yes</em> → <strong>no new account</strong>: use <code>Fi</code>, the intermediary
+          (net zero). Add one of your own only if you need it apart, with the <strong>Net zero</strong> check.</span>
+      </li>
+      <li class="flow-step flow-end">
+        <span class="flow-q">None of the above (cash, a bank or wallet balance, a safe box…)</span>
+        <span class="flow-yes">→ a <strong>regular asset</strong>, from the <a href="/accounts">Accounts</a> tab. Then:
+          its <strong>currency</strong>, if not the base one; <strong>Liquid</strong> if it can be spent right away;
+          <strong>Net positive</strong> if it can never go below 0.00; and its <strong>interest frequency</strong>
+          if it earns interest.</span>
+      </li>
+    </ol>
+    <ol class="flow-branch liability" aria-label="Something you owe: a liability">
+      <li class="flow-head">🟧 You owe it: a <strong>liability</strong></li>
+      <li class="flow-step">
+        <span class="flow-q">Is it a <strong>credit card</strong>?</span>
+        <span class="flow-yes"><em>Yes</em> → a <strong>credit card account</strong>, in <code>credit_cards.yaml</code>:
+          always liquid, paid from the <a href="/credit-cards">Credit Cards</a> tab, and its purchases can be in installments.</span>
+      </li>
+      <li class="flow-step">
+        <span class="flow-q">Is it owed to a <strong>person</strong> or a <strong>service</strong> (a friend, the rent, a bill)?</span>
+        <span class="flow-yes"><em>Yes</em> → <strong>no new account</strong>: add them to <code>De</code> in
+          <code>creditors.yaml</code>, with a positive amount, and use the <a href="/debt">Debt</a> tab. Your employers
+          are there already, from the Work tab.</span>
+      </li>
+      <li class="flow-step flow-end">
+        <span class="flow-q">None of the above (a bank loan, a mortgage…)</span>
+        <span class="flow-yes">→ a <strong>regular liability</strong>, from the <a href="/accounts">Accounts</a> tab,
+          with its <strong>currency</strong> and <strong>Liquid</strong> if it is due right away.</span>
+      </li>
+    </ol>
+  </div>
+  <p class="flow-note muted small">There is no new equity account: <code>Eq</code> is the only one, and pledger
+    uses it for every gain and loss.</p>
+</div>
+
 <h3>➕ Add a result type or base movement</h3>
 <p>Go to <a href="/results">Results</a>, open <strong>New result type</strong> or
   <strong>New base movement</strong>, fill in the form and press the button. Every entry needs

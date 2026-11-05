@@ -160,6 +160,33 @@ main { padding: 1rem 1.5rem 3rem; max-width: 1400px; width: 100%; margin: 0 auto
 .help-body h3 { margin-top: 1.25rem; }
 .help-body h2 + h3 { margin-top: .25rem; }
 .help-body ul, .help-body ol { padding-left: 1.25rem; margin: 0 0 .6rem; }
+/* The flowchart of the kind of a new account (help/how-to.html): a question on top splitting
+   into the asset and liability chains, each a list of questions read down until a Yes. */
+.flow { display: grid; gap: .75rem; margin: 0 0 .6rem; }
+.flow-start {
+  margin: 0; justify-self: center; text-align: center; padding: .5rem .9rem;
+  border: 1px solid var(--accent); border-radius: 999px; background: var(--surface);
+}
+.flow-branches { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+@media (max-width: 720px) { .flow-branches { grid-template-columns: 1fr; } }
+.help-body .flow-branch { list-style: none; margin: 0; padding: 0; display: grid; gap: 0; align-content: start; }
+.flow-branch.asset { --flow: var(--series-asset); }
+.flow-branch.liability { --flow: var(--series-liability); }
+.flow-head { padding: .4rem .7rem; border-radius: 6px; background: var(--flow); color: #fff; text-align: center; }
+.flow-head strong { color: inherit; }
+.flow-step {
+  position: relative; display: grid; gap: .35rem; margin-top: 1.4rem; padding: .6rem .7rem;
+  border: 1px solid var(--border); border-left: 3px solid var(--flow); border-radius: 6px; background: var(--surface);
+}
+/* The arrow down into each step: "No" from the one above it, from the head for the first one */
+.flow-step::before {
+  content: "↓ No"; position: absolute; top: -1.35rem; left: 1rem; font-size: .75rem; color: var(--muted);
+}
+.flow-head + .flow-step::before { content: "↓"; }
+.flow-q { font-weight: 600; }
+.flow-yes { font-size: .9rem; color: var(--muted); }
+.flow-yes em { font-style: normal; font-weight: 600; color: var(--flow); }
+.flow-note { margin: 0; }
 .help-body dt { font-weight: 600; margin-top: .6rem; }
 .help-body dd { margin: .1rem 0 0; color: var(--muted); }
 .help-body .note { background: var(--bg); border-radius: 6px; padding: .5rem .75rem; }
