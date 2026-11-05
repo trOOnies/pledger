@@ -222,7 +222,10 @@
       // A column chart highlights the column of the point.
       chart.querySelectorAll(".column").forEach((c, i) => c.classList.toggle("active", points[i] === p));
       tip.style.left = `${p.x}%`;
-      tip.style.top = `${y}%`;
+      // Centered on the point, but kept inside the plot: near its top or bottom (a low
+      // column), it would run over the axis labels.
+      const half = box.height ? (50 * tip.offsetHeight) / box.height : 0;
+      tip.style.top = `${Math.min(Math.max(y, half), 100 - half)}%`;
       tip.classList.toggle("flip", p.x > 60);
       chart.classList.add("hover");
     });

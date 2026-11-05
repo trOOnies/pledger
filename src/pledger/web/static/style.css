@@ -452,6 +452,7 @@ td .swatch { display: inline-block; }
   padding: .4rem .6rem; box-shadow: 0 2px 8px rgba(0, 0, 0, .12); font-variant-numeric: tabular-nums;
 }
 .line-chart .tooltip.flip { transform: translate(calc(-100% - 12px), -50%); }
+.line-chart .tooltip { z-index: 2; }  /* over the axes */
 .tip-date { font-size: .75rem; }
 .tip-value { font-weight: 600; }
 .tip-change, .tip-real { font-size: .8rem; }
