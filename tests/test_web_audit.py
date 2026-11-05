@@ -108,8 +108,56 @@ class TestAudit:
         assert "Matches" in self.row(r.text, "Cc") and "/audit/correct" not in self.row(r.text, "Cc")
         assert "<strong>Bk</strong>" not in r.text  # left empty: not audited
         cards = re.findall(r'class="label">(.+?)</span><span class="num">(\d+)<', r.text)
-        assert cards == [("Audited", "2"), ("With a difference", "1"), ("Not audited", "4")]
+        # Fi, net zero, is always audited at 0.00
+        assert cards == [("Audited", "3"), ("With a difference", "1"), ("Not audited", "3")]
+        assert "Matches" in self.row(r.text, "Fi")
         assert 'name="balance:Ca" value="100"' in r.text and 'name="balance:Bk"' not in r.text
+
+    def test_form_is_grouped_but_confirmed_at_once(self, settings, tmp_path):
+        cards = tmp_path / "credit_cards.yaml"
+        cards.write_text("Vi:\n  description: Visa\n  initial_amount: 0\n", encoding="utf-8")
+        path = settings.accounts_path
+        path.write_text(path.read_text(encoding="utf-8").replace("liability:\n", (
+            "  Zz:\n    description: Z\n    initial_amount: 0\n  ab:\n    description: a\n    initial_amount: 0\n"
+            "liability:\n"
+        )), encoding="utf-8")
+        r = TestClient(create_app(replace(settings, credit_cards_path=cards))).get("/audit")
+        assert r.text.count('hx-post="/audit"') == 1 and r.text.count(">Confirm</button>") == 1
+        groups = re.findall(r'<h3 class="audit-group"><span aria-hidden="true">(.+?)</span> (.+?)</h3>', r.text)
+        assert groups == [
+            ("🏦", "Assets"), ("📈", "Investment accounts"), ("🤝", "Debt"), ("💳", "Credit cards"),
+            ("🧾", "Other liabilities"),
+        ]
+        names = {
+            g: re.findall(r'name="balance:(\w+)"', t.split("</table>")[0])
+            for g, t in re.findall(r'data-audit-group="(\w+)">(.*?)</table>', r.text, re.DOTALL)
+        }
+        assert names == {
+            # By currency, the base one first, then by name
+            "assets": ["ab", "Ca", "Fi", "Zz", "Bk"], "investments": ["Br"], "debt": ["De"], "credit_cards": ["Vi"],
+            "liabilities": ["Cc"],
+        }
+
+    def test_net_zero_accounts_are_fixed_at_zero(self, client):
+        fi = client.get("/audit").text.split('id="audit-Fi"')[1].split(">")[0]
+        assert 'value="0.00" readonly' in fi and 'class="fixed"' in fi
+        # Whatever is sent, it is audited at 0.00, and doesn't count as filled in
+        r = client.post("/audit", data=balance(Fi="50", Ca="1"))
+        assert "ARS 0.00" in self.row(r.text, "Fi") and "Matches" in self.row(r.text, "Fi")
+        assert "Fill in at least one balance" in client.post("/audit", data=balance(Fi="0.00")).text
+
+    def test_net_positive_accounts_cant_be_negative(self, settings, client):
+        path = settings.accounts_path
+        path.write_text(
+            path.read_text(encoding="utf-8").replace("    is_liquid: true\n    initial_amount: 0.0\n",
+                                                     "    is_liquid: true\n    initial_amount: 0.0\n    checks: [net_positive]\n", 1),
+            encoding="utf-8",
+        )
+        ca = client.get("/audit").text.split('id="audit-Ca"')[1].split(">")[0]
+        assert 'pattern="[^\\-]*"' in ca
+        r = client.post("/audit", data=balance(Ca="-5", Bk="1"))
+        assert "The balance of a net positive account can&#39;t be negative: Ca" in r.text and "Results" not in r.text
+        assert "Results" in client.post("/audit", data=balance(Ca="0")).text
 
     def test_zero_is_audited(self, settings, client):
         actual = LedgerStore(settings).load().balances_today()["Ca"]
@@ -187,7 +235,7 @@ class TestAuditHistory:
         (audit,) = LedgerStore(settings).load_audits()
         assert audit.id == 1 and (audit.differences, audit.corrected) == (2, 0)
         by_account = {e.account: e for e in audit.entries}
-        assert list(by_account) == ["Ca", "Bk", "Cc"]  # the ones filled in
+        assert list(by_account) == ["Ca", "Bk", "Fi", "Cc"]  # the ones filled in, and Fi, fixed at 0.00
         ca = by_account["Ca"]
         assert (ca.currency, ca.inputted) == ("ARS", 100) and ca.actual == pytest.approx(actual["Ca"])
         assert ca.difference == pytest.approx(100 - actual["Ca"]) and not ca.corrected

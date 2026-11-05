@@ -9,20 +9,29 @@
   <p class="muted">Check each account in its bank, card or wallet, and write down the balance you see today. Its
     balance in pledger stays hidden until you confirm, so it can't influence you.</p>
   {% if audit_error %}<p class="msg error">{{ audit_error }}</p>{% endif %}
+  {# One table per group of accounts (see views.AUDIT_GROUPS), all confirmed together #}
+  {% for g in groups %}
+  <h3 class="audit-group"><span aria-hidden="true">{{ g.emoji }}</span> {{ g.label }}</h3>
   <div class="table-wrap">
-    <table>
+    <table data-audit-group="{{ g.key }}">
       <thead><tr><th>Account</th><th>Type</th><th>Description</th><th class="num">Balance today</th></tr></thead>
       <tbody>
-      {% for f in fields %}
+      {% for f in g.fields %}
       <tr>
-        <td class="nowrap"><label for="audit-{{ loop.index }}"><strong>{{ f.name }}</strong></label></td>
+        <td class="nowrap"><label for="audit-{{ f.name }}"><strong>{{ f.name }}</strong></label></td>
         <td>{{ f.type | capitalize }}</td>
         <td class="muted">{{ f.description }}</td>
         <td>
           <span class="money-input">
             <span class="prefix">{{ f.currency }}</span>
-            <input id="audit-{{ loop.index }}" name="balance:{{ f.name }}" inputmode="decimal" value="{{ values.get(f.name, '') }}"
-              placeholder="Not audited" autocomplete="off" data-money="{{ f.decimals }}">
+            {% if f.fixed %}
+            <input id="audit-{{ f.name }}" name="balance:{{ f.name }}" value="{{ '{:.{}f}'.format(0, f.decimals) }}" readonly tabindex="-1"
+              class="fixed" title="A net zero account: its balance is always 0.00">
+            {% else %}
+            <input id="audit-{{ f.name }}" name="balance:{{ f.name }}" inputmode="decimal" value="{{ values.get(f.name, '') }}"
+              placeholder="Not audited" autocomplete="off" data-money="{{ f.decimals }}"
+              {% if f.non_negative %}pattern="[^\-]*" title="A net positive account: its balance can't be negative"{% endif %}>
+            {% endif %}
           </span>
         </td>
       </tr>
@@ -30,7 +39,10 @@
       </tbody>
     </table>
   </div>
-  <p class="muted small">Leave an account empty to skip it. A <code>0.00</code> is audited: its balance should be zero.</p>
+  {% endfor %}
+  <p class="muted small">Leave an account empty to skip it. A <code>0.00</code> is audited: its balance should be zero.
+    The net zero accounts (like <code>Fi</code>) are always audited at <code>0.00</code>, and the net positive ones
+    can't be negative.</p>
   <button type="submit">Confirm</button>
 </form>
 {% else %}

@@ -2,8 +2,15 @@
 
 from __future__ import annotations
 
-from pledger.enums import AccountType
-from pledger.models import Audit, AuditEntry, InvestmentAccount, is_foreign
+from pledger.enums import AccountCheck, AccountType
+from pledger.models import (
+    Audit,
+    AuditEntry,
+    CreditCardAccount,
+    DebtAccount,
+    InvestmentAccount,
+    is_foreign,
+)
 from pledger.web.store import LEDGER_ID, Snapshot, _parse_number, stored_ids
 from pledger.web.views.common import ledger_link
 
@@ -15,6 +22,33 @@ def _audited_accounts(snapshot: Snapshot) -> list:
     return [a for t in AUDITED_TYPES for a in snapshot.accounts.values() if a.acc_type == t]
 
 
+# The groups of the accounts in the audit form, in order: only to show them apart, they are
+# all confirmed together.
+AUDIT_GROUPS = {
+    "assets": ("🏦", "Assets"),
+    "investments": ("📈", "Investment accounts"),
+    "debt": ("🤝", "Debt"),
+    "credit_cards": ("💳", "Credit cards"),
+    "liabilities": ("🧾", "Other liabilities"),
+}
+
+
+def _group_of(account) -> str:
+    """The group of an audited account in the form (see AUDIT_GROUPS)."""
+    if isinstance(account, InvestmentAccount):
+        return "investments"
+    if isinstance(account, DebtAccount):
+        return "debt"
+    if isinstance(account, CreditCardAccount):
+        return "credit_cards"
+    return "assets" if account.acc_type == AccountType.ASSET else "liabilities"
+
+
+def _fixed_at_zero(account) -> bool:
+    """Whether the balance of an account is always 0.00 (net zero, like the INTERMEDIARY): never filled in."""
+    return AccountCheck.NET_ZERO in account.checks
+
+
 def _shown_in(snapshot: Snapshot, account) -> tuple[str, int]:
     """The currency of a balance of an account (see Snapshot.balances_today) and its decimals."""
     if is_foreign(account):
@@ -23,15 +57,28 @@ def _shown_in(snapshot: Snapshot, account) -> tuple[str, int]:
 
 
 def audit_form(snapshot: Snapshot, values: dict[str, str] | None = None) -> dict:
-    """The form to fill in the balances: blind, so it must never show the actual ones."""
+    """
+    The form to fill in the balances: blind, so it must never show the actual ones. Its
+    fields are in the groups of AUDIT_GROUPS that have any (one form all the same), each
+    by the currency of its balance (the base one first, then the others by name) and then
+    by account name. The net zero accounts are fixed at 0.00, and the net positive ones can't be negative.
+    """
     fields = [
         {
             "name": a.name, "description": a.description, "type": a.acc_type.value,
             "currency": _shown_in(snapshot, a)[0], "decimals": _shown_in(snapshot, a)[1],
+            "group": _group_of(a), "fixed": _fixed_at_zero(a),
+            "non_negative": AccountCheck.NET_POSITIVE in a.checks,
         }
         for a in _audited_accounts(snapshot)
     ]
-    return {"fields": fields, "values": values or {}, "results": None}
+    base = snapshot.base_currency.name
+    fields.sort(key=lambda f: (f["currency"] != base, f["currency"], f["name"].casefold(), f["name"]))
+    groups = [
+        {"key": key, "emoji": emoji, "label": label, "fields": [f for f in fields if f["group"] == key]}
+        for key, (emoji, label) in AUDIT_GROUPS.items()
+    ]
+    return {"groups": [g for g in groups if g["fields"]], "values": values or {}, "results": None}
 
 
 def audit_results(snapshot: Snapshot, values: dict[str, str]) -> dict:
@@ -39,14 +86,24 @@ def audit_results(snapshot: Snapshot, values: dict[str, str]) -> dict:
     The balances filled in next to the actual ones, today. A balance left empty isn't
     audited, while a 0 is audited as 0. Each difference has the correction that would fix
     it (see Snapshot.correction_of), but for the investment accounts, whose balance comes
-    from their investments. Raises ValueError if a balance is invalid or none is filled in.
+    from their investments. The net zero accounts are always audited at 0.00, whatever is
+    filled in. Raises ValueError if a balance is invalid, a net positive one is negative, or
+    none is filled in (but those fixed at 0.00).
     """
     audited = {
         a.name: _parse_number(values[a.name], f"balance of {a.name}")
-        for a in _audited_accounts(snapshot) if values.get(a.name, "").strip()
+        for a in _audited_accounts(snapshot) if not _fixed_at_zero(a) and values.get(a.name, "").strip()
     }
     if not audited:
         raise ValueError("Fill in at least one balance: the ones left empty aren't audited")
+    negative = [
+        a.name for a in _audited_accounts(snapshot)
+        if AccountCheck.NET_POSITIVE in a.checks and a.name in audited and round(audited[a.name], 4) < 0
+    ]
+    if negative:
+        raise ValueError(f"The balance of a net positive account can't be negative: {', '.join(negative)}")
+    audited |= {a.name: 0.0 for a in _audited_accounts(snapshot) if _fixed_at_zero(a)}
+    values = {**values, **{a.name: "0.00" for a in _audited_accounts(snapshot) if _fixed_at_zero(a)}}
     balances = snapshot.balances_today()
     results = []
     for a in _audited_accounts(snapshot):
