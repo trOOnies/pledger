@@ -38,6 +38,7 @@ from pledger.web.store.constants import (
     CONVERSION_ID,
     GENERATED,
     ID_COLUMN,
+    INSTALLMENTS_COLUMN,
     INTEREST_COLUMNS,
     INTEREST_ID,
     INVESTMENT_COLUMNS,
@@ -50,7 +51,11 @@ from pledger.web.store.constants import (
 )
 from pledger.web.store.conversions import linked_ids
 from pledger.web.store.investments import _check_invest, initial_prices
-from pledger.web.store.movements import _check_initial_base_movements, _check_tab
+from pledger.web.store.movements import (
+    _check_initial_base_movements,
+    _check_tab,
+    installments_of,
+)
 from pledger.web.store.snapshot import Snapshot
 from pledger.web.store.work import Work, _work_month, deduction_columns
 
@@ -127,6 +132,9 @@ class StoreBase:
                     f"The ledger CSV cannot have movements of {misplaced}: they go in the investments "
                     "CSV, or in the interest CSV for the interest on money"
                 )
+            if INSTALLMENTS_COLUMN in rows.columns:
+                for _, row in rows[rows[INSTALLMENTS_COLUMN].str.strip() != ""].iterrows():
+                    installments_of(snapshot, row)
             snapshot.ledger().check_accounts()  # validate the whole ledger up front
             snapshot.investment_accounts()
         except (OSError, KeyError, ValueError, AssertionError) as e:

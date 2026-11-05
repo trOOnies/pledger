@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import calendar
+import datetime as dt
+
 from pledger.models import (
     CREDIT_CARD,
     CreditCardAccount,
@@ -9,7 +12,13 @@ from pledger.models import (
     next_month,
     rounds_to_zero,
 )
-from pledger.web.store import CARD_PAYMENT, CARD_PAYMENT_BASES, CARD_SURPLUS, Snapshot
+from pledger.web.store import (
+    CARD_PAYMENT,
+    CARD_PAYMENT_BASES,
+    CARD_SURPLUS,
+    Snapshot,
+    installments_of,
+)
 from pledger.web.views.charts import column_chart, line_chart, with_real
 from pledger.web.views.common import (
     account_movements,
@@ -75,6 +84,7 @@ def build_credit_cards(snapshot: Snapshot, month: str = "", card: str = "") -> d
         "card": card,
         **owed_charts(snapshot, [a.name for a in cards], month),
         **charged_chart(snapshot, [a.name for a in cards], month),
+        **paid_chart(snapshot, [a.name for a in cards], month),
     }
 
 
@@ -96,6 +106,55 @@ def charged_chart(snapshot: Snapshot, cards: list[str], month: str = "") -> dict
         series.append({"month": cur, "value": sum(totals.get(cur, [])), "count": len(totals.get(cur, []))})
         cur = next_month(cur)
     return {"charged_chart": column_chart(series), "charged_series": series}
+
+
+def months_later(date: dt.date, months: int) -> dt.date:
+    """The same day this many months later, or the last day of that month if it has fewer days."""
+    year, month = divmod(date.month - 1 + months, 12)
+    year, month = date.year + year, month + 1
+    return date.replace(year=year, month=month, day=min(date.day, calendar.monthrange(year, month)[1]))
+
+
+def installments(amount: float, n: int) -> list[float]:
+    """An amount split into n installments, in cents: the last one with what the others leave."""
+    each = round(amount / n, 2)
+    return [*([each] * (n - 1)), round(amount - each * (n - 1), 2)]
+
+
+def paid_chart(snapshot: Snapshot, cards: list[str], month: str = "") -> dict:
+    """
+    What is paid of the charges to the credit cards (as in charged_chart) in each month:
+    each charge split into its installments (see INSTALLMENTS_COLUMN), one a month from
+    its date on, so a charge in one installment is paid in its own month. An installment is
+    made once its date has come (by today), else it is still due. With `month`, only of the
+    charges up to it. From the first month of the ledger to the last one with an installment.
+    """
+    rows = snapshot.all_rows
+    if not len(rows):
+        return {"paid_chart": None, "paid_series": [], "paid_due": 0.0}
+    charges = rows[rows.acc_credit.isin(cards) & ~rows.base_movement.isin(snapshot.initial_base_names)]
+    if month:
+        charges = charges[charges.move_date.str[:7] <= month]
+    today = snapshot.today
+    totals: dict[str, dict] = {}  # month to its installments made and due
+    for (_, row), move in zip(charges.iterrows(), snapshot.ledger(charges).movements):
+        date = dt.date.fromisoformat(str(move.move_date)[:10])
+        for i, value in enumerate(installments(move.amount, installments_of(snapshot, row))):
+            when = months_later(date, i)
+            total = totals.setdefault(when.strftime("%Y-%m"), {"made": 0.0, "due": 0.0, "count": 0})
+            total["made" if when <= today else "due"] += value
+            total["count"] += 1
+    last = max([month or max(rows.move_date)[:7], *totals])
+    series, cur = [], min(rows.move_date)[:7]
+    while cur <= last:
+        total = totals.get(cur, {"made": 0.0, "due": 0.0, "count": 0})
+        series.append({"month": cur, "value": total["made"] + total["due"], **total})
+        cur = next_month(cur)
+    return {
+        "paid_chart": column_chart(series),
+        "paid_series": series,
+        "paid_due": sum(p["due"] for p in series),
+    }
 
 
 def owed_charts(snapshot: Snapshot, cards: list[str], month: str = "") -> dict:

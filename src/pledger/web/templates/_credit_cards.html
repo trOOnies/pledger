@@ -65,6 +65,53 @@
     {% endif %}
   </section>
 
+  <section class="panel">
+    <h2>Paid per month <small>{{ ("of the charges up to " ~ month) if month else "all time" }}, installments included</small></h2>
+    {% if paid_chart %}
+    <p class="equity-headline">
+      <span class="num-lg money">{{ paid_due | money }}</span>
+      <span class="muted">still due in installments</span>
+    </p>
+    <ul class="legend" style="--line: var(--series-neutral)">
+      <li><span class="swatch" style="background: var(--line)"></span>Made</li>
+      <li><span class="swatch due"></span>Due</li>
+    </ul>
+    {% set ns = namespace(points=[]) %}
+    {% for c in paid_chart.columns %}
+      {% set ns.points = ns.points + [{
+        "x": c.x, "y": c.y, "label": c.month, "value_text": c.value | money,
+        "change_text": c.count ~ (" installment" if c.count == 1 else " installments")
+          ~ ((": " ~ (c.due | money) ~ " still due") if c.due else ""),
+      }] %}
+    {% endfor %}
+    {{ column_chart(paid_chart, ns.points, "Paid of the charges to the credit cards per month from " ~ paid_series[0].month ~ " to " ~ paid_chart.last.month ~ ", " ~ (paid_due | money) ~ " still due", series="neutral") }}
+    <p class="muted small">What is paid of the charges to the credit cards in each month: a charge in installments is
+      split into them, one a month from its date on, and a charge in one installment is paid in its own month.
+      Striped, the installments still due (after today); solid, the ones already made.</p>
+    <details class="chart-table">
+      <summary>Show table</summary>
+      <div class="table-wrap">
+        <table data-sortable="paid">
+          <thead><tr><th>Month</th><th class="num">Installments</th><th class="num">Made</th><th class="num">Due</th><th class="num">Paid</th></tr></thead>
+          <tbody>
+          {% for p in paid_series | reverse %}
+          <tr>
+            <td class="nowrap">{{ p.month }}</td>
+            <td class="num">{{ p.count }}</td>
+            <td class="num money" data-sort="{{ p.made }}">{{ p.made | money }}</td>
+            <td class="num money" data-sort="{{ p.due }}">{{ p.due | money }}</td>
+            <td class="num money" data-sort="{{ p.value }}">{{ p.value | money }}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </details>
+    {% else %}
+    <p class="muted">Nothing charged to the credit cards in this period.</p>
+    {% endif %}
+  </section>
+
   <div class="charts-grid">
   <section class="panel">
     <h2>Net owed <small>{{ ("up to " ~ month) if month else "all time" }}, at each month end</small></h2>

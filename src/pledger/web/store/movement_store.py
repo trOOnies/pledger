@@ -9,9 +9,19 @@ from pandas import DataFrame, concat
 from pledger.models import DEBT_ACCOUNT, CreditCardAccount, is_foreign
 from pledger.web.store.base_store import StoreBase
 from pledger.web.store.common import _amount_of, _fit_row, _parse_amount, _with_row
-from pledger.web.store.constants import DIFFERENCE_GAIN, INVESTMENT_COLUMN, OTHER_AMOUNT
+from pledger.web.store.constants import (
+    DIFFERENCE_GAIN,
+    INSTALLMENTS_COLUMN,
+    INVESTMENT_COLUMN,
+    OTHER_AMOUNT,
+)
 from pledger.web.store.investments import _check_invest, _check_known_investment
-from pledger.web.store.movements import _check_tab, _debt_comment, _movement_row
+from pledger.web.store.movements import (
+    _check_tab,
+    _debt_comment,
+    _installments_text,
+    _movement_row,
+)
 from pledger.web.store.snapshot import Snapshot
 
 
@@ -38,6 +48,7 @@ class MovementStore(StoreBase):
         debt: bool = False,
         card_payment: bool = False,
         correction: bool = False,
+        installments: str | int = "",
     ) -> None:
         """
         Validate a new movement and append it to its CSV. With `invest` (from the
@@ -50,6 +61,7 @@ class MovementStore(StoreBase):
         debt base movement with `debt` (from the Debt tab), one of a card payment base
         movement with `card_payment` (from the Credit Cards tab), a balance correction with
         `correction` (from the Audit tab), else one of the Ledger tab (see _check_tab). It gets the next id of its CSV (see _appended).
+        A charge to a credit card of the Ledger tab can be in `installments` (see INSTALLMENTS_COLUMN).
         """
         snapshot = self.load()
         if card_payment and foreign_card(snapshot, acc_debit, acc_credit):
@@ -60,12 +72,23 @@ class MovementStore(StoreBase):
         )
         if field == "investments":
             _check_known_investment(snapshot, acc_debit, acc_credit, new_row[INVESTMENT_COLUMN])
+        if str(installments).strip():
+            if field != "rows" or debt or card_payment or correction:
+                raise ValueError("Only the movements of the Ledger tab can be in installments")
+            new_row[INSTALLMENTS_COLUMN] = _installments_text(snapshot, installments, acc_credit)
         self._append_rows(snapshot, field, [new_row])
 
     def _append_rows(self, snapshot, field: str, new_rows: list[dict]) -> None:
-        """Check these rows of a CSV of movements, then append them to it together, or none of them."""
+        """
+        Check these rows of a CSV of movements, then append them to it together, or none of
+        them. The ledger CSV gets its INSTALLMENTS_COLUMN with the first row that needs it.
+        """
         path, what, prefix = self._movement_file(field)
         frame = getattr(snapshot, field)
+        if field == "rows" and INSTALLMENTS_COLUMN not in frame.columns and any(r.get(INSTALLMENTS_COLUMN) for r in new_rows):
+            self._add_column(path, len(frame), INSTALLMENTS_COLUMN)
+            frame = frame.assign(**{INSTALLMENTS_COLUMN: ""})
+            snapshot = replace(snapshot, rows=frame)
         new_rows = [_fit_row(row, frame.columns, what) for row in new_rows]
         changed = replace(snapshot, **{field: concat([frame, DataFrame(new_rows)], ignore_index=True)})
         changed.ledger().check_accounts()
@@ -98,6 +121,7 @@ class MovementStore(StoreBase):
         debt: bool = False,
         card_payment: bool = False,
         amount_card: str = "",
+        installments: str | int = "",
     ) -> None:
         """
         Replace a row of the ledger CSV by position with a movement of the same tab,
@@ -105,6 +129,7 @@ class MovementStore(StoreBase):
         of the Debt tab with `debt` or of the Credit Cards tab with `card_payment` (see
         _check_tab). The row keeps its id and any other column. A card payment of a card in
         another currency has its `amount_card` in that currency (see LinkedStore.edit_card_payment).
+        A movement of the Ledger tab gets its `installments` (see INSTALLMENTS_COLUMN), 1 if empty.
         """
         snapshot = self.load()
         current = self.current_row(snapshot, "rows", index, fingerprint)
@@ -120,6 +145,11 @@ class MovementStore(StoreBase):
         )
         if amount_card:
             new_row[OTHER_AMOUNT] = amount_card
+        if not (debt or card_payment):
+            new_row[INSTALLMENTS_COLUMN] = _installments_text(snapshot, installments, acc_credit)
+            if new_row[INSTALLMENTS_COLUMN] and INSTALLMENTS_COLUMN not in snapshot.rows.columns:
+                snapshot = replace(snapshot, rows=snapshot.rows.assign(**{INSTALLMENTS_COLUMN: ""}))
+                self._add_column(self.settings.ledger_path, len(snapshot.rows), INSTALLMENTS_COLUMN)
         _fit_row(new_row, snapshot.rows.columns, "ledger")  # every value has a column
         replace(snapshot, rows=_with_row(snapshot.rows, index, new_row)).ledger().check_accounts()
         self._replace_line(snapshot, "rows", index, new_row)

@@ -745,6 +745,13 @@ They are added, edited and deleted from the Credit Cards tab only (or
 `/api/credit-cards/payments`), picking the base movement, the card and the other account. The Ledger tab
 shows them with a 🔴 linking there. The **Credit card** filter shows only the movements of one card.
 
+**Installments.** A movement of the Ledger tab crediting a credit card can be in **installments**
+(1 by default, up to 120), kept in an optional `installments` column of `ledger.csv`, added with the
+first one (empty is 1). The card is charged the whole amount on its date all the same; the
+*Paid per month* chart of the Credit Cards tab splits it into its installments, one a month from its
+date on, striping the ones still due. A charge to a card in another currency that goes through `Fi`
+can't be in installments.
+
 The Credit Cards tab warns about the cards with a negative balance (more paid than charged),
 which is rare and may be an error. It also charts what was charged to them in each month (their
 credits, without the payments) and the net owed on them over equity at each month end. It lists

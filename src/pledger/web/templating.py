@@ -11,8 +11,8 @@ from fastapi.templating import Jinja2Templates
 from jinja2 import pass_context
 
 from pledger.enums import MovementType
-from pledger.models import is_foreign
-from pledger.web.store import Snapshot
+from pledger.models import CreditCardAccount, is_foreign
+from pledger.web.store import MAX_INSTALLMENTS, Snapshot
 from pledger.web.views import (
     MOVEMENT_SOURCES,
     base_fields,
@@ -119,6 +119,8 @@ def render_form(request: Request, snapshot: Snapshot, values: dict, **extra):
         {
             "move_types": [t.value for t in MovementType],
             "foreign_accounts": {a.name: a.currency.name for a in snapshot.accounts.values() if is_foreign(a)},
+            "credit_cards": [a.name for a in snapshot.accounts.values() if isinstance(a, CreditCardAccount)],
+            "max_installments": MAX_INSTALLMENTS,
             "currency": request.app.state.store.settings.currency,
             "values": values,
             **base,

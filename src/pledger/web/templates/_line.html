@@ -53,7 +53,7 @@
       {% endfor %}
       <line class="crosshair" x1="0" x2="0" y1="0" y2="100"/>
     </svg>
-    {% for c in chart.columns %}<span class="column{{ ' negative' if c.negative }}{{ ' projected' if c.projected }}" style="left: {{ c.x }}%; top: {{ c.top }}%; width: {{ chart.width }}%; height: {{ c.height }}%"></span>{% endfor %}
+    {% for c in chart.columns %}<span class="column{{ ' negative' if c.negative }}{{ ' projected' if c.projected }}" style="left: {{ c.x }}%; top: {{ c.top }}%; width: {{ chart.width }}%; height: {{ c.height }}%">{% if c.due_share %}<span class="due" style="height: {{ c.due_share }}%"></span>{% endif %}</span>{% endfor %}
     <span class="dot hover-dot"></span>
     <div class="tooltip" aria-hidden="true">
       <div class="tip-date muted"></div>

@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query
 
 from pledger.web.dependencies import StoreDep
-from pledger.web.schemas import MovementIn
+from pledger.web.schemas import LedgerMovementIn
 from pledger.web.store import StaleRowError
 from pledger.web.views import build_view
 
@@ -23,9 +23,11 @@ def list_movements(
 
 
 @router.post("", status_code=201)
-def create_movement(store: StoreDep, movement: MovementIn):
+def create_movement(store: StoreDep, movement: LedgerMovementIn):
     try:
-        store.add_ledger_movement(**movement.model_dump())
+        values = movement.model_dump()
+        installments = values.pop("installments") or ""
+        store.add_ledger_movement(**values, installments=installments)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from None
     return {"ok": True}
@@ -33,10 +35,12 @@ def create_movement(store: StoreDep, movement: MovementIn):
 
 @router.put("/{index}")
 def edit_movement(
-    store: StoreDep, index: int, movement: MovementIn, fingerprint: Annotated[str | None, Query()] = None
+    store: StoreDep, index: int, movement: LedgerMovementIn, fingerprint: Annotated[str | None, Query()] = None
 ):
     try:
-        store.edit(index, fingerprint, **movement.model_dump())
+        values = movement.model_dump()
+        installments = values.pop("installments") or ""
+        store.edit(index, fingerprint, **values, installments=installments)
     except StaleRowError as e:
         raise HTTPException(status_code=409, detail=str(e)) from None
     except ValueError as e:

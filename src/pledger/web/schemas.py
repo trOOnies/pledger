@@ -22,6 +22,10 @@ class MovementIn(BaseModel):
     comment: str = ""
 
 
+class LedgerMovementIn(MovementIn):
+    installments: int | None = None  # of a charge to a credit card, 1 by default
+
+
 class InvestMovementIn(MovementIn):
     investment: str = ""  # required with an INVESTMENT side
     quantity: float | None = None  # required to buy, sell and split

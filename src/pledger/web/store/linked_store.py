@@ -38,7 +38,7 @@ from pledger.web.store.constants import (
 from pledger.web.store.conversions import _conversion_row, linked_ids
 from pledger.web.store.investments import _check_known_investment
 from pledger.web.store.movement_store import MovementStore, foreign_card
-from pledger.web.store.movements import _movement_row
+from pledger.web.store.movements import _installments_text, _movement_row
 from pledger.web.store.snapshot import Snapshot
 
 NEGATIVE = "The amount cannot be negative; pick the opposite base movement or swap the accounts"
@@ -86,18 +86,20 @@ class LinkedStore(MovementStore):
 
     def add_ledger_movement(
         self, move_date: str, base_movement: str, acc_debit: str, acc_credit: str, amount: str | float, comment: str = "",
+        installments: str | int = "",
     ) -> None:
         """
-        Add a movement of the Ledger tab (see add). The `amount` of a gain or loss of an
+        Add a movement of the Ledger tab (see add), a charge to a credit card possibly in
+        `installments`. The `amount` of a gain or loss of an
         account in another currency is in that currency: at its value on that date, the
         movement goes through the INTERMEDIARY account, in the base currency, with a
-        conversion linked to it. A base movement with that account fixed can't: it is
+        conversion linked to it, and can't be in installments. A base movement with that account fixed can't: it is
         a single row, of the amount in the base currency. Transfers are in the base one.
         """
         snapshot = self.load()
         account = foreign_result_account(snapshot, base_movement, acc_debit, acc_credit)
         if account is None:
-            self.add(move_date, base_movement, acc_debit, acc_credit, amount, comment)
+            self.add(move_date, base_movement, acc_debit, acc_credit, amount, comment, installments=installments)
             return
         if _parse_date(move_date, "date") is None:
             raise ValueError("The date is required")
@@ -107,8 +109,10 @@ class LinkedStore(MovementStore):
         base_value = round(value * rate, 2)
         inflow = account.name == acc_debit
         if base.side(LedgerSide.DEBIT if inflow else LedgerSide.CREDIT) is not None:
-            self.add(move_date, base_movement, acc_debit, acc_credit, f"{base_value:.2f}", comment)
+            self.add(move_date, base_movement, acc_debit, acc_credit, f"{base_value:.2f}", comment, installments=installments)
             return
+        if _installments_text(snapshot, installments, acc_credit):
+            raise ValueError(f"A charge to a card in another currency ({account.name}) can't be in installments")
         debit, credit = (INTERMEDIARY, acc_credit) if inflow else (acc_debit, INTERMEDIARY)
         row = _movement_row(snapshot, move_date, base_movement, debit, credit, base_value, comment, False, "", "", False, False)
         self._add_linked(snapshot, [row], _fi_leg(snapshot, move_date, account, inflow, base_value, value, comment))

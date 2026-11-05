@@ -2,7 +2,8 @@
 {% from "_edit.html" import form_head %}
 {# The movement form of the Ledger tab: a new movement, or with `editing` one of the ledger CSV. #}
 <form id="movement-form" class="stack" hx-post="{{ '/movements/%d/edit' % editing.index if editing else '/movements' }}" hx-swap="outerHTML"
-  {% if foreign_accounts and not editing %}data-foreign-accounts='{{ foreign_accounts | tojson }}'{% endif %}>
+  {% if foreign_accounts and not editing %}data-foreign-accounts='{{ foreign_accounts | tojson }}'{% endif %}
+  {% if credit_cards %}data-credit-cards='{{ credit_cards | tojson }}'{% endif %}>
   {{ form_head("movement", editing, "/form/movement", "movement-form") }}
   {% if copied %}<p class="muted small">Filled in from {{ copied }}. It is a new movement: nothing is saved until you add it.</p>{% endif %}
   {% if error %}<p class="msg error">{{ error }}</p>{% endif %}
@@ -20,6 +21,15 @@
     </span>
   </label>
   {% if foreign_accounts and not editing %}<span class="hint">A gain or loss of an account in another currency is in that currency.</span>{% endif %}
+  {% if credit_cards %}
+  {# Shown (and sent) only while the credit account is a credit card: see base.html #}
+  <label data-installments {% if values.acc_credit not in credit_cards %}hidden{% endif %}>
+    <span>Installments <em class="optional">(optional, 1 by default)</em></span>
+    <input name="installments" inputmode="numeric" pattern="[0-9]*" value="{{ values.installments or '' }}" placeholder="1"
+      autocomplete="off" {% if values.acc_credit not in credit_cards %}disabled{% endif %}
+      title="The number of monthly installments of a charge to a credit card, from 1 to {{ max_installments }}: the card is charged the whole amount on its date, and paid one installment a month from then on">
+  </label>
+  {% endif %}
   <label><span>Comment <em class="optional">(optional)</em></span>
     <input name="comment" value="{{ values.comment }}" autocomplete="off">
   </label>

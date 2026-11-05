@@ -52,6 +52,7 @@ from pledger.web.store.constants import (
     INITIAL_ID,
     INITIAL_LOSS,
     INITIAL_PRICE,
+    INSTALLMENTS_COLUMN,
     INTEREST,
     INTEREST_ACCOUNT,
     INTEREST_COLUMNS,
@@ -68,6 +69,7 @@ from pledger.web.store.constants import (
     LOAN_COLLECTED,
     LOAN_GIVEN,
     LOCAL_HOSTS,
+    MAX_INSTALLMENTS,
     MONTH,
     OTHER_AMOUNT,
     PAYMENT_DATE,
@@ -103,6 +105,7 @@ from pledger.web.store.ledger_store import (
 )
 from pledger.web.store.linked_store import foreign_result_account
 from pledger.web.store.movement_store import foreign_card
+from pledger.web.store.movements import installments_of
 from pledger.web.store.services import (
     service_bases,
     service_cells,
@@ -160,6 +163,7 @@ __all__ = [
     "INITIAL_ID",
     "INITIAL_LOSS",
     "INITIAL_PRICE",
+    "INSTALLMENTS_COLUMN",
     "INTEREST",
     "INTEREST_ACCOUNT",
     "INTEREST_COLUMNS",
@@ -176,6 +180,7 @@ __all__ = [
     "LOAN_COLLECTED",
     "LOAN_GIVEN",
     "LOCAL_HOSTS",
+    "MAX_INSTALLMENTS",
     "MONTH",
     "OTHER_AMOUNT",
     "PAYMENT_DATE",
@@ -213,6 +218,7 @@ __all__ = [
     "foreign_card",
     "foreign_result_account",
     "initial_prices",
+    "installments_of",
     "interest_fingerprint",
     "is_capital",
     "is_cross",

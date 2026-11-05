@@ -262,6 +262,20 @@
     document.addEventListener("htmx:afterSettle", showAmountCurrencies);
     showAmountCurrencies();
 
+    // In a form with data-credit-cards, the installments field is only shown, and sent, while
+    // the credit account (picked or fixed by the base movement) is one of them.
+    function showInstallments(form) {
+      const field = form.querySelector("[data-installments]");
+      if (!field) return;
+      const card = JSON.parse(form.dataset.creditCards).includes(form.elements.acc_credit?.value);
+      field.hidden = !card;
+      field.querySelector("input").disabled = !card;
+    }
+    const showAllInstallments = () => document.querySelectorAll("form[data-credit-cards]").forEach(showInstallments);
+    document.addEventListener("change", showAllInstallments);
+    document.addEventListener("htmx:afterSettle", showAllInstallments);
+    showAllInstallments();
+
     // Expand all toggles (data-expand-all): expand or collapse every expandable row of
     // the bars of their panel. Their state is kept when HTMX re-renders the panel.
     const expandState = {};

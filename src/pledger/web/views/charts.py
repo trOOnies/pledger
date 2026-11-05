@@ -98,7 +98,8 @@ def column_chart(series: list[dict], tick_label=compact) -> dict | None:
     """
     Columns and axes to draw a {month, value} series, one band per month, up from
     0 (or down, for a negative value). Coordinates are percentages of the plot
-    area. None if every value is 0.
+    area. None if every value is 0. A positive point with a `due` part of its value
+    has its `due_share`, the percentage of its column drawn on top as due.
     """
     lo = min(0.0, *(p["value"] for p in series))
     hi = max(0.0, *(p["value"] for p in series))
@@ -119,6 +120,7 @@ def column_chart(series: list[dict], tick_label=compact) -> dict | None:
             "top": y(max(p["value"], 0.0)),
             "height": round(abs(y(p["value"]) - y(0.0)), 2),
             "negative": p["value"] < 0,
+            "due_share": round(100 * p["due"] / p["value"], 2) if p.get("due") and p["value"] > 0 else 0,
         }
         for i, p in enumerate(series)
     ]

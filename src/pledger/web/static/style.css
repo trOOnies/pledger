@@ -29,6 +29,7 @@
   --series-6: #008300;
   --series-7: #6250d6;
   --series-8: #e34948;
+  --series-neutral: #a4aab3;  /* a medium-light grey, e.g. for what is paid */
   --radius: 8px;
   color-scheme: light;
 }
@@ -62,6 +63,7 @@
     --series-6: #008300;
     --series-7: #9085e9;
     --series-8: #e66767;
+    --series-neutral: #7c838d;
     color-scheme: dark;
   }
 }
@@ -233,6 +235,7 @@ table[data-sortable] th[aria-sort="descending"]::after { content: " ▼"; opacit
 
 .stack { display: grid; gap: .75rem; }
 .stack label, .pair label { display: grid; gap: .25rem; font-size: .8rem; color: var(--muted); }
+.stack label[hidden], .pair label[hidden] { display: none; }
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: .5rem; }
 fieldset.stack { border: 1px solid var(--border); border-radius: var(--radius); margin: 0; padding: .5rem .75rem .75rem; min-width: 0; }
 fieldset.stack legend { padding: 0 .25rem; font-size: .8rem; color: var(--muted); }
@@ -416,6 +419,12 @@ button.compact:disabled { cursor: default; color: var(--muted); }
 }
 .line-chart .column.negative { border-radius: 0 0 4px 4px; }
 .line-chart .column.projected { opacity: .45; }
+/* The due part of a column (see column_chart), on top of the rest: striped, lighter */
+.line-chart .column .due, .legend .swatch.due {
+  background: repeating-linear-gradient(-45deg, var(--surface) 0 2px, transparent 2px 5px), var(--line, var(--series-asset));
+  opacity: .6;
+}
+.line-chart .column .due { position: absolute; left: 0; right: 0; top: 0; border-radius: inherit; }
 .line-chart .line.dashed { stroke-dasharray: 5 4; }
 .line-chart.columns.hover .column:not(.active) { opacity: .55; }
 .line-chart.columns .crosshair, .line-chart.columns .hover-dot { display: none; }

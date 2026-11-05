@@ -12,6 +12,7 @@ from pledger.models import INTERMEDIARY, DebtAccount
 from pledger.web.dependencies import StoreDep
 from pledger.web.store import (
     CARD_SURPLUS,
+    INSTALLMENTS_COLUMN,
     OTHER_AMOUNT,
     LedgerStore,
     Snapshot,
@@ -100,14 +101,15 @@ def create_movement(
     acc_debit: Annotated[str, Form()] = "",
     acc_credit: Annotated[str, Form()] = "",
     comment: Annotated[str, Form()] = "",
+    installments: Annotated[str, Form()] = "",  # of a charge to a credit card, 1 if empty
 ):
     values = {
         "move_date": move_date, "move_type": move_type, "base_movement": base_movement,
         "acc_debit": acc_debit, "acc_credit": acc_credit,
-        "amount": amount, "comment": comment,
+        "amount": amount, "comment": comment, "installments": installments,
     }
     try:
-        store.add_ledger_movement(move_date, base_movement, acc_debit, acc_credit, amount, comment)
+        store.add_ledger_movement(move_date, base_movement, acc_debit, acc_credit, amount, comment, installments)
     except ValueError as e:
         return render_form(request, store.load(), values, error=str(e))
     # Keep date, type and base movement to speed up entering similar movements.
@@ -115,9 +117,10 @@ def create_movement(
     value = float(amount.replace(",", ""))
     account = foreign_result_account(store.load(), base_movement, acc_debit, acc_credit)
     shown = f"{value:,.2f} {account.currency.name}" if account else money(value, store.settings.currency)
+    n = int(installments.strip() or 1)
     response = render_form(
         request, store.load(), keep,
-        success=f"Added {base_movement}: {shown}"
+        success=f"Added {base_movement}: {shown}" + (f" in {n} installments" if n > 1 else "")
         + (" (dated in the future)" if move_date > dt.date.today().isoformat() else ""),
     )
     response.headers["HX-Trigger"] = "ledger-changed"
@@ -181,6 +184,7 @@ def ledger_values(row) -> dict:
         "move_date": row["move_date"], "base_movement": row["base_movement"],
         "acc_debit": row["acc_debit"], "acc_credit": row["acc_credit"],
         "amount": row["amount"], "comment": row.get("comment", ""),
+        "installments": str(row.get(INSTALLMENTS_COLUMN, "")).strip(),
     }
 
 
@@ -211,15 +215,16 @@ def edit_movement(
     acc_debit: Annotated[str, Form()] = "",
     acc_credit: Annotated[str, Form()] = "",
     comment: Annotated[str, Form()] = "",
+    installments: Annotated[str, Form()] = "",  # of a charge to a credit card, 1 if empty
 ):
     values = {
         "move_date": move_date, "move_type": move_type, "base_movement": base_movement,
         "acc_debit": acc_debit, "acc_credit": acc_credit,
-        "amount": amount, "comment": comment,
+        "amount": amount, "comment": comment, "installments": installments,
     }
     editing, _ = editing_of(store, "rows", index, fingerprint)
     try:
-        store.edit(index, fingerprint, move_date, base_movement, acc_debit, acc_credit, amount, comment)
+        store.edit(index, fingerprint, move_date, base_movement, acc_debit, acc_credit, amount, comment, installments=installments)
     except StaleRowError as e:
         raise HTTPException(status_code=409, detail=str(e)) from None
     except ValueError as e:

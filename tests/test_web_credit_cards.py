@@ -1,5 +1,6 @@
 """Tests for the Credit Cards tab."""
 
+import datetime as dt
 import re
 from dataclasses import replace
 
@@ -246,3 +247,108 @@ class TestCreditCards:
         settings.ledger_path.write_text("".join(settings.ledger_path.read_text().splitlines(True)[:-3]))
         r = TestClient(create_app(replace(settings, credit_cards_path=None))).get("/credit-cards")
         assert "No credit card accounts yet" in r.text
+
+
+class TestInstallments:
+    @pytest.fixture
+    def settings(self, settings, tmp_path, monkeypatch):
+        monkeypatch.setattr("pledger.web.store.common.today", lambda: dt.date(2026, 2, 15))
+        path = tmp_path / "credit_cards.yaml"
+        path.write_text(CREDIT_CARDS_YAML, encoding="utf-8")
+        with settings.ledger_path.open("a", encoding="utf-8") as f:
+            f.write("2026-01-05;Food;Eq;30;Vi;\n2026-02-06;Food;Eq;20;MM;\n")
+        return replace(settings, credit_cards_path=path)
+
+    @pytest.fixture
+    def store(self, settings):
+        return LedgerStore(settings)
+
+    def test_a_charge_to_a_card_can_be_in_installments(self, settings, store):
+        store.add_ledger_movement("2026-01-31", "Food", "Eq", "Vi", "100", installments="3")
+        header = settings.ledger_path.read_text(encoding="utf-8").splitlines()[0]
+        assert "installments" in header.split(";")
+        assert rows(settings)["installments"].tolist()[-3:] == ["", "", "3"]
+        # The card is charged the whole amount all the same
+        assert store.load().ledger().balances()["Vi"] == pytest.approx(230)
+
+    @pytest.mark.parametrize("installments", ["", "1", " 1 "])
+    def test_one_installment_is_the_default(self, settings, store, installments):
+        store.add_ledger_movement("2026-01-31", "Food", "Eq", "Vi", "100", installments=installments)
+        assert "installments" not in rows(settings).columns
+
+    @pytest.mark.parametrize(
+        ("credit", "installments", "message"),
+        [
+            ("Ca", "2", "Only a movement crediting a credit card can be in installments"),
+            ("Vi", "0", "whole number from 1 to 120"),
+            ("Vi", "1.5", "whole number from 1 to 120"),
+            ("Vi", "121", "whole number from 1 to 120"),
+        ],
+    )
+    def test_invalid(self, store, credit, installments, message):
+        with pytest.raises(ValueError, match=message):
+            store.add_ledger_movement("2026-01-31", "Food", "Eq", credit, "100", installments=installments)
+
+    def test_invalid_in_the_csv(self, settings):
+        text = settings.ledger_path.read_text(encoding="utf-8").splitlines()
+        text[0] += ";installments"
+        text[-1] += ";x"
+        settings.ledger_path.write_text("\n".join(text) + "\n", encoding="utf-8")
+        with pytest.raises(LedgerDataError, match="installments of the movement of 2026-02-06"):
+            LedgerStore(settings).load()
+
+    def test_from_the_form(self, settings, store):
+        client = TestClient(create_app(settings))
+        form = client.get("/").text.split('id="movement-form"')[1].split("</form>")[0]
+        assert """data-credit-cards='["Vi", "MM"]'""" in form
+        assert '<label data-installments hidden>' in form and 'name="installments"' in form
+        body = {"move_date": "2026-01-31", "move_type": "loss", "base_movement": "Food", "acc_debit": "Eq",
+                "acc_credit": "Vi", "amount": "100", "installments": "4"}
+        r = client.post("/movements", data=body, headers=HTMX)
+        assert "Added Food: $100.00 in 4 installments" in r.text
+        assert rows(settings)["installments"].tolist()[-1] == "4"
+        # Editing it shows them, and can change them
+        index = len(rows(settings)) - 1
+        fingerprint = row_fingerprint(rows(settings).iloc[index])
+        r = client.get(f"/movements/{index}/edit", params={"fingerprint": fingerprint})
+        assert 'value="4" placeholder="1"' in r.text and "<label data-installments >" in r.text
+        store.edit(index, fingerprint, "2026-01-31", "Food", "Eq", "Vi", "100", installments="")
+        assert rows(settings)["installments"].tolist()[-1] == ""
+
+    def test_the_api(self, settings):
+        client = TestClient(create_app(settings))
+        body = {"move_date": "2026-01-31", "base_movement": "Food", "acc_debit": "Eq", "acc_credit": "Vi",
+                "amount": 100, "installments": 2}
+        assert client.post("/api/movements", json=body).status_code == 201
+        assert rows(settings)["installments"].tolist()[-1] == "2"
+        assert client.post("/api/movements", json={**body, "acc_credit": "Ca"}).status_code == 422
+
+    def test_paid_per_month(self, settings, store):
+        store.add_ledger_movement("2026-01-31", "Food", "Eq", "Vi", "100", installments="3")
+        data = build_credit_cards(store.load())
+        # 33.33 on 01-31 and on 02-28 (still due on 02-15), and the cents left on 03-31
+        assert [(p["month"], round(p["made"], 2), round(p["due"], 2), p["count"]) for p in data["paid_series"]] == [
+            ("2025-12", 0.0, 0.0, 0),
+            ("2026-01", 63.33, 0.0, 2),
+            ("2026-02", 20.0, 33.33, 2),
+            ("2026-03", 0.0, 33.34, 1),
+        ]
+        assert data["paid_due"] == pytest.approx(66.67)
+        columns = data["paid_chart"]["columns"]
+        assert columns[1]["due_share"] == 0 and columns[3]["due_share"] == 100
+        assert columns[2]["due_share"] == pytest.approx(100 * 33.33 / 53.33, abs=0.01)
+        page = TestClient(create_app(settings)).get("/credit-cards", params={"month": ""}).text
+        assert "Paid per month <small>all time, installments included</small>" in page
+        assert '<span class="due" style="height: 100.0%"></span>' in page
+        # With the month filter, only the charges up to it, with all their installments
+        series = build_credit_cards(store.load(), month="2026-01")["paid_series"]
+        assert [p["month"] for p in series] == ["2025-12", "2026-01", "2026-02", "2026-03"]
+        assert series[2]["made"] == 0.0 and series[2]["due"] == pytest.approx(33.33)
+
+    def test_installments_reach_the_end_of_shorter_months(self):
+        from pledger.web.views.credit_cards import installments, months_later
+
+        assert months_later(dt.date(2026, 1, 31), 1) == dt.date(2026, 2, 28)
+        assert months_later(dt.date(2026, 11, 30), 3) == dt.date(2027, 2, 28)
+        assert installments(100, 3) == [33.33, 33.33, 33.34]
+        assert installments(10, 1) == [10]

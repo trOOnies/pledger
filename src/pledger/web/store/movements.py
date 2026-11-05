@@ -9,7 +9,13 @@ from typing import TYPE_CHECKING
 from pandas import DataFrame
 
 from pledger.enums import AccountType, CreditorKind, MovementType
-from pledger.models import Account, DebtAccount, Movement, MovementBase
+from pledger.models import (
+    Account,
+    CreditCardAccount,
+    DebtAccount,
+    Movement,
+    MovementBase,
+)
 from pledger.web.store.common import (
     _check_free_sides,
     _generated_rows,
@@ -24,15 +30,51 @@ from pledger.web.store.constants import (
     INITIAL_GAIN,
     INITIAL_ID,
     INITIAL_LOSS,
+    INSTALLMENTS_COLUMN,
     INTEREST,
     INTEREST_ACCOUNT,
     INVESTMENT_COLUMN,
+    MAX_INSTALLMENTS,
     QUANTITY_COLUMN,
 )
 from pledger.web.store.investments import _check_invest, _investment_details
 
 if TYPE_CHECKING:
     from pledger.web.store.snapshot import Snapshot
+
+
+def _parse_installments(text: str | int, what: str) -> int:
+    """A number of installments: a whole number from 1 to MAX_INSTALLMENTS, 1 if empty."""
+    text = str(text).strip()
+    if not text:
+        return 1
+    if not text.isdigit() or not 1 <= int(text) <= MAX_INSTALLMENTS:
+        raise ValueError(f"The {what} must be a whole number from 1 to {MAX_INSTALLMENTS}: {text!r}")
+    return int(text)
+
+
+def _installments_text(snapshot: Snapshot, installments: str | int, acc_credit: str) -> str:
+    """
+    The INSTALLMENTS_COLUMN of a new ledger row: empty for 1, else the number, which only
+    a charge to a credit card (crediting it) can have.
+    """
+    n = _parse_installments(installments, "number of installments")
+    if n > 1 and not isinstance(snapshot.accounts.get(acc_credit), CreditCardAccount):
+        raise ValueError("Only a movement crediting a credit card can be in installments")
+    return str(n) if n > 1 else ""
+
+
+def installments_of(snapshot: Snapshot, row) -> int:
+    """
+    The number of installments of a row of the ledger (see INSTALLMENTS_COLUMN): 1 without
+    any. Raises ValueError if it is invalid, or more than 1 not crediting a credit card.
+    """
+    value = row.get(INSTALLMENTS_COLUMN, "")
+    text = "" if value is None or (isinstance(value, float) and math.isnan(value)) else str(value)
+    n = _parse_installments(text, f"{INSTALLMENTS_COLUMN} of the movement of {row['move_date']}")
+    if n > 1 and not isinstance(snapshot.accounts.get(row["acc_credit"]), CreditCardAccount):
+        raise ValueError(f"Only a movement crediting a credit card can be in installments ({row['move_date']})")
+    return n
 
 
 def _debt_comment(snapshot: Snapshot, acc_debit: str, acc_credit: str, who: str, comment: str) -> str:
