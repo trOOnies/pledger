@@ -139,3 +139,13 @@ MM:
 CORRECTION_YAML = INVEST_YAML.replace("          Dividends: d\n", "          Dividends: d\n          Correction (G): c\n").replace(
     "          Broker fees: d\n", "          Broker fees: d\n          Correction (L): c\n"
 )
+
+
+def with_interest_frequency(settings, **frequencies) -> None:
+    """Set the interest frequency of these accounts of the accounts YAML (name to its value), right after their name."""
+    path = settings.accounts_path
+    text = path.read_text(encoding="utf-8")
+    for name, frequency in frequencies.items():
+        assert f"\n  {name}:\n" in text, name
+        text = text.replace(f"\n  {name}:\n", f"\n  {name}:\n    interest_frequency: {frequency}\n", 1)
+    path.write_text(text, encoding="utf-8")

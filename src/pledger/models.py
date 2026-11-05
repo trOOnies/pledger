@@ -20,6 +20,7 @@ from pledger.enums import (
     AccountType,
     CreditorKind,
     DebtRole,
+    InterestFrequency,
     InvestmentType,
     LedgerSide,
     MovementType,
@@ -53,6 +54,7 @@ INTERNAL_ACCOUNTS = {
 INTERNAL = "internal"
 
 INITIAL_DATE = "initial_date"  # of an account in the accounts YAML
+INTEREST_FREQUENCY = "interest_frequency"  # of an account in the accounts YAML (see InterestFrequency)
 # The top-level key of the accounts YAML with the last past month left out of the
 # movements, an initial picture: its last week (see initial_week) has the initial
 # movements of the accounts, and nothing else (see Account.load_yaml).
@@ -323,10 +325,14 @@ class Account:
     initial_date: dt.date | None = None  # None: the first date of the ledger
     checks: tuple[AccountCheck, ...] = ()  # on its daily balance in the ledger (see Ledger.check_accounts)
     internal: bool = False  # one of the INTERNAL_ACCOUNTS
+    # How often it is expected to have interest on money: None if it has none (see missing_interest)
+    interest_frequency: InterestFrequency | None = None
 
     def __post_init__(self):
         self.total = 0
         self.checks = tuple(AccountCheck(c) for c in self.checks)
+        if self.interest_frequency is not None:
+            self.interest_frequency = InterestFrequency(self.interest_frequency)
 
         self._check_positivity = (
             (lambda _: True)
@@ -402,7 +408,9 @@ class Account:
         Credit card accounts are the ones in the credit cards YAML (if given), set
         like the others but always liquid liabilities.
 
-        Any account may list `checks` (AccountCheck values) on its daily balance.
+        Any account may list `checks` (AccountCheck values) on its daily balance, and set
+        the `interest_frequency` (InterestFrequency value) expected of its interest on money:
+        only an account with one can have interest on money.
         """
         data = dict(_load_yaml(path) or {})
         previous_month = previous_month_of_yaml(data)
@@ -494,6 +502,16 @@ class Account:
                 raise ValueError(f"Account {name!r} repeats checks: {values}")
             return tuple(AccountCheck(v) for v in values)
 
+        def interest_frequency_of(name: str, acc_d: dict) -> InterestFrequency | None:
+            value = acc_d.get(INTEREST_FREQUENCY)
+            if value is None:
+                return None
+            try:
+                return InterestFrequency(value)
+            except ValueError:
+                valid = [f.value for f in InterestFrequency]
+                raise ValueError(f"Account {name!r} has an unknown {INTEREST_FREQUENCY}: {value!r} (valid: {valid})") from None
+
         credit_cards_data = (_load_yaml(credit_cards_path) if credit_cards_path else None) or {}
         special = sorted(set(credit_cards_data) & (set(investments_data) | set(INTERNAL_ACCOUNTS)))
         if special:
@@ -523,6 +541,7 @@ class Account:
                     "is_liquid": is_liquid_of(name, acc_d) or acc_cls is CreditCardAccount,
                     "initial_date": initial_date_of(name, acc_d),
                     "checks": checks_of(name, acc_d),
+                    "interest_frequency": interest_frequency_of(name, acc_d),
                     "internal": name in INTERNAL_ACCOUNTS,
                 }
                 if name in (INTERMEDIARY, DEBT_ACCOUNT) and not fields["currency"].is_base_currency:

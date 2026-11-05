@@ -9,7 +9,8 @@ from typing import TYPE_CHECKING
 
 import yaml
 
-from pledger.enums import AccountCheck
+from pledger.enums import AccountCheck, InterestFrequency
+from pledger.models import INTEREST_FREQUENCY
 from pledger.web.store.common import _check_description, _parse_amount
 
 if TYPE_CHECKING:
@@ -24,11 +25,13 @@ def _account_fields(
     is_liquid: bool,
     initial_date: str,
     checks: Sequence[str],
+    interest_frequency: str = "",
 ) -> dict:
     """
     The fields of an account in the accounts YAML, validated: without a currency, it is
     in the base currency; without an initial date, or with the Monday of the initial
     week (see Snapshot.initial_week), it has none (it starts on that one). Its `checks` are AccountCheck values.
+    Its `interest_frequency` (an InterestFrequency value) is only written if set: without one, it has no interest on money.
     """
     description = _check_description(description, "account")
     currency = currency.strip() or snapshot.base_currency.name
@@ -64,6 +67,11 @@ def _account_fields(
         raise ValueError(f"Repeated checks: {[c.value for c in checks]}")
     if checks:
         fields["checks"] = [c.value for c in checks]
+    if interest_frequency.strip():
+        try:
+            fields[INTEREST_FREQUENCY] = InterestFrequency(interest_frequency.strip()).value
+        except ValueError:
+            raise ValueError(f"Invalid interest frequency: {interest_frequency!r}") from None
     return fields
 
 

@@ -10,6 +10,7 @@ from helpers import (
     INVEST_TRANSFERS_YAML,
     INVEST_YAML,
     with_conversion_bases,
+    with_interest_frequency,
     with_internal,
 )
 
@@ -289,6 +290,7 @@ class TestMissingInterest:
             "    Interest:\n      id: 6\n      long_name: I\n      description: d\n      base_movements:\n"
             "        gain:\n          Interest on Money (G): d\n        loss:\n          Interest on Money (L): d\n"
         ))
+        with_interest_frequency(settings, Ca="weekly", Ud="weekly")
         return settings
 
     @staticmethod
@@ -299,10 +301,41 @@ class TestMissingInterest:
         # Today is Wednesday 2026-03-11: the week of 03-02 has passed, that of 03-09 hasn't
         self.write(settings, "2026-02-16;Ca;1;\n2026-02-25;Ca;1;\n2026-03-01;Ud;1;\n")
         data = build_investments(LedgerStore(settings).load())
-        assert data["missing_interest"] == [{"name": "Ca", "weeks": ["2026-03-02"]}, {"name": "Ud", "weeks": ["2026-03-02"]}]
+        assert data["missing_interest"] == [
+            {"name": "Ca", "frequency": "weekly", "periods": ["2026-03-02"]},
+            {"name": "Ud", "frequency": "weekly", "periods": ["2026-03-02"]},
+        ]
         page = TestClient(create_app(settings)).get("/investments").text
-        assert "2 accounts have past weeks without interest" in page
-        assert "<strong>Ca</strong> (1): 2026-03-02" in page
+        assert "2 accounts have past periods without interest" in page
+        assert "<strong>Ca</strong> (1 week): 2026-03-02" in page
+
+    def test_a_monthly_account_warns_about_past_months(self, settings):
+        # Today is 2026-03-11: February has ended, March hasn't
+        path = settings.accounts_path
+        path.write_text(
+            path.read_text(encoding="utf-8").replace("interest_frequency: weekly", "interest_frequency: monthly", 1),
+            encoding="utf-8",
+        )
+        self.write(settings, "2025-12-29;Ca;1;\n2026-01-05;Ca;1;\n")
+        data = build_investments(LedgerStore(settings).load())
+        assert data["missing_interest"] == [{"name": "Ca", "frequency": "monthly", "periods": ["2026-02"]}]
+        assert "<strong>Ca</strong> (1 month): 2026-02" in TestClient(create_app(settings)).get("/investments").text
+        self.write(settings, "2026-01-05;Ca;1;\n2026-02-23;Ca;1;\n")  # once a month is enough
+        assert build_investments(LedgerStore(settings).load())["missing_interest"] == []
+
+    def test_an_unknown_interest_frequency_is_rejected(self, settings):
+        path = settings.accounts_path
+        path.write_text(
+            path.read_text(encoding="utf-8").replace("interest_frequency: weekly", "interest_frequency: daily", 1),
+            encoding="utf-8",
+        )
+        with pytest.raises(LedgerDataError, match="unknown interest_frequency"):
+            LedgerStore(settings).load()
+
+    def test_only_accounts_with_an_interest_frequency_are_listed(self, settings):
+        self.write(settings, "2026-03-02;Ca;1;\n")
+        accounts = build_investments(LedgerStore(settings).load())["interest_accounts"]
+        assert [(a["name"], a["frequency"], a["count"]) for a in accounts] == [("Ca", "weekly", 1), ("Ud", "weekly", 0)]
 
     def test_the_weeks_before_the_first_one_and_the_current_one_dont(self, settings):
         self.write(settings, "2026-03-02;Ca;1;\n")

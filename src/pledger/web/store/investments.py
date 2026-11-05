@@ -110,8 +110,8 @@ def _interest_rows(snapshot: Snapshot, start: int) -> DataFrame:
     """
     The movements of the interest CSV, as CSV rows indexed from `start` down: an
     INTEREST_GAIN debiting its account if the amount is positive, else an
-    INTEREST_LOSS crediting it, against the equity account. Never of an investment
-    account: the results of an investment are in the investments CSV.
+    INTEREST_LOSS crediting it, against the equity account. Only of an account with an
+    interest frequency, never an investment one: the results of an investment are in the investments CSV.
     """
     new_rows = []
     for _, row in snapshot.interest.iterrows():
@@ -121,6 +121,10 @@ def _interest_rows(snapshot: Snapshot, start: int) -> DataFrame:
             raise ValueError(f"Unknown account of the interest on money: {name!r} ({date})")
         if isinstance(account, InvestmentAccount):
             raise ValueError(f"The interest on money cannot be of an investment account: {name} ({date})")  # noqa: TRY004 (a bad data value)
+        if account.interest_frequency is None:
+            raise ValueError(
+                f"Account {name!r} has interest on money ({date}) but no interest frequency: set it in the Accounts tab"
+            )
         gain = not text.startswith("-")
         base = _required_base(
             snapshot.base_movements, INTEREST_GAIN if gain else INTEREST_LOSS, gain, "for the interest on money"

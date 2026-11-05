@@ -44,6 +44,7 @@ from pledger.web.store.constants import (
     ID_COLUMN,
     INITIAL_GAIN,
     INITIAL_PRICE,
+    INTEREST,
     INTEREST_ID,
     INVEST,
     INVESTMENT_COLUMN,
@@ -269,7 +270,8 @@ class Snapshot:
     def side_accounts(self, base: MovementBase, ledger_side: LedgerSide) -> list[Account]:
         """
         Accounts that can be picked on a non-fixed side of a base movement: never an
-        investment account on a free side of an investment base movement, and only
+        investment account on a free side of an investment base movement, only one with an
+        interest frequency for the interest on money, and only
         those that interact with the account fixed on its other side, if any.
         """
         special = SPECIAL_SIDES.get(base.side(ledger_side))
@@ -277,6 +279,8 @@ class Snapshot:
             accounts = [a for a in self.accounts.values() if special(a)]
         elif base.name in self.invest_base_movements():
             accounts = [a for a in self.free_accounts() if not isinstance(a, InvestmentAccount)]
+            if base.name in INTEREST:
+                accounts = [a for a in accounts if a.interest_frequency is not None]
         else:
             accounts = self.free_accounts()
         fixed = base.acc_credit if ledger_side == LedgerSide.DEBIT else base.acc_debit

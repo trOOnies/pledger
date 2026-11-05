@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pledger.enums import AccountCheck, AccountType
+from pledger.enums import AccountCheck, AccountType, InterestFrequency
 from pledger.models import (
     SPECIAL_LABELS,
     CreditCardAccount,
@@ -60,6 +60,7 @@ def account_values(account) -> dict:
         "acc_initial_amount": f"{account.initial_amount:,.{2 if account.currency.is_base_currency else 4}f}",
         "acc_initial_date": account.initial_date.isoformat() if account.initial_date else "",
         "acc_check": account.checks[0].value if account.checks else "",
+        "acc_interest_frequency": account.interest_frequency.value if account.interest_frequency else "",
     }
 
 
@@ -121,6 +122,7 @@ def account_form(snapshot: Snapshot, values: dict | None = None, editing: dict |
         "account_types": [t.value for t in ACCOUNT_TYPE_ORDER if t != AccountType.EQUITY],
         "currencies": list(snapshot.currencies.values()),
         "check_labels": CHECK_LABELS,
+        "interest_frequencies": [f.value for f in InterestFrequency],
         "values": values,
         "editing": editing,
     }

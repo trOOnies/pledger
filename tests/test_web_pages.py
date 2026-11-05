@@ -619,6 +619,7 @@ class TestApi:
         assert accounts["Bk"] == {
             "name": "Bk", "description": "Bank account", "type": "asset", "currency": "USD",
             "is_liquid": True, "initial_amount": 0.1005, "initial_date": "2025-12-31", "checks": [],
+            "interest_frequency": None,
         }
         assert accounts["Cc"]["initial_date"] is None
         bases = {b["name"]: b for b in client.get("/api/base-movements").json()}

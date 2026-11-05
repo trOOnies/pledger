@@ -63,16 +63,28 @@
       <input type="date" name="initial_date" value="{{ values.acc_initial_date }}">
     </label>
   </div>
-  <label><span>Check <em class="optional">(optional)</em></span>
-    <select name="check">
-      <option value="">None</option>
-      {% for check, label in check_labels.items() %}
-      <option value="{{ check.value }}" {% if check.value == values.acc_check %}selected{% endif %}>{{ label }}</option>
-      {% endfor %}
-    </select>
-  </label>
+  <div class="pair">
+    <label><span>Check <em class="optional">(optional)</em></span>
+      <select name="check">
+        <option value="">None</option>
+        {% for check, label in check_labels.items() %}
+        <option value="{{ check.value }}" {% if check.value == values.acc_check %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label title="How often the account is expected to have a movement of interest on money: only an account with one can have it"><span>Interest frequency <em class="optional">(optional)</em></span>
+      <select name="interest_frequency">
+        <option value="">None</option>
+        {% for f in interest_frequencies %}
+        <option value="{{ f }}" {% if f == values.acc_interest_frequency %}selected{% endif %}>{{ f | capitalize }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </div>
   <p class="muted small">The initial amount is in the account's currency. Without an initial date, the account starts on the first date of the ledger (the initial week of the <code>previous_month</code> of the accounts YAML, if set).</p>
   <p class="muted small">A check is on the balance at the end of each day: never negative (net positive) or always 0.00 (net zero). Movements breaking it are rejected.</p>
+  <p class="muted small">Set an interest frequency only for an account that earns or pays interest on money: it then
+    gets it in the Investments tab, which warns about each past week (or month) without a movement of interest of it.</p>
   {% if editing %}<p class="muted small">The name, type and currency of an account stay; rename it by hand in its YAML and CSVs.</p>{% endif %}
   <button type="submit">{{ "Save changes" if editing else "Add account" }}</button>
 </form>

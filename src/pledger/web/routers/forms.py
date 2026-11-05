@@ -630,18 +630,19 @@ def create_account(
     is_liquid: Annotated[bool, Form()] = False,
     initial_date: Annotated[str, Form()] = "",
     check: Annotated[str, Form()] = "",  # one AccountCheck value, or none
+    interest_frequency: Annotated[str, Form()] = "",  # an InterestFrequency value, or none
 ):
     try:
         store.add_account(
             name, acc_type, description, initial_amount, currency, is_liquid, initial_date,
-            [check] if check else [],
+            [check] if check else [], interest_frequency,
         )
     except ValueError as e:
         values = {
             "acc_type": acc_type, "acc_name": name, "acc_description": description,
             "acc_currency": currency, "acc_is_liquid": is_liquid,
             "acc_initial_amount": initial_amount, "acc_initial_date": initial_date,
-            "acc_check": check,
+            "acc_check": check, "acc_interest_frequency": interest_frequency,
         }
         return render_account_form(request, store, values, account_error=str(e))
     return render_account_form(
@@ -675,16 +676,19 @@ def edit_account(
     is_liquid: Annotated[bool, Form()] = False,
     initial_date: Annotated[str, Form()] = "",
     check: Annotated[str, Form()] = "",  # one AccountCheck value, or none
+    interest_frequency: Annotated[str, Form()] = "",  # an InterestFrequency value, or none
 ):
     account = editable_account(store, name)
     try:
-        store.edit_account(name, description, initial_amount, is_liquid, initial_date, [check] if check else [])
+        store.edit_account(
+            name, description, initial_amount, is_liquid, initial_date, [check] if check else [], interest_frequency
+        )
     except ValueError as e:
         values = {
             "acc_type": account.acc_type.value, "acc_name": name, "acc_description": description,
             "acc_currency": account.currency.name, "acc_is_liquid": is_liquid,
             "acc_initial_amount": initial_amount, "acc_initial_date": initial_date,
-            "acc_check": check,
+            "acc_check": check, "acc_interest_frequency": interest_frequency,
         }
         return render_account_form(request, store, values, editing=account_editing(account), account_error=str(e))
     return render_account_form(request, store, {}, changed=True, account_success=f"Updated account {name}")

@@ -30,6 +30,12 @@ class AccountCheck(str, Enum):
         return cents >= 0 if self == AccountCheck.NET_POSITIVE else cents == 0
 
 
+class InterestFrequency(str, Enum):
+    """How often an account is expected to have a movement of interest on money."""
+    WEEKLY = "weekly"
+    MONTHLY = "monthly"
+
+
 class InvestmentType(str, Enum):
     """Type of investment."""
     PUBLIC_BOND = "public_bond"

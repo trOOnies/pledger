@@ -9,6 +9,7 @@ import yaml
 
 from pledger.enums import AccountType, MovementType
 from pledger.models import (
+    INTEREST_FREQUENCY,
     INTERNAL,
     SPECIAL_SIDES,
     CreditCardAccount,
@@ -44,6 +45,7 @@ class AccountStore(MovementStore):
         is_liquid: bool = False,
         initial_date: str = "",
         checks: Sequence[str] = (),
+        interest_frequency: str = "",
     ) -> None:
         """
         Validate a new account and add it to the accounts YAML. Without a currency,
@@ -62,7 +64,9 @@ class AccountStore(MovementStore):
             raise ValueError(f"Invalid account type: {acc_type!r}") from None
         if acc_type == AccountType.EQUITY:
             raise ValueError("New equity accounts are not supported")
-        fields = _account_fields(snapshot, description, initial_amount, currency, is_liquid, initial_date, checks)
+        fields = _account_fields(
+            snapshot, description, initial_amount, currency, is_liquid, initial_date, checks, interest_frequency
+        )
         self._add_yaml_entry(self.settings.accounts_path, (acc_type.value,), name, fields)
 
     def edit_account(
@@ -73,6 +77,7 @@ class AccountStore(MovementStore):
         is_liquid: bool = False,
         initial_date: str = "",
         checks: Sequence[str] = (),
+        interest_frequency: str = "",
     ) -> None:
         """
         Validate the new fields of an asset or liability account, like add_account, and
@@ -92,7 +97,7 @@ class AccountStore(MovementStore):
         fixed_amount = isinstance(account, (InvestmentAccount, DebtAccount))
         fields = _account_fields(
             snapshot, description, 0 if fixed_amount else initial_amount, account.currency.name, is_liquid,
-            initial_date, checks,
+            initial_date, checks, interest_frequency,
         )
         if fixed_amount:
             del fields["initial_amount"]
@@ -104,7 +109,7 @@ class AccountStore(MovementStore):
             section = (*((INTERNAL,) if account.internal else ()), account.acc_type.value)
 
         def update(entry: dict) -> dict:
-            entry = {k: v for k, v in entry.items() if k not in {"initial_date", "checks"}}
+            entry = {k: v for k, v in entry.items() if k not in {"initial_date", "checks", INTEREST_FREQUENCY}}
             return {**entry, **fields}
 
         before = path.read_bytes().decode("utf-8")

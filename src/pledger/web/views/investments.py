@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from pledger.enums import AccountType, InvestmentType, MovementType
+from pledger.enums import InterestFrequency, InvestmentType, MovementType
 from pledger.models import INVESTMENT, InvestmentAccount, next_month, rounds_to_zero
 from pledger.web.store import (
     BEFORE_COLUMN,
@@ -186,43 +186,60 @@ def interest_movements(snapshot: Snapshot) -> list:
 
 def missing_interest(snapshot: Snapshot) -> list[dict]:
     """
-    The accounts of the interest CSV with the weeks ended by today with no movement of
-    theirs, from the week of their first one on, each as its Monday.
+    The accounts of the interest CSV with the periods ended by today with no movement of
+    theirs, from the period of their first one on: weeks, each as its Monday, or calendar
+    months (YYYY-MM), after the interest frequency of the account (see InterestFrequency), which
+    every account of the interest CSV has.
     """
-    weeks: dict[str, set[Week]] = {}
+    dates: dict[str, set[dt.date]] = {}
     for date, name in zip(snapshot.interest["move_date"], snapshot.interest[INTEREST_ACCOUNT]):
-        weeks.setdefault(name.strip(), set()).add(Week.of(dt.date.fromisoformat(date.strip())))
-    last = Week.of(snapshot.today - dt.timedelta(days=7))  # the last one ended, at the latest yesterday
+        dates.setdefault(name.strip(), set()).add(dt.date.fromisoformat(date.strip()))
+    last_week = Week.of(snapshot.today - dt.timedelta(days=7))  # the last one ended, at the latest yesterday
+    last_month = (snapshot.today.replace(day=1) - dt.timedelta(days=1)).strftime("%Y-%m")  # the last one ended
     found = []
-    for name, seen in weeks.items():
-        week, missing = min(seen), []
-        while week <= last:
-            if week not in seen:
-                missing.append(week.start.isoformat())
-            week = Week(week.start + dt.timedelta(days=7))
+    for name, seen in dates.items():
+        monthly = snapshot.accounts[name].interest_frequency == InterestFrequency.MONTHLY
+        missing = []
+        if monthly:
+            months = {d.strftime("%Y-%m") for d in seen}
+            month = min(months)
+            while month <= last_month:
+                if month not in months:
+                    missing.append(month)
+                month = next_month(month)
+        else:
+            weeks = {Week.of(d) for d in seen}
+            week = min(weeks)
+            while week <= last_week:
+                if week not in weeks:
+                    missing.append(week.start.isoformat())
+                week = Week(week.start + dt.timedelta(days=7))
         if missing:
-            found.append({"name": name, "weeks": missing})
+            frequency = InterestFrequency.MONTHLY if monthly else InterestFrequency.WEEKLY
+            found.append({"name": name, "frequency": frequency.value, "periods": missing})
     return found
 
 
 def build_interest(snapshot: Snapshot) -> dict:
     """
-    The interest on money (see interest_movements) earned and paid in each account,
-    in their defined order, and its net in each month, from the first month of the
+    The interest on money (see interest_movements) earned and paid in each account with an
+    interest frequency (and only those, with movements or not), in their defined order, and its net in each month, from the first month of the
     ledger to the last one. `has_interest` if its base movements are defined.
     """
     moves = interest_movements(snapshot)
     by_account: dict[str, dict] = {}
     for a in snapshot.accounts.values():
+        if a.interest_frequency is None:
+            continue  # only those with an interest frequency have interest on money
         # Each movement counts for its account on the side that isn't equity.
         mine = [m for m in moves if a in (m.acc_debit, m.acc_credit)]
-        if mine and a.acc_type != AccountType.EQUITY:
-            gains = sum(m.amount for m in mine if m.move_type == MovementType.GAIN)
-            losses = sum(m.amount for m in mine if m.move_type == MovementType.LOSS)
-            by_account[a.name] = {
-                "name": a.name, "description": a.description, "currency": a.currency.name,
-                "gains": gains, "losses": losses, "net": gains - losses, "count": len(mine),
-            }
+        gains = sum(m.amount for m in mine if m.move_type == MovementType.GAIN)
+        losses = sum(m.amount for m in mine if m.move_type == MovementType.LOSS)
+        by_account[a.name] = {
+            "name": a.name, "description": a.description, "currency": a.currency.name,
+            "frequency": a.interest_frequency.value,
+            "gains": gains, "losses": losses, "net": gains - losses, "count": len(mine),
+        }
     totals: dict[str, float] = {}  # month to its net interest
     for m in moves:
         sign = 1 if m.move_type == MovementType.GAIN else -1

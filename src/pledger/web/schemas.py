@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from pydantic import BaseModel
 
-from pledger.enums import AccountCheck, AccountType, InvestmentType, MovementType
+from pledger.enums import (
+    AccountCheck,
+    AccountType,
+    InterestFrequency,
+    InvestmentType,
+    MovementType,
+)
 
 
 class MovementIn(BaseModel):
@@ -72,6 +78,7 @@ class AccountIn(BaseModel):
     is_liquid: bool = False
     initial_date: str = ""  # the first date of the ledger if empty
     checks: list[AccountCheck] = []  # on its daily balance
+    interest_frequency: InterestFrequency | None = None  # of its interest on money; None if it has none
 
 
 class WorkMonthIn(BaseModel):

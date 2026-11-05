@@ -83,3 +83,19 @@ class TestAccountFormSwaps:
                                                 "currency": "ARS", "is_liquid": "true"}, headers=HTMX)
         assert "Updated account Bk" in r.text
         assert LedgerStore(settings).load().accounts["Bk"].currency.name == "USD"
+
+    def test_the_interest_frequency_is_optional(self, settings, client):
+        form = client.get("/accounts/edit", params={"name": "Ca"}).text.split('name="interest_frequency"')[1]
+        assert '<option value="">None</option>' in form.split("</select>")[0]
+        assert "selected" not in form.split("</select>")[0]  # none by default
+        body = {"name": "Ca", "description": "Cash", "initial_amount": "0", "is_liquid": "true", "interest_frequency": "monthly"}
+        assert "Updated account Ca" in client.post("/accounts/edit", data=body).text
+        ca = yaml.safe_load(settings.accounts_path.read_text())["asset"]["Ca"]
+        assert ca["interest_frequency"] == "monthly"
+        assert LedgerStore(settings).load().accounts["Ca"].interest_frequency.value == "monthly"
+        assert 'value="monthly" selected' in client.get("/accounts/edit", params={"name": "Ca"}).text
+        client.post("/accounts/edit", data={**body, "interest_frequency": ""})
+        assert "interest_frequency" not in yaml.safe_load(settings.accounts_path.read_text())["asset"]["Ca"]
+        assert LedgerStore(settings).load().accounts["Ca"].interest_frequency is None
+        r = client.post("/accounts/edit", data={**body, "interest_frequency": "daily"})
+        assert "Invalid interest frequency: &#39;daily&#39;" in r.text

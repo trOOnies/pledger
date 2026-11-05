@@ -22,6 +22,7 @@ def list_accounts(store: StoreDep):
             "initial_amount": a.initial_amount,
             "initial_date": a.initial_date.isoformat() if a.initial_date else None,
             "checks": [c.value for c in a.checks],
+            "interest_frequency": a.interest_frequency.value if a.interest_frequency else None,
         }
         for a in store.load().accounts.values()
     ]
@@ -33,7 +34,7 @@ def create_account(store: StoreDep, account: AccountIn):
         store.add_account(
             account.name, account.type.value, account.description, account.initial_amount,
             account.currency, account.is_liquid, account.initial_date,
-            [c.value for c in account.checks],
+            [c.value for c in account.checks], account.interest_frequency.value if account.interest_frequency else "",
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from None

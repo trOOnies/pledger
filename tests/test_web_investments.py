@@ -14,6 +14,7 @@ from helpers import (
     investment_rows,
     movement_ids,
     rows,
+    with_interest_frequency,
     with_internal,
     with_prices,
 )
@@ -454,7 +455,18 @@ class TestInvestMovements:
         )
         r = client.get("/investments")
         assert card_labels(r.text) == ["Invested", "Net interest on money", "Net capital gains", "Dividends", "Total result"]
-        assert "No interest on money yet." in r.text
+        assert "No account has interest on money yet" in r.text
+        # Only an account with an interest frequency can have it
+        f = client.get("/form/invest-fields", params={"base_movement": "Interest on Money (L)"}).text
+        assert ">Bk</option>" not in f and ">Ca</option>" not in f
+        with pytest.raises(ValueError, match="'Bk' has interest on money .* but no interest frequency"):
+            LedgerStore(settings).add("2026-02-10", "Interest on Money (L)", "Eq", "Bk", "1", invest=True)
+        with_interest_frequency(settings, Ca="weekly", Bk="monthly")
+        r = client.get("/investments")
+        assert "No account has interest on money yet" not in r.text and "<td>Monthly</td>" in r.text
+        assert [(a["name"], a["count"]) for a in build_investments(LedgerStore(settings).load())["interest_accounts"]] == [
+            ("Ca", 0), ("Bk", 0),
+        ]
         # Added to the interest CSV, created if missing: interest paid is negative
         f = client.get("/form/invest-fields", params={"base_movement": "Interest on Money (L)"}).text
         assert 'name="investment"' not in f
@@ -500,9 +512,11 @@ class TestInvestMovements:
             ("2026-01-10;Xx;3;", "Unknown account of the interest on money: 'Xx'"),
             ("2026-01-10;Ca;x;", "Invalid amount of the interest on money"),
             ("2026-01-10;Ca;3;", "'Interest on Money (G)' is required for the interest on money"),
+            ("2026-01-10;Bk;3;", "'Bk' has interest on money (2026-01-10) but no interest frequency"),
         ],
     )
     def test_invalid_interest(self, settings, line, message):
+        with_interest_frequency(settings, Ca="weekly")
         path = settings.base_movements_path
         if "required" not in message:
             path.write_text(path.read_text().replace("Dividends: d\n", "Dividends: d\n          Interest on Money (G): d\n", 1))

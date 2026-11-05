@@ -554,7 +554,8 @@ For each investment, held or not, and overall, the Investments tab shows:
 
 **Interest on money.** The interest earned and paid on the money of a regular account (e.g.
 `MP`), with no investment involved, is kept in `movements/interest.csv`: the account, never an
-investment one, and the amount, **positive if earned, negative if paid**.
+investment one, and only one with an `interest_frequency` (`weekly` or `monthly`, in the accounts YAML or
+the Accounts tab; none by default), and the amount, **positive if earned, negative if paid**.
 
 ```csv
 move_date;acc_debit;amount;comment
@@ -565,14 +566,16 @@ move_date;acc_debit;amount;comment
 Earned interest is an `Interest on Money (G)` movement debiting the account, and paid interest
 an `Interest on Money (L)` one crediting it, against equity: both internal base movements are
 required for the rows that use them. The Investments tab adds and deletes them like the other
-investment movements, totals them in their own section, by account and month by month, and adds
+investment movements, totals them in their own section, by account (every account with an interest
+frequency, and only those) and month by month, and adds
 their net (its *Net interest on money* card) to the total result. The interest of an
 investment is one of its results instead (e.g. `Dividends & Interest`, in `investment.csv`).
 
 It also charts the total invested and the total result at each month end, and warns about
 the movements naming an investment of no investment account. For every account of `interest.csv`,
 it warns about each week already ended without a row of that account, from the week of its first one
-on; a row of `0.00` is enough for a week with no interest.
+on, or about each calendar month for a `monthly` one; a row of `0.00` is enough for a week (or month)
+with no interest.
 
 **Broker fees and other currencies.** The form of the Investments tab (or `POST
 /api/investments/movements`, with `currency` and `fees`) adds what takes several rows:
