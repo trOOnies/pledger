@@ -20,19 +20,22 @@
 <body class="{% block body_class %}{% endblock %}">
   <header class="topbar">
     <a class="brand" href="/" title="Ledger" {% if request.url.path == '/' %}aria-current="page"{% endif %}><img src="{{ url_for('static', path='favicon.svg') }}?v={{ static_version('favicon.svg') }}" alt="" width="24" height="24">pledger</a>
+    {# The tabs, in sections that unroll on hover (or focus); the Ledger tab is the brand #}
+    {% set path = request.url.path %}
+    {% macro tab(href, label) %}<a href="{{ href }}" {% if path == href %}aria-current="page"{% endif %}>{{ label }}</a>{% endmacro %}
     <nav>
-      <a href="/accounts" {% if request.url.path == '/accounts' %}aria-current="page"{% endif %}>Accounts</a>
-      <a href="/currencies" {% if request.url.path == '/currencies' %}aria-current="page"{% endif %}>Currencies</a>
-      <a href="/results" {% if request.url.path == '/results' %}aria-current="page"{% endif %}>Results</a>
-      <a href="/work" {% if request.url.path == '/work' %}aria-current="page"{% endif %}>Work</a>
-      <a href="/investments" {% if request.url.path == '/investments' %}aria-current="page"{% endif %}>Investments</a>
-      <a href="/debt" {% if request.url.path == '/debt' %}aria-current="page"{% endif %}>Debt</a>
-      <a href="/services" {% if request.url.path == '/services' %}aria-current="page"{% endif %}>Services</a>
-      <a href="/credit-cards" {% if request.url.path == '/credit-cards' %}aria-current="page"{% endif %}>Credit Cards</a>
-      <a href="/budget" {% if request.url.path == '/budget' %}aria-current="page"{% endif %}>Budget</a>
-      <a href="/trip" {% if request.url.path == '/trip' %}aria-current="page"{% endif %}>Trip</a>
-      <a href="/audit" {% if request.url.path == '/audit' %}aria-current="page"{% endif %}>Audit</a>
-      <a href="/help" {% if request.url.path.startswith('/help') %}aria-current="page"{% endif %}>Help</a>
+      {% for section, tabs in (
+        ("Info", (("/accounts", "Accounts"), ("/currencies", "Currencies"), ("/results", "Results"))),
+        ("Revenue", (("/work", "Work"), ("/investments", "Investments"))),
+        ("Debt", (("/debt", "Debts &amp; Loans"), ("/services", "Services"), ("/credit-cards", "Credit Cards"))),
+        ("Other", (("/audit", "Audit"), ("/budget", "Budget"), ("/trip", "Trip"))),
+      ) %}
+      <div class="nav-section {{ 'current' if tabs | selectattr(0, 'equalto', path) | list }}">
+        <button type="button" class="nav-label" aria-haspopup="true">{{ section }}</button>
+        <div class="nav-menu">{% for href, label in tabs %}{{ tab(href, label | safe) }}{% endfor %}</div>
+      </div>
+      {% endfor %}
+      <a href="/help" {% if path.startswith('/help') %}aria-current="page"{% endif %}>Help</a>
       <a href="/docs">API</a>
     </nav>
     <button type="button" id="visibility" class="visibility" aria-pressed="false" aria-label="Hide amounts and comments" title="Hide amounts and comments">

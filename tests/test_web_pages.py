@@ -37,6 +37,21 @@ class TestPages:
             assert ('aria-current="page"' in brand) == current
             assert ">Ledger</a>" not in header and 'href="/accounts"' in header
 
+    def test_tabs_are_in_sections(self, client):
+        header = client.get("/services").text.split("</header>")[0]
+        sections = re.findall(r'<div class="nav-section ?(\w*)">\s*<button[^>]*>(\w+)</button>\s*<div class="nav-menu">(.*?)</div>', header)
+        assert [(name, re.findall(r'href="([^"]+)"', menu)) for _, name, menu in sections] == [
+            ("Info", ["/accounts", "/currencies", "/results"]),
+            ("Revenue", ["/work", "/investments"]),
+            ("Debt", ["/debt", "/services", "/credit-cards"]),
+            ("Other", ["/audit", "/budget", "/trip"]),
+        ]
+        # The section of the tab open stands out, and the tab in it
+        assert [current for current, _, _ in sections] == ["", "", "current", ""]
+        assert 'href="/services" aria-current="page"' in header and ">Debts &amp; Loans</a>" in header
+        # Help and the API aren't in a section
+        assert re.search(r'</div>\s*<a href="/help" >Help</a>\s*<a href="/docs">API</a>\s*</nav>', header)
+
     def test_comments_are_hidden_with_the_amounts(self, client):
         client.post("/movements", data={
             "move_date": "2026-02-01", "move_type": "loss", "base_movement": "Food", "acc_debit": "Eq", "acc_credit": "Ca",

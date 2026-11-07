@@ -91,6 +91,27 @@ code { font-size: .9em; }
 .topbar nav { display: flex; flex-wrap: wrap; gap: .25rem 1rem; min-width: 0; }
 .topbar nav a { color: var(--muted); text-decoration: none; white-space: nowrap; }
 .topbar nav a[aria-current="page"] { color: var(--text); font-weight: 600; }
+.topbar nav { align-items: center; }
+/* A section of tabs: its label unrolls its menu on hover, or while a tab of it has the focus */
+.nav-section { position: relative; }
+.nav-label {
+  width: auto; padding: 0; border: none; background: none; color: var(--muted); cursor: default; white-space: nowrap;
+}
+.nav-label::after { content: " ▾"; font-size: .75em; opacity: .7; }
+.nav-section.current .nav-label { color: var(--text); font-weight: 600; }
+.nav-section:hover .nav-label, .nav-section:focus-within .nav-label { color: var(--text); }
+.nav-menu {
+  display: none; position: absolute; top: 100%; left: -.75rem; z-index: 20; min-width: 10rem;
+  /* the padding on top bridges the gap from the label, so the menu stays open while reaching it */
+  padding: .6rem 0 .3rem; flex-direction: column;
+}
+.nav-menu::before {
+  content: ""; position: absolute; inset: .3rem 0 0; z-index: -1;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 12px rgba(0, 0, 0, .12);
+}
+.nav-section:hover .nav-menu, .nav-section:focus-within .nav-menu { display: flex; }
+.topbar .nav-menu a { padding: .35rem .75rem; }
+.topbar .nav-menu a:hover { color: var(--text); background: var(--bg); }
 /* The icon buttons of the top bar: the visibility toggle and Save & Quit (an open door) */
 .visibility, .quit {
   display: inline-flex; width: auto; padding: .3rem; border: 1px solid var(--border); border-radius: 6px;
