@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% block body_class %}fill{% endblock %}
 {% block content %}
 <form id="filters" class="filters" hx-get="/" hx-target="#view" hx-push-url="true"
   hx-trigger="change, submit, input changed delay:300ms from:#search">

@@ -50,6 +50,7 @@
   {% for k in kinds %}
   <div class="panel">
     <h2>{{ k.emoji }} {{ k.title }} <small>{{ k.rows | length }}</small></h2>
+    <div class="table-scroll">
     <table data-sortable="debts-{{ k.kind }}">
       <thead><tr><th>Name</th><th>Role</th><th title="The role they should have: services are expected to be creditors and companies debtors, unless set in the creditors YAML">Expected</th>{% if multiple_accounts %}<th>Account</th>{% endif %}<th class="num">Amount</th></tr></thead>
       <tbody>
@@ -69,6 +70,7 @@
       <tfoot><tr><th colspan="{{ 4 if multiple_accounts else 3 }}">Net</th><th class="num money {{ 'gain' if k.net < 0 }}">{{ k.net | money }}</th></tr></tfoot>
       {% endif %}
     </table>
+    </div>
     {% if k.kind == "companies" %}<p class="muted small">The companies of the Work tab, at no initial debt unless set in <code>{{ settings.creditors_path.name if settings.creditors_path else "creditors.yaml" }}</code>.</p>{% endif %}
   </div>
   {% endfor %}
@@ -78,6 +80,7 @@
 
   <div class="panel">
     <h2>Debt accounts</h2>
+    <div class="table-scroll">
     <table data-sortable="debt-accounts">
       <thead><tr><th>Account</th><th>Description</th><th>Currency</th>{% for title in accounts[0].counts %}<th class="num">{{ title }}</th>{% endfor %}<th class="num" title="Debt of the movements whose comment names no one">Unassigned</th><th class="num">Net debt</th></tr></thead>
       <tbody>
@@ -93,6 +96,7 @@
       {% endfor %}
       </tbody>
     </table>
+    </div>
   </div>
 
   <form id="who-filter" class="filters" hx-get="/debt" hx-target="#debt-view" hx-include="#filters" hx-push-url="true" hx-trigger="change">

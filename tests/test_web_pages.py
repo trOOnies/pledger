@@ -42,7 +42,7 @@ class TestPages:
             "move_date": "2026-02-01", "move_type": "loss", "base_movement": "Food", "acc_debit": "Eq", "acc_credit": "Ca",
             "amount": "1", "comment": "secret note",
         })
-        assert '<td class="muted money">secret note</td>' in client.get("/", params={"month": ""}).text
+        assert '<td class="muted money comment">secret note</td>' in client.get("/", params={"month": ""}).text
         assert 'title="Hide amounts and comments"' in client.get("/").text
 
     def test_index(self, client):

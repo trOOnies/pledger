@@ -162,6 +162,7 @@
 
   <div class="panel">
     <h2>Credit cards</h2>
+    <div class="table-scroll">
     <table data-sortable="credit-cards">
       <thead><tr><th>Account</th><th>Description</th><th>Currency</th><th class="num" title="Charged (credits){% if month %} in {{ month }}{% endif %}">Charged</th><th class="num" title="Paid (debits){% if month %} in {{ month }}{% endif %}">Paid</th><th class="num">Owed</th>{% if has_own %}<th class="num" title="What we owe on a card in another currency, in that currency">In its currency</th>{% endif %}</tr></thead>
       <tbody>
@@ -181,6 +182,7 @@
       <tfoot><tr><th colspan="3">Total</th><th class="num money">{{ charged | money }}</th><th class="num money">{{ paid | money }}</th><th class="num money {{ 'gain' if owed < 0 }}">{{ owed | money }}</th>{% if has_own %}<th></th>{% endif %}</tr></tfoot>
       {% endif %}
     </table>
+    </div>
   </div>
   <p class="muted small">Credit cards are liquid liabilities: charging them is a credit, paying them a debit.
     Charged and paid leave out the initial amounts.</p>

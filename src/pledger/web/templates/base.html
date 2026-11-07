@@ -16,7 +16,8 @@
     } catch {}
   </script>
 </head>
-<body>
+{# A page can fill the height of the window (body class "fill", see style.css), e.g. the Ledger tab #}
+<body class="{% block body_class %}{% endblock %}">
   <header class="topbar">
     <a class="brand" href="/" title="Ledger" {% if request.url.path == '/' %}aria-current="page"{% endif %}><img src="{{ url_for('static', path='favicon.svg') }}?v={{ static_version('favicon.svg') }}" alt="" width="24" height="24">pledger</a>
     <nav>

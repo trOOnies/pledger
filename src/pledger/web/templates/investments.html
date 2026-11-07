@@ -138,6 +138,7 @@
 
   <div class="panel">
     <h2>Investments</h2>
+    <div class="table-scroll">
     <table data-sortable="investments">
       <thead><tr><th>Investment</th><th>Type</th><th>Account</th><th class="num">Quantity</th><th class="num" title="Its last price: amount over quantity">Price</th><th class="num">Amount</th><th class="num">Share</th>{{ result_heads() }}{% if has_fees %}<th class="num" title="The broker fees as a share of the amount; - without fees or a positive amount">Fees over amount</th>{% endif %}</tr></thead>
       <tbody>
@@ -169,6 +170,7 @@
       </tfoot>
       {% endif %}
     </table>
+    </div>
     <p class="muted small">Amounts and quantities are the initial ones of the investments file plus the investment
       movements below, at the last price of each investment: of the prices file, or the one it was last bought or
       sold at (its amount over its quantity), whichever is newer. Each new price revalues it, as a capital gain or
@@ -180,6 +182,7 @@
   {% if closed %}
   <div class="panel">
     <h2>No longer held <small>{{ closed | length }}</small></h2>
+    <div class="table-scroll">
     <table data-sortable="closed-investments">
       <thead><tr><th>Investment</th><th>Type</th><th>Account</th>{{ result_heads() }}</tr></thead>
       <tbody>
@@ -193,6 +196,7 @@
       {% endfor %}
       </tbody>
     </table>
+    </div>
   </div>
   {% endif %}
 
@@ -242,6 +246,7 @@
       </div>
     </details>
     {% endif %}
+    <div class="table-scroll">
     <table data-sortable="interest-accounts">
       <thead><tr><th>Account</th><th>Description</th><th>Currency</th><th title="Its interest frequency, set in the Accounts tab">Frequency</th><th class="num">Movements</th><th class="num">Earned</th><th class="num">Paid</th><th class="num">Net</th></tr></thead>
       <tbody>
@@ -259,6 +264,7 @@
       {% endfor %}
       </tbody>
     </table>
+    </div>
     {% else %}
     <p class="muted">No account has interest on money yet: set the <strong>interest frequency</strong> of the ones
       that earn or pay it in the <a href="/accounts">Accounts</a> tab.</p>
@@ -271,6 +277,7 @@
 
   <div class="panel">
     <h2>Investment accounts</h2>
+    <div class="table-scroll">
     <table data-sortable="investment-accounts">
       <thead><tr><th>Account</th><th>Description</th><th>Currency</th><th class="num">Investments</th><th class="num">Amount</th></tr></thead>
       <tbody>
@@ -285,6 +292,7 @@
       {% endfor %}
       </tbody>
     </table>
+    </div>
   </div>
 {% endif %}
 
