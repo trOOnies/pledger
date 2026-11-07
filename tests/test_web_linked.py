@@ -493,10 +493,10 @@ class TestBalanceInItsCurrency:
 
     def test_the_tab_shows_it(self, settings):
         table_html = TestClient(create_app(settings)).get("/accounts", params={"month": ""}).text
-        asset = table_html.split('data-sortable="balances-asset"')[1].split("</table>")[0]
-        equity = table_html.split('data-sortable="balances-equity"')[1].split("</table>")[0]
-        assert "Balance in its currency" in asset and ">500.00</td>" in asset
-        assert "Balance in its currency" not in equity
+        table = lambda key: table_html.split(f'data-sortable="balances-{key}"')[1].split("</table>")[0]
+        assert "Balance in its currency" in table("foreign_assets") and ">500.00</td>" in table("foreign_assets")
+        # Only the tables with an account in another currency have the column
+        assert "Balance in its currency" not in table("assets") and "Balance in its currency" not in table("equity")
 
 
 class TestBalanceAccounts:

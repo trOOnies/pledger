@@ -529,6 +529,13 @@ td.budget-bar .bar-track { display: block; }
 /* Tables that scroll sideways in their panel when narrower than them */
 .table-scroll { overflow-x: auto; }
 
+/* The audit form and results: the asset accounts on the left, the liability ones on the right */
+.audit-sides { display: grid; gap: 0 2rem; align-items: start; }
+.audit-side { min-width: 0; }
+.audit-side > h3:first-child { margin-top: .25rem; }
+.audit-side .money-input { max-width: 18rem; margin-left: auto; }
+@media (min-width: 1201px) { .audit-sides { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
 /* The prices form shows every investment, with a compact date and new price */
 #prices-form .table-wrap { max-height: none; }
 #prices-form .prices-date { max-width: 12rem; }

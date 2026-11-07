@@ -9,17 +9,20 @@
   <p class="muted">Check each account in its bank, card or wallet, and write down the balance you see today. Its
     balance in pledger stays hidden until you confirm, so it can't influence you.</p>
   {% if audit_error %}<p class="msg error">{{ audit_error }}</p>{% endif %}
-  {# One table per group of accounts (see views.AUDIT_GROUPS), all confirmed together #}
-  {% for g in groups %}
+  {# One table per group of accounts (see views.ACCOUNT_GROUPS), all confirmed together: the
+     asset ones on the left and the liability ones on the right, when wide enough #}
+  <div class="audit-sides">
+  {% for side in (true, false) %}
+  <div class="audit-side">
+  {% for g in groups if g.side == side %}
   <h3 class="audit-group"><span aria-hidden="true">{{ g.emoji }}</span> {{ g.label }}</h3>
   <div class="table-wrap">
     <table data-audit-group="{{ g.key }}">
-      <thead><tr><th>Account</th><th>Type</th><th>Description</th><th class="num">Balance today</th></tr></thead>
+      <thead><tr><th>Account</th><th>Description</th><th class="num">Balance today</th></tr></thead>
       <tbody>
       {% for f in g.fields %}
       <tr>
         <td class="nowrap"><label for="audit-{{ f.name }}"><strong>{{ f.name }}</strong></label></td>
-        <td>{{ f.type | capitalize }}</td>
         <td class="muted">{{ f.description }}</td>
         <td>
           <span class="money-input">
@@ -40,6 +43,9 @@
     </table>
   </div>
   {% endfor %}
+  </div>
+  {% endfor %}
+  </div>
   <p class="muted small">Leave an account empty to skip it. A <code>0.00</code> is audited: its balance should be zero.
     The net zero accounts (like <code>Fi</code>) are always audited at <code>0.00</code>, and the net positive ones
     can't be negative.</p>
@@ -63,14 +69,20 @@
       {% for name, value in values.items() %}<input type="hidden" name="balance:{{ name }}" value="{{ value }}">{% endfor %}
       {% if audit_id %}<input type="hidden" name="audit" value="{{ audit_id }}">{% endif %}
     </form>
+    {# The asset accounts on the left and the liability ones on the right, when wide enough #}
+    <div class="audit-sides">
+    {% for type, title in (("asset", "Assets"), ("liability", "Liabilities")) %}
+    {% set rows = results | selectattr("type", "equalto", type) | list %}
+    {% if rows %}
+    <div class="audit-side">
+    <h3>{{ title }}</h3>
     <div class="table-wrap">
-      <table data-sortable="audit">
-        <thead><tr><th>Account</th><th>Type</th><th class="num">Inputted</th><th class="num">Actual</th><th class="num" title="Inputted minus actual">Difference</th><th></th></tr></thead>
+      <table data-sortable="audit-{{ type }}">
+        <thead><tr><th>Account</th><th class="num">Inputted</th><th class="num">Actual</th><th class="num" title="Inputted minus actual">Difference</th><th></th></tr></thead>
         <tbody>
-        {% for r in results %}
+        {% for r in rows %}
         <tr>
           <td class="nowrap"><strong>{{ r.name }}</strong></td>
-          <td>{{ r.type | capitalize }}</td>
           <td class="num" data-sort="{{ r.inputted }}">{{ amount(r.inputted, r) }}</td>
           <td class="num" data-sort="{{ r.actual }}">{{ amount(r.actual, r) }}</td>
           <td class="num {{ 'muted' if r.matches else 'loss' }}" data-sort="{{ r.difference }}">{{ amount(r.difference, r) }}</td>
@@ -87,6 +99,10 @@
         {% endfor %}
         </tbody>
       </table>
+    </div>
+    </div>
+    {% endif %}
+    {% endfor %}
     </div>
     <p class="muted small">Actual balances are at the end of today. The corrections are optional: you can leave a
       difference and fix it yourself in your data files. One added by mistake can be deleted from the

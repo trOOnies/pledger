@@ -13,6 +13,8 @@ from pledger.models import (
 from pledger.web.store import Snapshot
 from pledger.web.views.charts import line_chart
 from pledger.web.views.common import (
+    ACCOUNT_GROUPS,
+    account_group,
     grouped_composition,
     month_end_balances,
     months_of,
@@ -78,6 +80,7 @@ def build_accounts(snapshot: Snapshot, month: str = "", values: dict | None = No
         t.value: [
             {
                 "name": a.name,
+                "type": a.acc_type.value,
                 "description": a.description,
                 "currency": a.currency.name,
                 "is_liquid": a.is_liquid,
@@ -96,6 +99,15 @@ def build_accounts(snapshot: Snapshot, month: str = "", values: dict | None = No
         for t in ACCOUNT_TYPE_ORDER
     }
     totals = {t: sum(a["balance"] for a in accs) for t, accs in accounts_by_type.items()}
+    # The balances tables: one per group of the asset and liability accounts, then the equity ones
+    group_of = {a.name: account_group(a) or a.acc_type.value for a in snapshot.accounts.values()}
+    groups = {**ACCOUNT_GROUPS, AccountType.EQUITY.value: ("⚖️", "Equity")}
+    account_groups = [
+        {"key": key, "emoji": emoji, "label": label, "type": accs[0]["type"], "accounts": accs,
+         "has_own": any(a["own"] is not None for a in accs)}
+        for key, (emoji, label) in groups.items()
+        if (accs := [a for t in accounts_by_type.values() for a in t if group_of[a["name"]] == key])
+    ]
 
     return {
         "months": months_of(snapshot),
@@ -104,6 +116,7 @@ def build_accounts(snapshot: Snapshot, month: str = "", values: dict | None = No
         "liabilities": totals[AccountType.LIABILITY.value],
         "equity": totals[AccountType.EQUITY.value],
         "accounts_by_type": accounts_by_type,
+        "account_groups": account_groups,
         "has_own": {t: any(a["own"] is not None for a in accs) for t, accs in accounts_by_type.items()},
         "groupings": balance_groupings(snapshot, balances),
         **over_time_charts(snapshot, month),

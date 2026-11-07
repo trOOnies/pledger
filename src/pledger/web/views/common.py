@@ -8,7 +8,15 @@ from pandas import DataFrame, Period
 
 from pledger.enums import AccountType, MovementType
 from pledger.ledger import Ledger
-from pledger.models import DEBT_ACCOUNT, Account, is_foreign, next_month
+from pledger.models import (
+    DEBT_ACCOUNT,
+    Account,
+    CreditCardAccount,
+    DebtAccount,
+    InvestmentAccount,
+    is_foreign,
+    next_month,
+)
 from pledger.web.store import Snapshot, row_fingerprint
 
 # The tab where each kind of movement that can't be deleted from the Ledger tab is
@@ -27,6 +35,38 @@ MOVEMENT_SOURCES = {
     "services": ("🟡", "Generated from the monthly value of the service, in the Services tab"),
     "credit-cards": ("🔴", "Added, edited and deleted from the Credit Cards tab"),
 }
+
+
+# The groups of the asset and liability accounts, in order, shown apart in the Accounts and
+# Audit tabs: their emoji and label (see account_group).
+ACCOUNT_GROUPS = {
+    "assets": ("🏦", "General assets"),
+    "foreign_assets": ("💱", "Foreign currency assets"),
+    "investments": ("📈", "Investment accounts"),
+    "liabilities": ("🧾", "General liabilities"),
+    "foreign_liabilities": ("💱", "Foreign currency liabilities"),
+    "debt": ("🤝", "Debt"),
+    "credit_cards": ("💳", "Credit cards"),
+}
+
+
+def account_group(account: Account) -> str | None:
+    """
+    The group of an asset or liability account (see ACCOUNT_GROUPS), None for an equity one.
+    The investment, debt and credit card accounts have their own, whatever their currency;
+    the rest are in another currency (see is_foreign) or general.
+    """
+    if isinstance(account, InvestmentAccount):
+        return "investments"
+    if isinstance(account, DebtAccount):
+        return "debt"
+    if isinstance(account, CreditCardAccount):
+        return "credit_cards"
+    if account.acc_type == AccountType.ASSET:
+        return "foreign_assets" if is_foreign(account) else "assets"
+    if account.acc_type == AccountType.LIABILITY:
+        return "foreign_liabilities" if is_foreign(account) else "liabilities"
+    return None
 
 
 def row_anchor(kind: str, key: str) -> str:

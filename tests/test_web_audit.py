@@ -125,8 +125,8 @@ class TestAudit:
         assert r.text.count('hx-post="/audit"') == 1 and r.text.count(">Confirm</button>") == 1
         groups = re.findall(r'<h3 class="audit-group"><span aria-hidden="true">(.+?)</span> (.+?)</h3>', r.text)
         assert groups == [
-            ("🏦", "Assets"), ("📈", "Investment accounts"), ("🤝", "Debt"), ("💳", "Credit cards"),
-            ("🧾", "Other liabilities"),
+            ("🏦", "General assets"), ("💱", "Foreign currency assets"), ("📈", "Investment accounts"),
+            ("🧾", "General liabilities"), ("🤝", "Debt"), ("💳", "Credit cards"),
         ]
         names = {
             g: re.findall(r'name="balance:(\w+)"', t.split("</table>")[0])
@@ -134,8 +134,8 @@ class TestAudit:
         }
         assert names == {
             # By currency, the base one first, then by name
-            "assets": ["ab", "Ca", "Fi", "Zz", "Bk"], "investments": ["Br"], "debt": ["De"], "credit_cards": ["Vi"],
-            "liabilities": ["Cc"],
+            "assets": ["ab", "Ca", "Fi", "Zz"], "foreign_assets": ["Bk"], "investments": ["Br"], "debt": ["De"],
+            "credit_cards": ["Vi"], "liabilities": ["Cc"],
         }
 
     def test_net_zero_accounts_are_fixed_at_zero(self, client):

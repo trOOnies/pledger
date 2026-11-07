@@ -34,8 +34,10 @@ from pledger.web.views.charts import (
     with_real,
 )
 from pledger.web.views.common import (
+    ACCOUNT_GROUPS,
     AVERAGE_MONTH_DAYS,
     MOVEMENT_SOURCES,
+    account_group,
     account_movements,
     composition,
     grouped_composition,
@@ -127,6 +129,7 @@ from pledger.web.views.work import (
 )
 
 __all__ = [
+    "ACCOUNT_GROUPS",
     "ACCOUNT_TYPE_ORDER",
     "AVERAGE_MONTH_DAYS",
     "BROKER_FEES",
@@ -146,6 +149,7 @@ __all__ = [
     "account_editing",
     "account_fields",
     "account_form",
+    "account_group",
     "account_movements",
     "account_values",
     "audit_entries",

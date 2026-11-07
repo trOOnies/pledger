@@ -297,7 +297,7 @@ class TestPages:
         index, setup = client.get("/").text, client.get("/results").text
         accounts = client.get("/accounts").text
         assert 'data-sortable="movements"' in index
-        assert 'data-sortable="balances-asset"' in accounts
+        assert 'data-sortable="balances-assets"' in accounts
         assert 'data-sort="1000.5"' in index  # sort by raw amount, not formatted text
         assert 'data-sortable="setup-result-types"' in setup
         assert 'data-sortable="setup-bases-gain"' in setup

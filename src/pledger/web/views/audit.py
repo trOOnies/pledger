@@ -3,16 +3,12 @@
 from __future__ import annotations
 
 from pledger.enums import AccountCheck, AccountType
-from pledger.models import (
-    Audit,
-    AuditEntry,
-    CreditCardAccount,
-    DebtAccount,
-    InvestmentAccount,
-    is_foreign,
-)
+from pledger.models import Audit, AuditEntry, InvestmentAccount, is_foreign
 from pledger.web.store import LEDGER_ID, Snapshot, _parse_number, stored_ids
-from pledger.web.views.common import ledger_link
+from pledger.web.views.common import ACCOUNT_GROUPS, account_group, ledger_link
+
+# The groups of the asset accounts: on the left of the audit form when wide enough, the rest on the right
+ASSET_GROUPS = {"assets", "foreign_assets", "investments"}
 
 AUDITED_TYPES = [AccountType.ASSET, AccountType.LIABILITY]
 
@@ -20,28 +16,6 @@ AUDITED_TYPES = [AccountType.ASSET, AccountType.LIABILITY]
 def _audited_accounts(snapshot: Snapshot) -> list:
     """The asset and liability accounts, by type: the equity is what they add up to."""
     return [a for t in AUDITED_TYPES for a in snapshot.accounts.values() if a.acc_type == t]
-
-
-# The groups of the accounts in the audit form, in order: only to show them apart, they are
-# all confirmed together.
-AUDIT_GROUPS = {
-    "assets": ("🏦", "Assets"),
-    "investments": ("📈", "Investment accounts"),
-    "debt": ("🤝", "Debt"),
-    "credit_cards": ("💳", "Credit cards"),
-    "liabilities": ("🧾", "Other liabilities"),
-}
-
-
-def _group_of(account) -> str:
-    """The group of an audited account in the form (see AUDIT_GROUPS)."""
-    if isinstance(account, InvestmentAccount):
-        return "investments"
-    if isinstance(account, DebtAccount):
-        return "debt"
-    if isinstance(account, CreditCardAccount):
-        return "credit_cards"
-    return "assets" if account.acc_type == AccountType.ASSET else "liabilities"
 
 
 def _fixed_at_zero(account) -> bool:
@@ -59,7 +33,7 @@ def _shown_in(snapshot: Snapshot, account) -> tuple[str, int]:
 def audit_form(snapshot: Snapshot, values: dict[str, str] | None = None) -> dict:
     """
     The form to fill in the balances: blind, so it must never show the actual ones. Its
-    fields are in the groups of AUDIT_GROUPS that have any (one form all the same), each
+    fields are in the groups of ACCOUNT_GROUPS that have any (one form all the same), each
     by the currency of its balance (the base one first, then the others by name) and then
     by account name. The net zero accounts are fixed at 0.00, and the net positive ones can't be negative.
     """
@@ -67,7 +41,7 @@ def audit_form(snapshot: Snapshot, values: dict[str, str] | None = None) -> dict
         {
             "name": a.name, "description": a.description, "type": a.acc_type.value,
             "currency": _shown_in(snapshot, a)[0], "decimals": _shown_in(snapshot, a)[1],
-            "group": _group_of(a), "fixed": _fixed_at_zero(a),
+            "group": account_group(a), "fixed": _fixed_at_zero(a),
             "non_negative": AccountCheck.NET_POSITIVE in a.checks,
         }
         for a in _audited_accounts(snapshot)
@@ -75,8 +49,11 @@ def audit_form(snapshot: Snapshot, values: dict[str, str] | None = None) -> dict
     base = snapshot.base_currency.name
     fields.sort(key=lambda f: (f["currency"] != base, f["currency"], f["name"].casefold(), f["name"]))
     groups = [
-        {"key": key, "emoji": emoji, "label": label, "fields": [f for f in fields if f["group"] == key]}
-        for key, (emoji, label) in AUDIT_GROUPS.items()
+        {
+            "key": key, "emoji": emoji, "label": label, "fields": [f for f in fields if f["group"] == key],
+            "side": key in ASSET_GROUPS,
+        }
+        for key, (emoji, label) in ACCOUNT_GROUPS.items()
     ]
     return {"groups": [g for g in groups if g["fields"]], "values": values or {}, "results": None}
 
