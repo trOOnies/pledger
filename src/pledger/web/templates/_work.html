@@ -39,7 +39,7 @@
       {# The net salary in green, what is left of the gross one #}
       {% for title, chart, slot in (("Gross salary", gross_chart, 1), ("Net salary", net_chart, 3)) %}
       <section class="panel">
-        <h2>{{ title }} <small>per month, 0 without a job</small></h2>
+        <h2>{{ title }} <small>per month, {{ 0 | money }} when no job</small></h2>
         {% set ns = namespace(points=[]) %}
         {% for p in chart.points %}
           {% set ns.points = ns.points + [{

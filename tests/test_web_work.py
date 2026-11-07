@@ -255,7 +255,7 @@ def test_salary_charts(settings, tmp_path):
     path.write_text(WORK_CSV, encoding="utf-8")
     r = TestClient(create_app(replace(settings, work_path=path))).get("/work")
     for title in ("Gross salary", "Net salary"):
-        assert f"<h2>{title} <small>per month, 0 without a job</small></h2>" in r.text
+        assert f"<h2>{title} <small>per month, $0.00 when no job</small></h2>" in r.text
     points = [json.loads(html.unescape(p)) for p in re.findall(r"data-points='([^']*)'", r.text)]
     gross, net = points
     assert [(p["label"], p["value_text"]) for p in net] == [
