@@ -282,6 +282,8 @@ table[data-sortable] th[aria-sort="descending"]::after { content: " ▼"; opacit
 .badge.gain { background: var(--gain-bg); color: var(--gain); }
 .badge.loss { background: var(--loss-bg); color: var(--loss); }
 .badge.transfer { background: var(--transfer-bg); color: var(--transfer); }
+/* An internal result type or base movement, set by pledger itself */
+.badge.internal { background: var(--transfer-bg); color: var(--muted); font-weight: normal; text-transform: none; letter-spacing: 0; vertical-align: 1px; }
 
 .stack { display: grid; gap: .75rem; }
 .stack label, .pair label { display: grid; gap: .25rem; font-size: .8rem; color: var(--muted); }
@@ -525,6 +527,9 @@ tfoot th { position: static; color: var(--text); border-top: 2px solid var(--bor
 #budget .view, #trip .view { grid-template-columns: minmax(0, 1fr); }
 th.budget-bar, td.budget-bar { width: 8rem; min-width: 6rem; }
 td.budget-bar .bar-track { display: block; }
+
+/* The id of a result type, before its name */
+.rt-id { display: inline-block; min-width: 1.4em; padding: 0 .3em; margin-right: .15rem; border-radius: 4px; background: var(--transfer-bg); color: var(--text); text-align: center; }
 
 /* Tables that scroll sideways in their panel when narrower than them */
 .table-scroll { overflow-x: auto; }

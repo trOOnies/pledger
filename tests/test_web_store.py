@@ -516,7 +516,8 @@ class TestInternalResultTypes:
         assert 'name="initial" value="true" checked>' in r.text
         assert r.text.count('hx-post="/movements/') == 4  # only the CSV rows
         assert "$100.50" in r.text  # Bk's initial movement
-        assert ">Initial<" in client.get("/results", params={"initial": True}).text
+        results = client.get("/results", params={"initial": True}).text
+        assert '>Initial <span class="badge internal"' in results  # marked as internal
 
     def test_cannot_be_added_by_hand(self, settings):
         with pytest.raises(ValueError, match=re.escape("'Initial (G)' is internal")):

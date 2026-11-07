@@ -67,7 +67,7 @@
     <tbody>
     {% for r in statement %}
     <tr title="{{ r.description }}">
-      <td>{{ r.name }}</td>
+      <td>{{ r.name }}{% if r.internal %} <span class="badge internal" title="Internal: set by pledger itself">Internal</span>{% endif %}</td>
       <td class="num {{ money_class }} {{ 'muted' if not r.gains }}">{{ value(r.gains) }}</td>
       <td class="num {{ money_class }} {{ 'muted' if not r.losses else 'loss' }}">{{ value(r.losses) }}</td>
       <td class="num {{ money_class }} {{ 'gain' if r.net > 0 else 'loss' if r.net < 0 else 'muted' }}">{{ value(r.net) }}</td>

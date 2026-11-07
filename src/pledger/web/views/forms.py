@@ -113,10 +113,13 @@ def setup_context(snapshot: Snapshot, values: dict | None = None) -> dict:
             rt.name: sum(b.result_type is rt for b in snapshot.base_movements.values())
             for rt in snapshot.result_types.values()
         },
-        "bases_by_type": {
-            t.value: [b for b in snapshot.base_movements.values() if b.move_type == t]
-            for t in MovementType
-        },
+        # The base movements of each result type, gains and losses together, and then the transfers
+        "bases_by_result_type": [
+            {"result_type": rt, "bases": bases}
+            for rt in (snapshot.result_types[i] for i in sorted(snapshot.result_types))
+            if (bases := [b for b in snapshot.base_movements.values() if b.result_type is rt])
+        ],
+        "transfer_bases": [b for b in snapshot.base_movements.values() if b.move_type == MovementType.TRANSFER],
         "move_types": [t.value for t in MovementType],
         "sides": base_sides(snapshot, values["move_type"]),
         "values": values,

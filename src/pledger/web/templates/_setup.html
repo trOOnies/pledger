@@ -1,3 +1,5 @@
+{# Marks a result type or base movement set by pledger itself: it can't be picked by hand #}
+{% macro internal_badge() %}<span class="badge internal" title="Internal: set by pledger itself, it can't be picked by hand">Internal</span>{% endmacro %}
 <div class="layout setup">
   <div class="column">
   <section class="panel">
@@ -30,7 +32,7 @@
       <tr>
         <td class="num muted">{{ rt.id }}</td>
         <td class="nowrap"><strong>{{ rt.name }}</strong></td>
-        <td>{{ rt.long_name }}</td>
+        <td>{{ rt.long_name }}{% if rt.internal %} {{ internal_badge() }}{% endif %}</td>
         <td class="num">{{ bases_per_result_type[rt.name] }}</td>
         <td class="muted">{{ rt.description }}</td>
       </tr>
@@ -68,15 +70,15 @@
         <button type="submit">Add base movement</button>
       </form>
     </details>
-    {% for type, bases in bases_by_type.items() if bases %}
-    <h3>{{ type | capitalize }}</h3>
-    <table data-sortable="setup-bases-{{ type }}">
-      <thead><tr><th>Name</th>{% if type != "transfer" %}<th>Result type</th>{% endif %}<th>Debit</th><th>Credit</th><th>Description</th></tr></thead>
+    {# One table per result type (see setup_context), gains and losses together, then the transfers and the internal ones #}
+    {% macro bases_table(key, bases) %}
+    <table data-sortable="setup-bases-{{ key }}">
+      <thead><tr><th>Name</th><th>Type</th><th>Debit</th><th>Credit</th><th>Description</th></tr></thead>
       <tbody>
       {% for b in bases %}
       <tr>
-        <td><strong>{{ b.name }}</strong></td>
-        {% if type != "transfer" %}<td>{{ b.result_type.long_name }}</td>{% endif %}
+        <td class="nowrap"><strong>{{ b.name }}</strong></td>
+        <td data-sort="{{ b.move_type.value }}"><span class="badge {{ b.move_type.value }}">{{ b.move_type.value[0] | upper }}</span> {{ b.move_type.value | capitalize }}</td>
         {% for acc, special in ((b.acc_debit, b.debit_special), (b.acc_credit, b.credit_special)) %}
         {% set special_label = sides.specials[special] if special %}
         <td>{% if acc %}{{ acc.name }}{% elif special %}<span class="muted" title="Any {{ special_label | lower }} account">{{ special_label }}</span>{% else %}<span class="muted" title="Any account">-</span>{% endif %}</td>
@@ -86,6 +88,17 @@
       {% endfor %}
       </tbody>
     </table>
+    {% endmacro %}
+    {% for g in bases_by_result_type %}
+    <h3 class="bases-group"><span class="rt-id" title="Result type id">{{ g.result_type.id }}</span> {{ g.result_type.long_name }}{% if g.result_type.internal %} {{ internal_badge() }}{% endif %}</h3>
+    <div class="table-wrap">{{ bases_table(g.result_type.name, g.bases) }}</div>
+    {% endfor %}
+    {% for internal, title in ((false, "Transfers"), (true, "Internal transfers")) %}
+    {% set bases = transfer_bases | selectattr("internal", "equalto", internal) | list %}
+    {% if bases %}
+    <h3 class="bases-group">{{ title }}{% if internal %} {{ internal_badge() }}{% endif %}</h3>
+    <div class="table-wrap">{{ bases_table("internal-transfer" if internal else "transfer", bases) }}</div>
+    {% endif %}
     {% endfor %}
   </section>
 </div>

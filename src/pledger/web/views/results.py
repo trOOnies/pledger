@@ -102,9 +102,15 @@ def build_results(snapshot: Snapshot, month: str = "", initial: bool = False) ->
         for move_type in (MovementType.GAIN, MovementType.LOSS)
     }
 
+    internal = {rt.long_name for rt in result_types if rt.internal}
+
+    def marked(groups: list[dict]) -> list[dict]:
+        # The internal result types are marked as such.
+        return [{**g, "internal": g["name"] in internal} for g in groups]
+
     def by_result_type(move_type: MovementType) -> list[dict]:
         # Every result type and base movement is listed, even at zero in this period.
-        return grouped_composition(results[move_type])
+        return marked(grouped_composition(results[move_type]))
 
     # The profit of each result type: its gains minus its losses, base movement by base movement.
     profits = {
@@ -122,7 +128,7 @@ def build_results(snapshot: Snapshot, month: str = "", initial: bool = False) ->
         losses = sum(results[MovementType.LOSS].get(rt.long_name, {}).values())
         running += gains - losses
         statement.append({
-            "name": rt.long_name, "short": rt.name, "description": rt.description,
+            "name": rt.long_name, "short": rt.name, "description": rt.description, "internal": rt.internal,
             "gains": gains, "losses": -losses, "net": gains - losses, "cumulative": running,
         })
 
@@ -151,11 +157,11 @@ def build_results(snapshot: Snapshot, month: str = "", initial: bool = False) ->
         **equity_metrics(snapshot, month),
         "gains": by_result_type(MovementType.GAIN),
         "losses": by_result_type(MovementType.LOSS),
-        "profits": signed_composition(profits),
+        "profits": marked(signed_composition(profits)),
         # The same, each result type summed to the ones before it
         "cumulative_results": [
             cumulative_composition(c)
-            for c in (by_result_type(MovementType.GAIN), by_result_type(MovementType.LOSS), signed_composition(profits))
+            for c in (by_result_type(MovementType.GAIN), by_result_type(MovementType.LOSS), marked(signed_composition(profits)))
         ],
         "statement": statement,
         "waterfall": waterfall_chart(statement),

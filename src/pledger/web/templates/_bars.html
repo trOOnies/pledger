@@ -1,10 +1,11 @@
 {# Horizontal bar compositions, shared by several pages. A "profit" `kind` has signed values
-   (see views.signed_composition): its bars are gains or losses by their sign. #}
+   (see views.signed_composition): its bars are gains or losses by their sign. An `internal`
+   item (an internal result type) is marked as such. #}
 {% macro bar_row(item, kind, tag="div") %}
 {% set signed = kind == "profit" %}
 {% set share = ('%.1f%%' | format(item.share)) if item.share is not none else "" %}
 <{{ tag }} class="bar-row" title="{{ item.name }}{% if share %} ({{ share }}){% endif %}">
-  <span class="bar-name">{{ item.name }}</span>
+  <span class="bar-name">{{ item.name }}{% if item.internal %} <span class="badge internal" title="Internal: set by pledger itself">Internal</span>{% endif %}</span>
   <span class="num money {{ 'loss' if item.value < 0 else 'gain' if signed and item.value > 0 }}">{{ item.value | money }}</span>
   <span class="num muted share">{{ share }}</span>
   <span class="bar-track">{% if item.value > 0 or (signed and item.value < 0) %}<span class="bar {{ ('gain' if item.value > 0 else 'loss') if signed else kind }}" style="width: {{ '%.2f' | format(item.width) }}%"></span>{% endif %}</span>

@@ -300,7 +300,7 @@ class TestPages:
         assert 'data-sortable="balances-assets"' in accounts
         assert 'data-sort="1000.5"' in index  # sort by raw amount, not formatted text
         assert 'data-sortable="setup-result-types"' in setup
-        assert 'data-sortable="setup-bases-gain"' in setup
+        assert 'data-sortable="setup-bases-transfer"' in setup
 
     def test_create_account(self, client, settings):
         r = client.post(
