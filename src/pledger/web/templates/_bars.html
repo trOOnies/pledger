@@ -1,6 +1,6 @@
 {# Horizontal bar compositions, shared by several pages. A "profit" `kind` has signed values
    (see views.signed_composition): its bars are gains or losses by their sign. An `internal`
-   item (an internal result type) is marked as such. #}
+   item (an internal result type or account) is marked as such. #}
 {% macro bar_row(item, kind, tag="div") %}
 {% set signed = kind == "profit" %}
 {% set share = ('%.1f%%' | format(item.share)) if item.share is not none else "" %}

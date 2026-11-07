@@ -99,3 +99,17 @@ class TestAccountFormSwaps:
         assert LedgerStore(settings).load().accounts["Ca"].interest_frequency is None
         r = client.post("/accounts/edit", data={**body, "interest_frequency": "daily"})
         assert "Invalid interest frequency: &#39;daily&#39;" in r.text
+
+
+class TestInternalAccounts:
+    def test_are_marked_as_such(self, client):
+        r = client.get("/accounts")
+        badge = '<span class="badge internal"'
+        rows = {
+            row.split("<strong>")[1].split("</strong>")[0]: badge in row.split("</td>")[0]
+            for row in r.text.split('<tr id="account-')[1:]
+        }
+        assert rows == {"Ca": False, "Bk": False, "Fi": True, "Lo": True, "Cc": False, "De": True, "Eq": True}
+        # In the bars too
+        bars = r.text.split('class="composition-pair"')[1].split("</section>")[0]
+        assert 'Fi <span class="badge internal"' in bars and 'Ca <span class="badge internal"' not in bars

@@ -92,6 +92,7 @@ def build_accounts(snapshot: Snapshot, month: str = "", values: dict | None = No
                 "balance": balances.get(a.name, 0.0),
                 "own": own_balance(snapshot, a, month),
                 "editable": a.acc_type in EDITABLE_ACCOUNT_TYPES,
+                "internal": a.internal,
             }
             for a in snapshot.accounts.values()
             if a.acc_type == t
@@ -151,15 +152,26 @@ def balance_groupings(snapshot: Snapshot, balances: dict[str, float]) -> dict:
     """
     Composition of the balances of assets and liabilities, grouped by currency (base
     first) or by liquidity, listing every group that has accounts. Accounts keep the
-    order they are defined in.
+    order they are defined in, and the internal ones are marked as such.
     """
+    internal = {a.name for a in snapshot.accounts.values() if a.internal}
+
+    def marked(rows: list[dict]) -> list[dict]:
+        return [
+            {**r, "internal": r["name"] in internal, **{k: marked(r[k]) for k in ("children", "rest") if r.get(k)}}
+            for r in rows
+        ]
+
     def grouped(acc_type: AccountType, key, groups: list) -> list[dict]:
         accs = [a for a in snapshot.accounts.values() if a.acc_type == acc_type]
-        return grouped_composition({
-            name: {a.name: balances.get(a.name, 0.0) for a in accs if key(a) == group}
-            for group, name in groups
-            if any(key(a) == group for a in accs)
-        })
+        return [
+            {**g, "children": marked(g["children"])}
+            for g in grouped_composition({
+                name: {a.name: balances.get(a.name, 0.0) for a in accs if key(a) == group}
+                for group, name in groups
+                if any(key(a) == group for a in accs)
+            })
+        ]
 
     by_currency = [(c, c) for c in snapshot.currencies]
     by_liquidity = list(LIQUIDITY_GROUPS.items())

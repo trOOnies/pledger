@@ -57,7 +57,7 @@
         <tbody>
         {% for a in accs %}
         <tr id="{{ row_anchor('account', a.name) }}">
-          <td class="nowrap"><strong>{{ a.name }}</strong></td>
+          <td class="nowrap"><strong>{{ a.name }}</strong>{% if a.internal %} <span class="badge internal" title="Internal: needed by pledger itself, under the internal key of the accounts file">Internal</span>{% endif %}</td>
           <td class="muted">{{ a.description }}</td>
           <td>{{ a.currency }}</td>
           <td data-sort="{{ 1 if a.is_liquid else 0 }}">{{ "Yes" if a.is_liquid else "No" }}</td>
