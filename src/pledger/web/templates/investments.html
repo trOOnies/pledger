@@ -122,7 +122,7 @@
     <div class="panel-head">
       <h2>Composition</h2>
       <div class="panel-tools">
-        {{ expand_all("investments", open=True) }}
+        {{ expand_all("investments") }}
         <div class="segmented" role="radiogroup" aria-label="Group investments by">
           <label><input type="radio" name="investments-group" value="type" checked> By type</label>
           <label><input type="radio" name="investments-group" value="account"> By account</label>
@@ -131,7 +131,7 @@
     </div>
     {% for group, comp in groupings.items() %}
     <div class="composition-pair" data-group="{{ group }}">
-      {{ bars("Investments", comp, "asset", "No investments.", open=True) }}
+      {{ bars("Investments", comp, "asset", "No investments.") }}
     </div>
     {% endfor %}
   </section>

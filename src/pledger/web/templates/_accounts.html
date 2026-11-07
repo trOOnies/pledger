@@ -6,7 +6,7 @@
   <div class="panel-head">
     <h2>Assets &amp; liabilities <small>{{ as_of }}</small></h2>
     <div class="panel-tools">
-      {{ expand_all("accounts", open=True) }}
+      {{ expand_all("accounts") }}
       <div class="segmented" role="radiogroup" aria-label="Group accounts by">
         <label><input type="radio" name="accounts-group" value="currency" checked> By currency</label>
         <label><input type="radio" name="accounts-group" value="liquidity"> By liquidity</label>
@@ -15,8 +15,8 @@
   </div>
   {% for group, comp in groupings.items() %}
   <div class="composition-pair" data-group="{{ group }}">
-    {{ bars("Assets", comp.assets, "asset", "No asset accounts.", open=True) }}
-    {{ bars("Liabilities", comp.liabilities, "liability", "No liability accounts.", open=True) }}
+    {{ bars("Assets", comp.assets, "asset", "No asset accounts.") }}
+    {{ bars("Liabilities", comp.liabilities, "liability", "No liability accounts.") }}
   </div>
   {% endfor %}
 </section>

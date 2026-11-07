@@ -38,11 +38,11 @@
   <section class="panel">
     <div class="panel-head">
       <h2>Who <small>by people, services and companies{% if month %}, as of end of {{ month }}{% endif %}</small></h2>
-      {{ expand_all("debt", open=True) }}
+      {{ expand_all("debt") }}
     </div>
     <div class="composition-pair">
-      {{ bars("We owe", creditors, "liability", "We owe no one.", open=True) }}
-      {{ bars("Owed to us", debtors, "asset", "No one owes us.", open=True) }}
+      {{ bars("We owe", creditors, "liability", "We owe no one.") }}
+      {{ bars("Owed to us", debtors, "asset", "No one owes us.") }}
     </div>
   </section>
 

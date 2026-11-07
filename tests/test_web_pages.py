@@ -814,7 +814,9 @@ class TestSaveAndQuit:
 class TestToggles:
     def test_expand_all_buttons(self, client):
         accounts = client.get("/accounts").text
-        assert 'data-expand-all="accounts" aria-expanded="true">Collapse all' in accounts
+        # Collapsed by default
+        assert 'data-expand-all="accounts" aria-expanded="false">Expand all' in accounts
+        assert '<details class="other" open' not in accounts
         results = client.get("/results").text
         assert 'data-expand-all="results" aria-expanded="false">Expand all' in results
 
