@@ -8,7 +8,7 @@ from dataclasses import replace
 
 from pandas import DataFrame, concat
 
-from pledger.models import DEBT_ACCOUNT, ESTIMATED, parse_month
+from pledger.models import ESTIMATED, parse_month
 from pledger.web.store.base_store import StoreBase
 from pledger.web.store.common import _parse_amount
 from pledger.web.store.constants import SERVICE_MONTH
@@ -41,7 +41,7 @@ class ServiceStore(StoreBase):
         values = {c.strip(): str(v).strip() for c, v in values.items()}
         unknown = [c for c in values if c not in known]
         if unknown:
-            raise ValueError(f"{unknown[0]!r} is not a service of {DEBT_ACCOUNT} with a base movement in the creditors YAML")
+            raise ValueError(f"{unknown[0]!r} is not a service with a base movement in the creditors YAML")
         cells = {
             c: v if v == ESTIMATED else f"{_parse_amount(v, f'value of {c}'):,.2f}"
             for c, v in values.items() if v

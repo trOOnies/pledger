@@ -1,4 +1,4 @@
-"""services.py: the monthly values of the services of the debt account, and what is owed to them."""
+"""services.py: the monthly values of the services of the debt accounts, and what is owed to them."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from pandas import DataFrame, Period, Timestamp
 
 from pledger.enums import CreditorKind, LedgerSide, MovementType
 from pledger.models import (
-    DEBT_ACCOUNT,
     ESTIMATED,
+    Creditor,
     DebtAccount,
     parse_month,
     price_growth,
@@ -28,26 +28,43 @@ if TYPE_CHECKING:
     from pledger.web.store.snapshot import Snapshot
 
 
+def services_of(snapshot: Snapshot) -> dict[str, Creditor]:
+    """The services of the debt accounts, each once (they share the creditors YAML)."""
+    services = {}
+    for a in snapshot.accounts.values():
+        if isinstance(a, DebtAccount):
+            services |= {n: c for n, c in a.get_kind(CreditorKind.SERVICE).items() if n not in services}
+    return services
+
+
+def service_account(service: Creditor) -> str:
+    """
+    The debt account a service is owed its values of the services CSV in: the first one
+    it can be in (see Creditor.accounts), the debt account unless it is expected to be
+    a debtor (it charges in advance), then the loan account.
+    """
+    return service.accounts[0]
+
+
 def service_bases(snapshot: Snapshot) -> dict[str, MovementBase]:
     """
-    The services of the debt account with a base movement (see Creditor.base_movement), a
-    loss of one's own (not internal) that may credit the debt account: their columns of
-    the services CSV.
+    The services of the debt accounts with a base movement (see Creditor.base_movement), a
+    loss of one's own (not internal) that may credit its debt account (see
+    service_account): their columns of the services CSV.
     """
-    debt = snapshot.accounts.get(DEBT_ACCOUNT)
-    services = debt.get_kind(CreditorKind.SERVICE) if isinstance(debt, DebtAccount) else {}
     bases = {}
-    for service in services.values():
+    for service in services_of(snapshot).values():
         if service.base_movement is None:
             continue
         base = snapshot.base_movements.get(service.base_movement)
+        account = service_account(service)
         if (
             base is None or base.internal or base.move_type != MovementType.LOSS
-            or base.side(LedgerSide.CREDIT) not in {None, DEBT_ACCOUNT}
+            or base.side(LedgerSide.CREDIT) not in {None, account}
         ):
             raise ValueError(
                 f"The base movement of a service must be a loss, not internal, that may "
-                f"credit {DEBT_ACCOUNT}: not {service.base_movement!r} ({service.name})"
+                f"credit its debt account, {account}: not {service.base_movement!r} ({service.name})"
             )
         bases[service.name] = base
     return bases
@@ -64,7 +81,7 @@ def service_months(snapshot: Snapshot) -> list[tuple[str, dict[str, float]]]:
     unknown = [c for c in snapshot.services.columns if c != SERVICE_MONTH and c not in bases]
     if unknown:
         raise ValueError(
-            f"The services CSV columns {unknown} aren't services of {DEBT_ACCOUNT} with a base movement: "
+            f"The services CSV columns {unknown} aren't services of the debt accounts with a base movement: "
             "add them to the creditors YAML with their `base_movement`"
         )
     found, seen = [], set()
@@ -126,11 +143,13 @@ def _service_rows(snapshot: Snapshot, start: int) -> DataFrame:
     What is owed to the services, as CSV rows indexed from `start` down, with their
     SERVICE_COLUMN: each value of the services CSV, up to today, split between the weeks
     of its month, on their Mondays (see weeks.prorate_by_week), like the salaries, as
-    movements of its service's base movement crediting the debt account, their comment
+    movements of its service's base movement crediting its debt account (see
+    service_account), their comment
     naming the service first (see DebtAccount.creditor_in). Never before the first date
     of the ledger or in the previous month.
     """
     bases, new_rows, now = service_bases(snapshot), [], snapshot.today
+    services = services_of(snapshot)
     for month, values in sorted(service_months(snapshot)):
         if snapshot.previous_month and month <= snapshot.previous_month:
             continue
@@ -142,7 +161,7 @@ def _service_rows(snapshot: Snapshot, start: int) -> DataFrame:
                     continue
                 new_rows.append({
                     "move_date": day, "base_movement": bases[service].name,
-                    "acc_debit": bases[service].acc_debit.name, "acc_credit": DEBT_ACCOUNT,
+                    "acc_debit": bases[service].acc_debit.name, "acc_credit": service_account(services[service]),
                     "amount": f"{value:,.2f}", "comment": f"{service}: week {n}/{len(weeks)} of {month}",
                     ID_COLUMN: f"{SERVICE_ID}-{service}-{month}-{n}", SERVICE_COLUMN: service,
                 })

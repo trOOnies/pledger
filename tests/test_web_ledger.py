@@ -142,7 +142,7 @@ class TestEditableFilter:
     def test_not_the_generated_ones_of_a_regular_base_movement(self, settings, tmp_path, monkeypatch):
         monkeypatch.setattr("pledger.web.store.common.today", lambda: dt.date(2026, 2, 15))
         creditors = tmp_path / "creditors.yaml"
-        creditors.write_text("De:\n  services:\n    Rent:\n      amount: 0\n      base_movement: Food\n", encoding="utf-8")
+        creditors.write_text("services:\n  Rent:\n    amount: 0\n    base_movement: Food\n", encoding="utf-8")
         services = tmp_path / "services.csv"
         services.write_text("month;Rent\n2026-01;100\n", encoding="utf-8")
         snapshot = LedgerStore(replace(settings, creditors_path=creditors, services_path=services)).load()

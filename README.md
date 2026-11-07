@@ -77,8 +77,8 @@ A FastAPI + HTMX UI, one tab per area:
 | 📊 **Results** | The nominal and real change of equity in the period and the months of expenses it covers, gains, losses and profit by result type (also cumulative), a waterfall of the result by type (with its result statement as a table, both also as a share of the gains of the first result type, e.g. *Operative*) and equity over time. Result types and base movements are listed and added here. |
 | 💼 **Work** | The company, job position and salary of each month, from gross to net through its deductions (taxes, contributions...), with a chart of both salaries (0 for the months without a job). |
 | 📈 **Investments** | The investments of the investment accounts with their price (amount over quantity), their composition by type or by account, the results of each one, the interest on money of regular accounts, and charts of the total invested and the total result. The broker fees of each investment are shown over its amount. The **Investment account**, **Investment** and **Base movement** filters narrow the movements down (an investment shows all its movements, whatever their accounts), each with the total of its account and the amount and quantity of its investment after it. The internal `Invest` movements are added, edited and deleted here, and so are new prices of the investments, from which their capital gains and losses are generated. |
-| 🤝 **Debt** | Who we owe and who owes us in the debt account `De` (people, services and companies), with alerts and the movements of the month, each with what we owe whoever it names after it. The debt movements are added and edited here. |
-| 🧾 **Services** | The services of the debt account with their base movements and monthly values, what was owed to them this month and in all, and what we owe them now, with the table of monthly values and the movements owed to each one. The monthly values are set here. |
+| 🤝 **Debt** | Who we owe and who owes us in the debt accounts `De` (debts) and `Lo` (loans) (people, services and companies), with alerts and the movements of the month, each with what we owe whoever it names after it. The debt and loan movements are added and edited here. |
+| 🧾 **Services** | The services of the debt accounts with their base movements and monthly values, what was owed to them this month and in all, and what we owe them now, with the table of monthly values and the movements owed to each one. The monthly values are set here. |
 | 💳 **Credit Cards** | What we owe on each card (also in its currency, for a card in another one), what was charged and paid in the month, a chart of the monthly charges, the net owed over equity, and the movements of the month, each with what we owe on its card after it. The card payments are added and edited here. |
 | 🎯 **Budget** | Monthly budgets by loss base movement against what was spent, and saving goals tracking the balance of an account. See [Budget](#budget). |
 | ✈️ **Trip** | The planned expenses of a trip, in any currency, against what was spent on it in the ledger. See [Trip](#trip). |
@@ -127,10 +127,10 @@ with an environment variable:
 | `trip_items.csv` | | `PLEDGER_TRIP_ITEMS` | The planned expenses of the trips |
 | `currencies.yaml` | ✅ | `PLEDGER_CURRENCIES` | Base and other currencies (with `base_currency.csv` and `currencies.csv` next to it) |
 | `investment.yaml` | | `PLEDGER_INVESTMENTS` | The investments of each investment account |
-| `creditors.yaml` | | `PLEDGER_CREDITORS` | Who each debt account is owed by or owes to |
+| `creditors.yaml` | | `PLEDGER_CREDITORS` | Who the debt accounts are owed by or owe to |
 | `credit_cards.yaml` | | `PLEDGER_CREDIT_CARDS` | The credit card accounts |
 | `work.csv` | | `PLEDGER_WORK` | The work history, one row per month |
-| `services.csv` | | `PLEDGER_SERVICES` | The monthly values of the services of the debt account, a column per service |
+| `services.csv` | | `PLEDGER_SERVICES` | The monthly values of the services of the debt accounts, a column per service |
 
 On startup, `pledger-web` checks that every one of these files (and `base_currency.csv` and
 `currencies.csv`) exists. Any missing ones are created, the YAMLs empty and the CSVs with just
@@ -195,14 +195,16 @@ date). `prices.csv` has no ids.
 ### Accounts
 
 The top-level `internal` key has the same sections as the rest of the file, with exactly the
-three **internal accounts**, which pledger needs and no other section has:
+four **internal accounts**, which pledger needs and no other section has:
 
 - `Fi` (asset): an intermediary between movements, like the conversions between two other
   currencies (see [Conversions](#conversions)). Usually with the `net_zero` check.
-- `De` (liability): the debt account, with its creditors in `creditors.yaml` (see [Debt](#debt)).
+- `De` (liability): the debt account, of the debts (what we owe), with its creditors in
+  `creditors.yaml` (see [Debt](#debt)).
+- `Lo` (asset): the loan account, of the loans (what we are owed), sharing those creditors.
 - `Eq` (equity): the only equity account.
 
-`Fi` and `De` are in the base currency. Every account but `Eq`, the investment ones and `De` must
+`Fi`, `De` and `Lo` are in the base currency. Every account but `Eq`, the investment ones, `De` and `Lo` must
 set an `initial_amount`, in its currency (those must not). Accounts also take these optional keys:
 
 - `currency`: the base currency by default.
@@ -236,9 +238,11 @@ internal:
       initial_amount: 0.00
       checks:
       - net_zero
+    Lo:
+      description: Money owed to us (loans) in base currency
   liability:
     De:
-      description: Net owed money (debts - loans) in base currency
+      description: Money we owe (debts) in base currency
   equity:
     Eq:
       description: Equity account
@@ -481,7 +485,7 @@ The type is one of `public_bond`, `private_bond`, `mutual_fund`, `etf`, `forex`,
 **Which accounts it moves money with.** The optional `balance_accounts` are the only regular
 accounts a movement of the investment account can have on its other side, in any CSV and tab.
 Without the key, it can be any of them; with an empty list, none. The internal accounts (`Fi`,
-`De`, `Eq`) and the other investment accounts are never left out, so they aren't listed, while
+`De`, `Lo`, `Eq`) and the other investment accounts are never left out, so they aren't listed, while
 credit cards are regular accounts. A movement in another currency that goes through `Fi` must
 still pick one of them: it is the account of the money that counts.
 
@@ -596,9 +600,10 @@ them all, and their amounts can't be edited: delete them and add them again.
 
 ### Debt
 
-The debt account is the internal `De`, the only top-level key of `creditors.yaml` (optional:
-without it, `De` has no creditors but the companies). It has up to two sections, `people` and
-`services`, mapping who we have debts with to the initial amount: **positive if we owe them,
+There are two debt accounts, both internal: `De`, the **debts** (a liability: what we owe), and
+`Lo`, the **loans** (an asset: what we are owed). They share `creditors.yaml` (optional: without
+it, they have no creditors but the companies), which has up to two top-level sections, `people`
+and `services`, mapping who we have debts with to the initial amount: **positive if we owe them,
 negative if they owe us**. A name can only be in one section.
 
 Instead of the amount, a name can map to its `amount` and its `expected` role:
@@ -610,27 +615,32 @@ Instead of the amount, a name can map to its `amount` and its `expected` role:
 | `null` | No expectation. |
 
 Without `expected`, people have no expected role, services are expected to be creditors and
-companies debtors.
+companies debtors. The expected role is also **the account they are in**: a creditor only in
+`De`, a debtor only in `Lo`, and someone with no expected role in both. E.g. a service that
+charges in advance (the rent) is expected to be a debtor, and one that charges afterwards (the
+gas) a creditor.
 
 ```yaml
-De:
-  people:
-    Dad: 0.00
-  services:
-    Rent:
-      amount: 0.00
-      expected: debtor
-      base_movement: Rent - Base
+people:
+  Dad: 0.00
+services:
+  Rent:
+    amount: 0.00
+    expected: debtor
+    base_movement: Rent - Base
 ```
 
-The companies aren't in the file: every company of `work.csv` is a company of `De`, with an
-initial amount of 0, and can't be in another section. The account's initial amount is the sum of its initial amounts, and its balance
-can go below 0 (we are owed more than we owe).
+The companies aren't in the file: every company of `work.csv` is a company, expected to be a
+debtor (in `Lo`), with an initial amount of 0, and can't be in another section. The initial
+amount of someone in both accounts is in `De` if we owe them and in `Lo` if they owe us. The
+initial amount of each account is the sum of its initial amounts: what we owe in `De`, and what
+we are owed in `Lo`. Either balance can have the other sign (e.g. paying more than we owed).
 
 **Who a movement counts for.** The ledger movements with a debt account on either side add to
-whoever is named in their `comment`: as a whole word, ignoring case, the earliest name there,
-and the longest one if several start there. A credit is more that we owe them, and a debit is
-less.
+whoever of that account is named in their `comment`: as a whole word, ignoring case, the
+earliest name there, and the longest one if several start there. A credit is more that we owe
+them, and a debit is less. A movement naming only someone of the other account is unassigned,
+and the Debt tab warns about it.
 
 The **debt movements** are those of four internal transfers, which the Debt tab needs under
 `transfer` in the `internal` section:
@@ -646,15 +656,16 @@ internal:
       debit: De
     Loan - Given:      # we are owed more
       description: Loan given to another person
-      debit: De
+      debit: Lo
     Loan - Collected:  # we are owed less
       description: Loan repaid by another person
-      credit: De
+      credit: Lo
 ```
 
 They are added, edited and deleted from the Debt tab only (or `/api/debt/movements`), picking one
 of them in two steps (Debt, then Incurred or Paid; Loan, then Given or Collected). Its form
-asks who the movement is about, and names them first in the comment: people and services, never
+asks who of its account the movement is about (so never an expected debtor for a debt, or an
+expected creditor for a loan), and names them first in the comment: people and services, never
 a company, whose debt comes from the salaries of the Work tab (it is still listed as usual). The
 Ledger tab shows them with a 🟡 linking there.
 
@@ -662,7 +673,7 @@ Ledger tab shows them with a 🟡 linking there.
 is about: e.g. paying 90 of a debt of 100 and forgetting about the other 10. The form then shows
 their balance now, after the movement, and the `Difference (G)` (what we owed them) or
 `Difference (L)` (what they owed us) it adds, in the same date and with the same comment, to leave
-them at 0.00 in all the ledger. Both rows are added together, or none of them, and nothing is added
+them at 0.00 in that account (`De` for a debt, `Lo` for a loan) in all the ledger. Both rows are added together, or none of them, and nothing is added
 if nothing remains. It needs these internal base movements of any internal result type but
 `Invest`, against the equity account:
 
@@ -681,13 +692,14 @@ internal:
 ```
 
 A Difference can't be edited, and is deleted from the Debt or Ledger tabs, on its own: deleting the
-movement it came with leaves it there. The Ledger tab shows the ones of `De` with a 🟡 linking to the Debt tab. `/api/debt/movements` takes it as `remaining_as_difference`, and
+movement it came with leaves it there. The Ledger tab shows the ones of `De` and `Lo` with a 🟡 linking to the Debt tab. `/api/debt/movements` takes it as `remaining_as_difference`, and
 answers with the `difference` added.
 
 Like Accounts, the Debt tab shows everyone as of the end of the month picked. It lists people,
-services and companies apart, and the movements naming no one as unassigned. It alerts when
-there is unassigned debt (listing it by comment) and when anyone is in the opposite role to the
-expected one. It also lists the movements of `De` in the month picked, the initial
+services and companies apart, each with what we owe them in `De`, in `Lo` and in all, and the
+movements naming no one as unassigned. It alerts when there is unassigned debt (listing it by
+comment), when a movement names someone of the other account, and when anyone is in the
+opposite role to the expected one. It also lists the movements of `De` and `Lo` in the month picked, the initial
 ones included, with whoever each one names, and the **Who** filter shows only the movements of
 one of them (or of no one).
 
@@ -759,22 +771,23 @@ the movements of the cards in the month picked, the initial ones included.
 
 ### Services
 
-The services of the debt account (its `services` section in `creditors.yaml`) are how the charges
+The services of the debt accounts (the `services` section of `creditors.yaml`) are how the charges
 that repeat are owed: **monthly values**, kept in `services.csv`, a row per month and a column per
-service, named after it. Each service has the base movement it is owed with in its
-`base_movement`: a loss (not internal) whose credit side is free or `De`. Several services can
+service, named after it. Each service is owed them in **its account**: `Lo` if it is expected to
+be a debtor (it charges in advance), else `De`. Each service has the base movement it is owed
+with in its `base_movement`: a loss (not internal) whose credit side is free or its account. Several services can
 share one. A service without a `base_movement` has no column, and only counts what the Debt tab
 names it in.
 
 ```yaml
-De:
-  services:
-    Rent:
-      amount: 0.00
-      base_movement: Rent - Base
-    Gas:
-      amount: 0.00
-      base_movement: Rent - Basic services
+services:
+  Rent:  # paid in advance: in Lo
+    amount: 0.00
+    expected: debtor
+    base_movement: Rent - Base
+  Gas:  # paid afterwards: in De
+    amount: 0.00
+    base_movement: Rent - Basic services
 ```
 
 ```csv
@@ -788,13 +801,14 @@ month;Rent;Gas
 - The value is split equally between the weeks of its month, on their Mondays, like the salaries
   (a week belongs to the month of its Thursday, see [Work](#work)). This is the only frequency.
 
-Each one is a generated movement of its service's base movement, from equity crediting `De`, its
+Each one is a generated movement of its service's base movement, from equity crediting its account, its
 comment naming the service first, so it adds to what we owe the service in the Debt tab. They are owed **up to today** (none dated after it, so future months
 can be filled in ahead), never before the first date of the ledger or in the previous month, and
 can't be edited by hand: the Ledger tab shows them with a 🟡 linking to the Services tab. Pay a
-service with a `Debt - Paid` movement naming it, from the Debt tab.
+service with a `Debt - Paid` movement naming it, from the Debt tab (one in `Lo`, in advance, with a
+`Loan - Given`).
 
-The Services tab lists the services, with each one's base movement, value this month, what was owed
+The Services tab lists the services, with each one's account, base movement, value this month, what was owed
 this month and in all, and what we owe each service now, and shows the monthly
 values as a table. Its form adds a month (by default the one after the last, with a *Fill in from*
 button for the last month's values) or, for an existing month, replaces it, with a field per
@@ -838,8 +852,8 @@ with at least 4 of its days (the month of its Thursday), so a month has 4 or 5 w
 salary is split equally between them, to the cent (the cents left over go to the first weeks),
 as a `Work - Salary Main` movement on each Monday.
 
-- `Work - Salary Main` must be a gain with a fixed debit account, e.g. the debt account `De`, so
-  that the company owes the salary until it's paid.
+- `Work - Salary Main` must be a gain with a fixed debit account, e.g. the loan account `Lo`, so
+  that the company owes the salary until it's paid (the companies are only in `Lo`).
 - Its comment names the company first (e.g. `Galicia (GAL DS): week 2/5 of 2026-01`), so a debt
   account attributes it to the company (see [Debt](#debt)).
 - These movements are generated when the ledger is loaded, like the initial ones: they can't be

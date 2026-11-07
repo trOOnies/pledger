@@ -13,7 +13,7 @@ from pledger.enums import AccountType, LedgerSide, MovementType
 from pledger.ledger import Ledger
 from pledger.models import (
     CREDIT_CARD,
-    DEBT_ACCOUNT,
+    DEBT_ACCOUNTS,
     INVESTMENT,
     SPECIAL_SIDES,
     Account,
@@ -36,6 +36,7 @@ from pledger.web.store.constants import (
     CORRECTION_GAIN,
     CORRECTION_LOSS,
     CORRECTIONS,
+    DEBT_BASE_ACCOUNTS,
     DEBT_BASES,
     DIFFERENCE_GAIN,
     DIFFERENCE_LOSS,
@@ -223,10 +224,14 @@ class Snapshot:
 
     def debt_remaining(self, base_movement: str, amount: float, who: str) -> tuple[float, float]:
         """
-        What we owe `who` in all the ledger (negative: what they owe us), and what would
-        remain after a movement of this amount of this one of DEBT_BASES.
+        What we owe `who` in all the ledger in the debt account of this one of DEBT_BASES
+        (negative: what they owe us), and what would remain there after a movement of it
+        of this amount.
         """
-        balance = next((a.creditors[who].amount for a in self.debt_accounts() if who in a.creditors), 0.0)
+        account = DEBT_BASE_ACCOUNTS[base_movement]
+        balance = next(
+            (a.creditors[who].amount for a in self.debt_accounts() if a.name == account and who in a.creditors), 0.0
+        )
         sign = 1 if DEBT_BASES[base_movement] == LedgerSide.CREDIT else -1
         return balance, round(balance + sign * amount, 2)
 
@@ -303,7 +308,7 @@ class Snapshot:
 
     def debt_accounts(self, month: str = "") -> list[DebtAccount]:
         """
-        Copies of the debt accounts as of the end of `month` (all the ledger by default):
+        Copies of the debt accounts as of the end of `month` (all the ledger by default), De first:
         their initial amounts, once they start, plus the booked movements up to then.
         """
         debts = {}
@@ -315,7 +320,7 @@ class Snapshot:
         rows = self.booked_rows
         rows = rows[rows.move_date.str[:7] <= month] if month else rows
         _apply_debts({**self.accounts, **debts}, rows)
-        return list(debts.values())
+        return sorted(debts.values(), key=lambda a: DEBT_ACCOUNTS.index(a.name) if a.name in DEBT_ACCOUNTS else len(DEBT_ACCOUNTS))
 
     def investment_accounts(
         self, unattributed: list[dict] | None = None, month: str = ""
@@ -367,30 +372,31 @@ class Snapshot:
 
     def debt_base_movements(self) -> dict[str, MovementBase]:
         """The base movements of DEBT_BASES, added from the Debt tab, that are as expected (see tab_base_movements)."""
-        return self.tab_base_movements(DEBT_BASES, DEBT_ACCOUNT)[0]
+        return self.tab_base_movements(DEBT_BASES, DEBT_BASE_ACCOUNTS)[0]
 
     def card_payment_base_movements(self) -> dict[str, MovementBase]:
         """The base movements of CARD_PAYMENT_BASES, added from the Credit Cards tab, that are as expected (see tab_base_movements)."""
         return self.tab_base_movements(CARD_PAYMENT_BASES, CREDIT_CARD)[0]
 
     def tab_base_movements(
-        self, expected: dict[str, LedgerSide], special: str
+        self, expected: dict[str, LedgerSide], special: str | dict[str, str]
     ) -> tuple[dict[str, MovementBase], list[str]]:
         """
         The base movements of these names that are internal transfers with this
-        special side (or fixed account) on their side, and the descriptions of the
-        others, missing or not.
+        special side (or fixed account; one per name, if a dict) on their side, and the
+        descriptions of the others, missing or not.
         """
         found, wrong = {}, []
         for name, side in expected.items():
+            own = special[name] if isinstance(special, dict) else special
             base = self.base_movements.get(name)
             if (
                 base is not None and base.internal and base.move_type == MovementType.TRANSFER
-                and base.side(side) == special
+                and base.side(side) == own
             ):
                 found[name] = base
             else:
-                wrong.append(f"{name!r} (an internal transfer with {side.value}: {special})")
+                wrong.append(f"{name!r} (an internal transfer with {side.value}: {own})")
         return found, wrong
 
     def correction_base_movements(self) -> dict[str, MovementBase]:

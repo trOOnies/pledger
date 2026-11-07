@@ -3,30 +3,31 @@
 from __future__ import annotations
 
 from pledger.enums import CreditorKind
-from pledger.models import DEBT_ACCOUNT, next_month
+from pledger.models import next_month
 from pledger.web.store import (
     SERVICE_COLUMN,
     Snapshot,
+    service_account,
     service_bases,
     service_cells,
     service_estimates,
     service_months,
 )
 from pledger.web.views.common import movement_rows
-from pledger.web.views.debt import debt_after
+from pledger.web.views.debt import debt_after, net_creditors
 
 
 def build_services(snapshot: Snapshot, service: str = "") -> dict:
     """
-    The services of the debt account (see store._service_rows): each one's base movement
-    and value this month, what was owed to it this month, up to today, and in all, and
-    what we owe it now. Also the rows of the services CSV, newest first, and the movements
+    The services of the debt accounts (see store._service_rows): each one's debt account
+    (see store.service_account), base movement and value this month, what was owed to it
+    this month, up to today, and in all, and what we owe it now, in both debt accounts. Also the rows of the services CSV, newest first, and the movements
     owed to the services, newest first (of `service` only, if any), each with what we owe
     that service right after it. The estimated values are marked, and `overdue` has the
     months already ended with any (see store.service_estimates).
     """
-    debt = next((a for a in snapshot.debt_accounts() if a.name == DEBT_ACCOUNT), None)
-    services = debt.get_kind(CreditorKind.SERVICE) if debt else {}
+    accounts = snapshot.debt_accounts()
+    services = {n: c for n, c in net_creditors(accounts)[0].items() if c.kind == CreditorKind.SERVICE}
     bases, months = service_bases(snapshot), service_months(snapshot)
     month = snapshot.today.strftime("%Y-%m")
     now = dict(months).get(month, {})
@@ -41,7 +42,8 @@ def build_services(snapshot: Snapshot, service: str = "") -> dict:
             this_month[name] += value
     table = [
         {
-            "name": name, "base": bases[name].name if name in bases else None, "owed": c.amount,
+            "name": name, "account": service_account(c), "base": bases[name].name if name in bases else None,
+            "owed": c.amount,
             "value": now.get(name, 0.0), "estimated": name in estimates.get(month, []),
             "this_month": this_month[name], "charged": charged[name],
         }
@@ -60,11 +62,11 @@ def build_services(snapshot: Snapshot, service: str = "") -> dict:
     picked = (rows[rows[SERVICE_COLUMN] == service] if service else rows).sort_values("move_date", kind="stable")
     generated = picked.drop(columns=[SERVICE_COLUMN])
     movements = movement_rows(snapshot, generated, snapshot.ledger(generated))
-    after = debt_after(snapshot, [debt]) if debt else {}
+    after = debt_after(snapshot, accounts)
     for m, name in zip(movements, list(picked[SERVICE_COLUMN])[::-1]):
         m |= {"who": name, "debt": after.get(m["index"])}
     return {
-        "has_debt": debt is not None,
+        "has_debt": bool(accounts),
         "services": table,
         "columns": names,
         "values": values,

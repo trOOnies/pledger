@@ -16,23 +16,13 @@
       {% for k in kinds %}
       <label class="{{ k.color }}">
         <input type="radio" name="debt_kind" value="{{ k.title }}" {% if k.title == kind %}checked{% endif %}
-          hx-get="/form/debt-bases" hx-target="#debt-bases" hx-swap="innerHTML">
+          hx-get="/form/debt-bases" hx-target="#debt-bases" hx-swap="innerHTML" hx-include="#debt-form [name='who']">
         {{ k.title }}
       </label>
       {% endfor %}
     </div>
   </div>
   <div id="debt-bases" class="stack">{% include "_debt_bases.html" %}</div>
-  <label>Who
-    <select name="who" required>
-      <option value="">Choose…</option>
-      {% for kind, names in who.items() %}
-      <optgroup label="{{ kind }}">
-        {% for name in names %}<option {% if name == values.who %}selected{% endif %}>{{ name }}</option>{% endfor %}
-      </optgroup>
-      {% endfor %}
-    </select>
-  </label>
   <label>Amount
     <span class="money-input">
       <span class="prefix">{{ currency }}</span>
@@ -55,8 +45,9 @@
     hx-trigger="{{ 'load, ' if values.remaining_as_difference }}change from:#debt-form, input changed delay:300ms from:#debt-amount, htmx:afterSettle from:#debt-bases"></div>
   {% endif %}
   {% endif %}
-  <p class="muted small">The comment names who it is about first, so their debt adds it. The debt with companies
-    comes from the salaries of the <a href="/work">Work</a> tab.</p>
+  <p class="muted small">The comment names who it is about first, so their debt adds it. Debts go to <code>De</code>
+    and loans to <code>Lo</code>: whoever is expected to be a creditor only has debts, and whoever is expected to be a
+    debtor only loans. The debt with companies comes from the salaries of the <a href="/work">Work</a> tab.</p>
   <button type="submit">{{ "Save changes" if editing else "Add debt movement" }}</button>
   {% endif %}
   {% if missing %}

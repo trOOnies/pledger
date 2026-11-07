@@ -1,4 +1,4 @@
-{# The debt base movements of the kind picked (see views.debt_form_fields), and the account fields of the selected one. #}
+{# The debt base movements of the kind picked (see views.debt_form_fields), the account fields of the selected one, and who of its debt account it can be about. #}
 <div class="field">
   <span class="field-label" id="debt-base">{{ kind }}</span>
   <div class="segmented types" role="radiogroup" aria-labelledby="debt-base">
@@ -12,3 +12,13 @@
   </div>
 </div>
 <div id="debt-account-fields">{% include "_account_fields.html" %}</div>
+<label>Who <span class="muted small">(of {{ account }})</span>
+  <select name="who" required>
+    <option value="">Choose…</option>
+    {% for group, names in who.items() %}
+    <optgroup label="{{ group }}">
+      {% for name in names %}<option {% if name == values.who %}selected{% endif %}>{{ name }}</option>{% endfor %}
+    </optgroup>
+    {% endfor %}
+  </select>
+</label>

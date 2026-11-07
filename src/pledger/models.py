@@ -6,7 +6,7 @@ import datetime as dt
 import os
 import re
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from itertools import pairwise
 from math import isclose
 
@@ -45,12 +45,18 @@ RESERVED = {INVESTMENT, CREDIT_CARD, FOREIGN_CURRENCY}
 
 # The internal accounts, mandatory, under the top-level `internal` key of the accounts
 # YAML: the intermediary between movements (in the base currency, e.g. of the
-# conversions between two other currencies), the debts with other people (the only debt
-# account, see DebtAccount) and the equity (the only equity account).
-INTERMEDIARY, DEBT_ACCOUNT, EQUITY_ACCOUNT = "Fi", "De", "Eq"
+# conversions between two other currencies), the debts with other people (what we owe
+# them) and the loans to them (what they owe us), the only two debt accounts (see
+# DebtAccount), and the equity (the only equity account).
+INTERMEDIARY, DEBT_ACCOUNT, LOAN_ACCOUNT, EQUITY_ACCOUNT = "Fi", "De", "Lo", "Eq"
 INTERNAL_ACCOUNTS = {
-    INTERMEDIARY: AccountType.ASSET, DEBT_ACCOUNT: AccountType.LIABILITY, EQUITY_ACCOUNT: AccountType.EQUITY,
+    INTERMEDIARY: AccountType.ASSET, DEBT_ACCOUNT: AccountType.LIABILITY, LOAN_ACCOUNT: AccountType.ASSET,
+    EQUITY_ACCOUNT: AccountType.EQUITY,
 }
+DEBT_ACCOUNTS = (DEBT_ACCOUNT, LOAN_ACCOUNT)
+# The only debt account of someone expected in a role (see Creditor.accounts): the ones we
+# owe are in the debt account, and the ones that owe us in the loan account.
+ROLE_ACCOUNTS = {DebtRole.CREDITOR: DEBT_ACCOUNT, DebtRole.DEBTOR: LOAN_ACCOUNT}
 INTERNAL = "internal"
 
 INITIAL_DATE = "initial_date"  # of an account in the accounts YAML
@@ -394,16 +400,17 @@ class Account:
         if any: on its Monday. One with it must start after that week.
 
         The top-level `internal` key has the same sections, with exactly the
-        INTERNAL_ACCOUNTS, which no other section has: the asset Fi and the liability
-        De, in the base currency, and the equity Eq, the only equity account.
+        INTERNAL_ACCOUNTS, which no other section has: the assets Fi and Lo and the
+        liability De, in the base currency, and the equity Eq, the only equity account.
 
         Investment accounts are the asset accounts listed in the investments YAML
-        (if given, see InvestmentAccount.config_from_dict), and De is the debt account,
-        with its creditors in the creditors
-        YAML (if given, with no other account). They must not set an `initial_amount`
-        either: theirs is the sum of the initial amounts of their investments (their
-        initial quantity at their initial price, of `initial_prices`: account name to
-        investment name to price) or creditors. De has the `companies` (of the work history), with no initial debt.
+        (if given, see InvestmentAccount.config_from_dict), and De and Lo are the debt
+        accounts (see DEBT_ACCOUNTS), sharing the creditors of the creditors YAML (if
+        given, see DebtAccount.creditors_from_dict and split_creditors). They must not
+        set an `initial_amount` either: theirs comes from the initial amounts of their
+        investments (their initial quantity at their initial price, of `initial_prices`:
+        account name to investment name to price) or creditors. The `companies` (of the
+        work history) are creditors too, with no initial debt.
 
         Credit card accounts are the ones in the credit cards YAML (if given), set
         like the others but always liquid liabilities.
@@ -423,8 +430,9 @@ class Account:
         expected = {n: t.value for n, t in INTERNAL_ACCOUNTS.items()}
         if found != expected:
             raise ValueError(
-                f"The accounts YAML {INTERNAL!r} key must have exactly the asset {INTERMEDIARY}, the liability "
-                f"{DEBT_ACCOUNT} and the equity {EQUITY_ACCOUNT}: it has {found or 'none'}"
+                f"The accounts YAML {INTERNAL!r} key must have exactly the assets {INTERMEDIARY} and "
+                f"{LOAN_ACCOUNT}, the liability {DEBT_ACCOUNT} and the equity {EQUITY_ACCOUNT}: it has "
+                f"{found or 'none'}"
             )
         for t, at_accounts in data.items():
             if AccountType(t) == AccountType.EQUITY and at_accounts:
@@ -434,9 +442,7 @@ class Account:
                 raise ValueError(f"The accounts {internal_names} are internal: under the {INTERNAL!r} key only")
         investments_data = (_load_yaml(investments_path) if investments_path else None) or {}
         creditors_data = (_load_yaml(creditors_path) if creditors_path else None) or {}
-        others = sorted(set(creditors_data) - {DEBT_ACCOUNT})
-        if others:
-            raise ValueError(f"The creditors YAML only has the creditors of {DEBT_ACCOUNT}, not of {others}")
+        creditors = split_creditors(DebtAccount.creditors_from_dict(creditors_data, companies))
         both = sorted(set(investments_data) & set(INTERNAL_ACCOUNTS))
         if both:
             raise ValueError(f"The internal accounts cannot be investment accounts: {both}")
@@ -461,7 +467,7 @@ class Account:
                 if "initial_amount" in acc_d:
                     raise ValueError(f"Investment account {name!r} must not have an initial_amount")
                 return 0.0  # set from its investments
-            if name == DEBT_ACCOUNT:
+            if name in DEBT_ACCOUNTS:
                 if "initial_amount" in acc_d:
                     raise ValueError(f"Debt account {name!r} must not have an initial_amount")
                 return 0.0  # set from its creditors
@@ -544,7 +550,7 @@ class Account:
                     "interest_frequency": interest_frequency_of(name, acc_d),
                     "internal": name in INTERNAL_ACCOUNTS,
                 }
-                if name in (INTERMEDIARY, DEBT_ACCOUNT) and not fields["currency"].is_base_currency:
+                if name in (INTERMEDIARY, *DEBT_ACCOUNTS) and not fields["currency"].is_base_currency:
                     raise ValueError(f"The internal account {name!r} must be in the base currency")
                 if name in investments_data:
                     investments, balance_accounts = InvestmentAccount.config_from_dict(
@@ -554,10 +560,11 @@ class Account:
                     accounts[name] = InvestmentAccount(
                         **fields, investments=investments, balance_accounts=balance_accounts
                     )
-                elif name == DEBT_ACCOUNT:
-                    creditors = DebtAccount.creditors_from_dict(name, creditors_data.get(name) or {}, companies)
-                    fields["initial_amount"] = sum(c.amount for c in creditors.values())
-                    accounts[name] = DebtAccount(**fields, creditors=creditors)
+                elif name in DEBT_ACCOUNTS:
+                    accounts[name] = DebtAccount(**fields, creditors=creditors[name])
+                    accounts[name].initial_amount = accounts[name].balance_of(
+                        sum(c.amount for c in creditors[name].values())
+                    )
                 else:
                     accounts[name] = acc_cls(**fields)
 
@@ -843,6 +850,14 @@ class Creditor:
         return self.amount < 0 and not rounds_to_zero(self.amount)
 
     @property
+    def accounts(self) -> tuple[str, ...]:
+        """
+        The debt accounts they can be in (see DEBT_ACCOUNTS): only that of their expected
+        role, if any (see ROLE_ACCOUNTS), else both.
+        """
+        return (ROLE_ACCOUNTS[self.expected],) if self.expected else DEBT_ACCOUNTS
+
+    @property
     def meets_expected(self) -> bool:
         """Not in the opposite role to the expected one (being settled meets either)."""
         if self.expected == DebtRole.CREDITOR:
@@ -862,12 +877,27 @@ DEFAULT_EXPECTED = {
 }
 
 
+def split_creditors(creditors: dict[str, Creditor]) -> dict[str, dict[str, Creditor]]:
+    """
+    The creditors of each debt account (see DEBT_ACCOUNTS), each in the ones they can be
+    in (see Creditor.accounts), with their initial amount in only one of them: the only
+    one, or the debt account if we owe them, else the loan account.
+    """
+    split: dict[str, dict[str, Creditor]] = {name: {} for name in DEBT_ACCOUNTS}
+    for name, c in creditors.items():
+        first = c.accounts[0] if len(c.accounts) == 1 or c.amount >= 0 else LOAN_ACCOUNT
+        for account in c.accounts:
+            split[account][name] = replace(c, amount=c.amount if account == first else 0.0)
+    return split
+
+
 @dataclass
 class DebtAccount(Account):
     """
-    Liability account that tracks debts with other people, as a dict of each
-    Creditor's name to the Creditor. Its total can be negative: we are owed more
-    than we owe.
+    Account that tracks debts with other people, as a dict of each Creditor's name to
+    the Creditor, always as what we owe them (negative: what they owe us). A liability
+    (what we owe, De) or an asset (what we are owed, Lo); either total can have the
+    other sign.
     """
 
     creditors: dict[str, Creditor] = field(default_factory=dict)
@@ -902,6 +932,10 @@ class DebtAccount(Account):
         else:
             self.creditors[name].amount += amount
 
+    def balance_of(self, owed: float) -> float:
+        """The balance of the account of this much owed by us: its opposite for an asset."""
+        return owed if self.acc_type == AccountType.LIABILITY else -owed
+
     def get_creditors(self) -> dict[str, Creditor]:
         """The ones we owe."""
         return {n: c for n, c in self.creditors.items() if c.is_creditor}
@@ -911,7 +945,7 @@ class DebtAccount(Account):
         return {n: c for n, c in self.creditors.items() if c.is_debtor}
 
     @staticmethod
-    def _expected_of(acc_name: str, name: str, value) -> DebtRole | None:
+    def _expected_of(name: str, value) -> DebtRole | None:
         """An expected role from the creditors YAML: null for none."""
         if value is None:
             return None
@@ -919,7 +953,7 @@ class DebtAccount(Account):
             return DebtRole(value)
         except ValueError:
             raise ValueError(
-                f"Creditor {name!r} of the account {acc_name!r} has an unknown expected role: {value!r} "
+                f"Creditor {name!r} has an unknown expected role: {value!r} "
                 f"(must be {[r.value for r in DebtRole]} or null)"
             ) from None
 
@@ -928,31 +962,31 @@ class DebtAccount(Account):
         return {n: c for n, c in self.creditors.items() if c.kind == kind}
 
     @staticmethod
-    def creditors_from_dict(
-        acc_name: str, data: dict, companies: list[str] | None = None
-    ) -> dict[str, Creditor]:
+    def creditors_from_dict(data: dict, companies: list[str] | None = None) -> dict[str, Creditor]:
         """
-        Creditors of an account from its creditors YAML dict, a section per kind
-        (`people`, `services`) of name: initial debt, or name: a dict of `amount`
-        and `expected` (`creditor`, `debtor` or null for none; the kind's default
-        if missing), and for a service the `base_movement` of its values of the
-        services CSV. The `companies` of the work history are added with no
-        initial debt.
+        The creditors of the debt accounts from the creditors YAML dict, shared by both
+        (see split_creditors): a section per kind (`people`, `services`) of name:
+        initial debt (positive: we owe them), or name: a dict of `amount` and `expected`
+        (`creditor`, `debtor` or null for none; the kind's default if missing), and for a
+        service the `base_movement` of its values of the services CSV. The `companies` of
+        the work history are added with no initial debt.
         """
         if not isinstance(data, dict):
-            raise ValueError(f"The creditors of the account {acc_name!r} must be a mapping")  # noqa: TRY004 (a bad config value)
+            raise ValueError("The creditors YAML must be a mapping")  # noqa: TRY004 (a bad config value)
+        if set(data) & set(DEBT_ACCOUNTS):
+            raise ValueError(
+                f"The creditors YAML has no accounts ({sorted(set(data) & set(DEBT_ACCOUNTS))}): its people and "
+                f"services are at the top level, shared by {' and '.join(DEBT_ACCOUNTS)}"
+            )
         sections = [k.value for k in CREDITOR_SECTIONS]
         unknown = sorted(str(k) for k in set(data) - set(sections))
         if unknown:
-            raise ValueError(
-                f"The creditors of the account {acc_name!r} have unknown sections {unknown} "
-                f"(must be {sections})"
-            )
+            raise ValueError(f"The creditors YAML has unknown sections {unknown} (must be {sections})")
         creditors = {}
         for kind in CREDITOR_SECTIONS:
             section = data.get(kind.value) or {}
             if not isinstance(section, dict):
-                raise ValueError(f"The {kind.value} of the account {acc_name!r} must be a mapping of name: amount")  # noqa: TRY004 (a bad config value)
+                raise ValueError(f"The {kind.value} of the creditors YAML must be a mapping of name: amount")  # noqa: TRY004 (a bad config value)
             for name, value in section.items():
                 name = str(name)  # YAML keys may be numbers
                 amount, expected, base_movement = value, DEFAULT_EXPECTED[kind], None
@@ -960,22 +994,22 @@ class DebtAccount(Account):
                     keys = {"amount", "expected"} | ({"base_movement"} if kind == CreditorKind.SERVICE else set())
                     extra = sorted(str(k) for k in set(value) - keys)
                     if extra:
-                        raise ValueError(f"Creditor {name!r} of the account {acc_name!r} has unknown keys {extra}")
+                        raise ValueError(f"Creditor {name!r} has unknown keys {extra}")
                     amount = value.get("amount", 0.0 if "base_movement" in value else None)
                     if "expected" in value:
-                        expected = DebtAccount._expected_of(acc_name, name, value["expected"])
+                        expected = DebtAccount._expected_of(name, value["expected"])
                     base_movement = value.get("base_movement")
                     if "base_movement" in value and not isinstance(base_movement, str):
                         raise ValueError(
-                            f"Creditor {name!r} of the account {acc_name!r} base_movement must be a name: {base_movement!r}"
+                            f"Creditor {name!r} base_movement must be a name: {base_movement!r}"
                         )
                 if isinstance(amount, bool) or not isinstance(amount, (int, float)):
                     raise ValueError(  # noqa: TRY004 (a bad config value)
-                        f"Creditor {name!r} of the account {acc_name!r} amount must be a number: {amount!r}"
+                        f"Creditor {name!r} amount must be a number: {amount!r}"
                     )
                 if name in creditors:
                     raise ValueError(
-                        f"Creditor {name!r} of the account {acc_name!r} is in both "
+                        f"Creditor {name!r} is in both "
                         f"{creditors[name].kind.value} and {kind.value}"
                     )
                 creditors[name] = Creditor(
@@ -989,7 +1023,7 @@ class DebtAccount(Account):
                 )
             elif creditors[name].kind != CreditorKind.COMPANY:
                 raise ValueError(
-                    f"Creditor {name!r} of the account {acc_name!r} is a company of the work "
+                    f"Creditor {name!r} is a company of the work "
                     f"history, but it is in {creditors[name].kind.value}"
                 )
         return creditors

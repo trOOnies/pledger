@@ -408,9 +408,9 @@ class TestPages:
         assert re.findall(r'name="acc_type" value="(\w+)" checked', types) == ["asset"]
         assert "hx-get" not in types  # nothing to load
         r = client.post("/accounts", data={
-            "name": "Lo", "acc_type": "liability", "description": "Loan", "initial_amount": "0",
+            "name": "Ln", "acc_type": "liability", "description": "Loan", "initial_amount": "0",
         })
-        assert "Added account Lo" in r.text
+        assert "Added account Ln" in r.text
         types = r.text.split('class="segmented types"')[1].split("</div>")[0]
         assert re.findall(r'name="acc_type" value="(\w+)" checked', types) == ["liability"]  # kept
 
@@ -508,7 +508,7 @@ class TestCharts:
         charts = build_results(snapshot, "2026-02")
         # Only Food moved in February; every other bar is still there, at zero
         by_currency = build_accounts(snapshot, "2026-02")["groupings"]["currency"]
-        assert [c["name"] for r in by_currency["assets"] for c in r["children"]] == ["Ca", "Fi", "Bk"]
+        assert [c["name"] for r in by_currency["assets"] for c in r["children"]] == ["Ca", "Fi", "Lo", "Bk"]
         assert [c["name"] for r in by_currency["liabilities"] for c in r["children"]] == ["Cc", "De"]
         gains = charts["gains"]
         assert [(r["name"], r["value"]) for r in gains] == [("Operative", 0), ("Gifts", 0)]
@@ -630,7 +630,7 @@ class TestApi:
         movements = client.get("/api/movements").json()
         assert movements[0]["date"] == "2026-01-04"  # newest first
         accounts = {a["name"]: a for a in client.get("/api/accounts").json()}
-        assert list(accounts) == ["Ca", "Bk", "Cc", "Fi", "De", "Eq"]
+        assert list(accounts) == ["Ca", "Bk", "Cc", "Fi", "Lo", "De", "Eq"]
         assert accounts["Bk"] == {
             "name": "Bk", "description": "Bank account", "type": "asset", "currency": "USD",
             "is_liquid": True, "initial_amount": 0.1005, "initial_date": "2025-12-31", "checks": [],

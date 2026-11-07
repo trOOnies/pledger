@@ -124,9 +124,10 @@ class TestAccount:
 
     def test_load_yaml(self, accounts_yaml, currencies_yaml):
         accounts = Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml))
-        assert set(accounts) == {"Ca", "Bk", "Cc", "Fi", "De", "Eq"}
-        assert [n for n, a in accounts.items() if a.internal] == ["Fi", "De", "Eq"]
+        assert set(accounts) == {"Ca", "Bk", "Cc", "Fi", "Lo", "De", "Eq"}
+        assert [n for n, a in accounts.items() if a.internal] == ["Fi", "Lo", "De", "Eq"]
         assert isinstance(accounts["De"], DebtAccount) and accounts["Fi"].checks == (AccountCheck.NET_ZERO,)
+        assert isinstance(accounts["Lo"], DebtAccount) and accounts["Lo"].acc_type is AccountType.ASSET
         assert accounts["Cc"].acc_type is AccountType.LIABILITY
         assert accounts["Bk"].description == "Bank account"
 
@@ -195,9 +196,9 @@ class TestAccount:
     @pytest.mark.parametrize(
         ("text", "message"),
         [
-            ("", r"must have exactly the asset Fi, the liability De and the equity Eq: it has none"),
-            (INTERNAL_ACCOUNTS_YAML.replace("{Fi:", "{Fx:"), r"it has \{'Fx': 'asset', 'De': 'liability', 'Eq': 'equity'\}"),
-            (INTERNAL_ACCOUNTS_YAML.replace("  liability: {De: {description: Debts}}\n", "").replace("[net_zero]}}", "[net_zero]}, De: {description: Debts}}"), "must have exactly"),
+            ("", r"must have exactly the assets Fi and Lo, the liability De and the equity Eq: it has none"),
+            (INTERNAL_ACCOUNTS_YAML.replace("{Fi:", "{Fx:"), r"it has \{'Fx': 'asset', 'Lo': 'asset', 'De': 'liability', 'Eq': 'equity'\}"),
+            (INTERNAL_ACCOUNTS_YAML.replace("  liability: {De: {description: Debts}}\n", "").replace("Loans}}", "Loans}, De: {description: Debts}}"), "must have exactly"),
             (INTERNAL_ACCOUNTS_YAML + "equity:\n  Eq2:\n    description: d\n", r"The only equity account is the internal Eq: \['Eq2'\]"),
             (INTERNAL_ACCOUNTS_YAML + "asset:\n  Ca:\n    description: d\n    initial_amount: 0\n  Fi:\n    description: d\n",
              r"The accounts \['Fi'\] are internal"),
@@ -704,12 +705,11 @@ class TestCreditor:
 
 
 CREDITORS_YAML = """\
-De:
-  people:
-    Dad: 100
-    Mum: -150.5
-  services:
-    Work: 0
+people:
+  Dad: 100
+  Mum: -150.5
+services:
+  Work: 0
 """
 
 
@@ -774,33 +774,56 @@ class TestDebtAccount:
 
     def test_load_yaml(self, paths):
         accounts = self.load(paths)
-        # Without a creditors YAML, De is still the debt account, with no creditors
-        bare = Account.load_yaml(paths[0], *Currency.load_yaml(paths[1]))["De"]
-        assert isinstance(bare, DebtAccount) and bare.creditors == {} and bare.initial_amount == 0
-        cc = accounts["De"]  # the debt account, always
-        assert isinstance(cc, DebtAccount) and cc.acc_type == AccountType.LIABILITY and cc.internal
-        assert cc.creditors == {
-            "Dad": Creditor("Dad", 100.0), "Mum": Creditor("Mum", -150.5),
+        # Without a creditors YAML, De and Lo are still the debt accounts, with no creditors
+        for name in ("De", "Lo"):
+            bare = Account.load_yaml(paths[0], *Currency.load_yaml(paths[1]))[name]
+            assert isinstance(bare, DebtAccount) and bare.creditors == {} and bare.initial_amount == 0
+        de, lo = accounts["De"], accounts["Lo"]  # the debt accounts, always
+        assert isinstance(de, DebtAccount) and de.acc_type == AccountType.LIABILITY and de.internal
+        assert isinstance(lo, DebtAccount) and lo.acc_type == AccountType.ASSET and lo.internal
+        # Who has no expected role is in both, with what we owe them in De, and what they owe us in Lo
+        assert de.creditors == {
+            "Dad": Creditor("Dad", 100.0), "Mum": Creditor("Mum", 0.0),
             "Work": Creditor("Work", 0.0, CreditorKind.SERVICE, DebtRole.CREDITOR),
         }
-        assert list(cc.get_kind(CreditorKind.SERVICE)) == ["Work"]
-        assert cc.initial_amount == -50.5
-        assert not any(isinstance(a, DebtAccount) for n, a in accounts.items() if n != "De")
+        assert lo.creditors == {"Dad": Creditor("Dad", 0.0), "Mum": Creditor("Mum", -150.5)}
+        assert list(de.get_kind(CreditorKind.SERVICE)) == ["Work"]
+        # Each one's own balance: what we owe in De, what we are owed in Lo
+        assert (de.initial_amount, lo.initial_amount) == (100.0, 150.5)
+        assert not any(isinstance(a, DebtAccount) for n, a in accounts.items() if n not in ("De", "Lo"))
+
+    def test_expected_roles_have_one_account(self, paths):
+        Path(paths[2]).write_text(
+            "people:\n  Ann:\n    amount: -5\n    expected: creditor\n  Bob:\n    amount: 5\n    expected: debtor\n"
+            "services:\n  Rent:\n    amount: -20\n    expected: debtor\n",
+            encoding="utf-8",
+        )
+        accounts = self.load(paths)
+        # Even against their expected role, they only are in its account
+        assert accounts["De"].creditors == {"Ann": Creditor("Ann", -5.0, expected=DebtRole.CREDITOR)}
+        assert list(accounts["Lo"].creditors) == ["Bob", "Rent"]
+        assert accounts["Lo"].creditors["Bob"].amount == 5.0 and accounts["Lo"].initial_amount == 15.0
+        assert accounts["De"].initial_amount == -5.0
+
+    def test_load_yaml_rejects_the_old_layout(self, paths):
+        Path(paths[2]).write_text("De:\n  people:\n    Dad: 0\n", encoding="utf-8")
+        with pytest.raises(ValueError, match=r"has no accounts \(\['De'\]\): its people and services are at the top level"):
+            self.load(paths)
 
     @pytest.mark.parametrize(
         ("old", "new", "message"),
         [
-            ("    Work: 0\n", "    Work: 0\nNope: {}\n", r"only has the creditors of De, not of \['Nope'\]"),
-            ("    Work: 0\n", "    Work: 0\nCc: {}\n", r"only has the creditors of De, not of \['Cc'\]"),
-            ("    Dad: 100\n", "    Dad: lots\n", "Creditor 'Dad' of the account 'De' amount must be a number"),
-            ("    Dad: 100\n", "    Dad:\n", "Creditor 'Dad' of the account 'De' amount must be a number"),
-            ("    Work: 0\n", "    Work: 0\n  pets:\n", r"unknown sections \['pets'\]"),
-            ("    Work: 0\n", "    Work: 0\n  companies:\n", r"unknown sections \['companies'\]"),
-            ("  services:\n    Work: 0\n", "  services: 3\n", "The services of the account 'De' must be a mapping"),
-            ("    Work: 0\n", "    Work: 0\n    Dad: 1\n", "'Dad' of the account 'De' is in both people and services"),
-            ("    Work: 0\n", "    Work:\n      amount: 0\n      expected: owed\n", "unknown expected role: 'owed'"),
-            ("    Work: 0\n", "    Work:\n      amount: 0\n      due: 1\n", r"unknown keys \['due'\]"),
-            ("    Work: 0\n", "    Work:\n      expected: debtor\n", "'Work' of the account 'De' amount must be a number"),
+            ("  Work: 0\n", "  Work: 0\nNope: {}\n", r"unknown sections \['Nope'\]"),
+            ("  Work: 0\n", "  Work: 0\nCc: {}\n", r"unknown sections \['Cc'\]"),
+            ("  Dad: 100\n", "  Dad: lots\n", "Creditor 'Dad' amount must be a number"),
+            ("  Dad: 100\n", "  Dad:\n", "Creditor 'Dad' amount must be a number"),
+            ("  Work: 0\n", "  Work: 0\npets:\n", r"unknown sections \['pets'\]"),
+            ("  Work: 0\n", "  Work: 0\ncompanies:\n", r"unknown sections \['companies'\]"),
+            ("services:\n  Work: 0\n", "services: 3\n", "The services of the creditors YAML must be a mapping"),
+            ("  Work: 0\n", "  Work: 0\n  Dad: 1\n", "'Dad' is in both people and services"),
+            ("  Work: 0\n", "  Work:\n    amount: 0\n    expected: owed\n", "unknown expected role: 'owed'"),
+            ("  Work: 0\n", "  Work:\n    amount: 0\n    due: 1\n", r"unknown keys \['due'\]"),
+            ("  Work: 0\n", "  Work:\n    expected: debtor\n", "'Work' amount must be a number"),
         ],
     )
     def test_load_yaml_rejects_invalid(self, paths, old, new, message):
@@ -820,21 +843,26 @@ class TestDebtAccount:
     def test_expected_roles(self, paths):
         creditors_yaml = paths[2]
         Path(creditors_yaml).write_text(
-            "De:\n  people:\n    Dad: 1\n    Mum:\n      amount: 2\n      expected: debtor\n"
-            "  services:\n    Gas: 3\n    Rent:\n      amount: 4\n      expected: null\n",
+            "people:\n  Dad: 1\n  Mum:\n    amount: 2\n    expected: debtor\n"
+            "services:\n  Gas: 3\n  Rent:\n    amount: 4\n    expected: null\n",
             encoding="utf-8",
         )
         accounts_yaml, currencies_yaml, _ = paths
-        cc = Account.load_yaml(
+        accounts = Account.load_yaml(
             accounts_yaml, *Currency.load_yaml(currencies_yaml), creditors_path=creditors_yaml,
             companies=["Acme", "Globex"],
-        )["De"]
-        assert {n: c.expected for n, c in cc.creditors.items()} == {
+        )
+        de, lo = accounts["De"], accounts["Lo"]
+        assert {n: c.expected for n, c in {**lo.creditors, **de.creditors}.items()} == {
             "Dad": None, "Mum": DebtRole.DEBTOR,  # people have no default
             "Gas": DebtRole.CREDITOR, "Rent": None,  # services default to creditors
             "Acme": DebtRole.DEBTOR, "Globex": DebtRole.DEBTOR,  # companies to debtors
         }
-        assert cc.creditors["Mum"].amount == 2 and cc.initial_amount == 10
+        # The creditors are only in De, the debtors only in Lo, and the rest in both
+        assert list(de.creditors) == ["Dad", "Gas", "Rent"]
+        assert list(lo.creditors) == ["Dad", "Mum", "Rent", "Acme", "Globex"]
+        assert lo.creditors["Mum"].amount == 2 and lo.initial_amount == -2
+        assert de.initial_amount == 8 and lo.creditors["Dad"].amount == 0
 
     @pytest.mark.parametrize(
         ("expected", "amount", "met"),

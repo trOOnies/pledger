@@ -32,7 +32,7 @@ class TestEditAccounts:
         path = settings.accounts_path
         block = (
             "internal:\n  asset:\n    Fi:\n      description: Intermediary\n      initial_amount: 0\n"
-            "      checks:\n      - net_zero\n  liability:\n    De:\n      description: Debts\n"
+            "      checks:\n      - net_zero\n    Lo:\n      description: Loans\n  liability:\n    De:\n      description: Debts\n"
             "  equity:\n    Eq:\n      description: Equity\n"
         )
         path.write_text(path.read_text().replace(INTERNAL_ACCOUNTS_YAML, block))

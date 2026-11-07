@@ -37,7 +37,7 @@ month;monthly_inflation
 # style, so that replacing the lines of the other sections leaves them alone
 INTERNAL_ACCOUNTS_YAML = """\
 internal:
-  asset: {Fi: {description: Intermediary, initial_amount: 0, checks: [net_zero]}}
+  asset: {Fi: {description: Intermediary, initial_amount: 0, checks: [net_zero]}, Lo: {description: Loans}}
   liability: {De: {description: Debts}}
   equity: {Eq: {description: Equity}}
 """

@@ -109,7 +109,7 @@ class TestAudit:
         assert "<strong>Bk</strong>" not in r.text  # left empty: not audited
         cards = re.findall(r'class="label">(.+?)</span><span class="num">(\d+)<', r.text)
         # Fi, net zero, is always audited at 0.00
-        assert cards == [("Audited", "3"), ("With a difference", "1"), ("Not audited", "3")]
+        assert cards == [("Audited", "3"), ("With a difference", "1"), ("Not audited", "4")]
         assert "Matches" in self.row(r.text, "Fi")
         assert 'name="balance:Ca" value="100"' in r.text and 'name="balance:Bk"' not in r.text
 
@@ -126,7 +126,7 @@ class TestAudit:
         groups = re.findall(r'<h3 class="audit-group"><span aria-hidden="true">(.+?)</span> (.+?)</h3>', r.text)
         assert groups == [
             ("🏦", "General assets"), ("💱", "Foreign currency assets"), ("📈", "Investment accounts"),
-            ("🧾", "General liabilities"), ("🤝", "Debt"), ("💳", "Credit cards"),
+            ("🧾", "General liabilities"), ("🤝", "Debts &amp; loans"), ("💳", "Credit cards"),
         ]
         names = {
             g: re.findall(r'name="balance:(\w+)"', t.split("</table>")[0])
@@ -134,7 +134,7 @@ class TestAudit:
         }
         assert names == {
             # By currency, the base one first, then by name
-            "assets": ["ab", "Ca", "Fi", "Zz"], "foreign_assets": ["Bk"], "investments": ["Br"], "debt": ["De"],
+            "assets": ["ab", "Ca", "Fi", "Zz"], "foreign_assets": ["Bk"], "investments": ["Br"], "debt": ["De", "Lo"],
             "credit_cards": ["Vi"], "liabilities": ["Cc"],
         }
 

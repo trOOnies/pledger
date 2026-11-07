@@ -4,9 +4,9 @@
 {% if not accounts %}
 <div class="panel">
   <h2>Debt</h2>
-  <p class="muted">No debt accounts yet. List liability accounts in
-    <code>{{ settings.creditors_path or "creditors.yaml" }}</code>, each with the <code>people</code>,
-    <code>services</code> and <code>companies</code> you have debts with and the amount: positive if you
+  <p class="muted">No debt accounts yet: they are the internal <code>De</code> (debts) and <code>Lo</code> (loans).
+    List the <code>people</code> and <code>services</code> you have debts with in
+    <code>{{ settings.creditors_path or "creditors.yaml" }}</code>, with the amount: positive if you
     owe them, negative if they owe you.</p>
 </div>
 {% else %}

@@ -6,10 +6,11 @@ from dataclasses import replace
 
 from pandas import DataFrame, concat
 
-from pledger.models import DEBT_ACCOUNT, CreditCardAccount, is_foreign
+from pledger.models import CreditCardAccount, is_foreign
 from pledger.web.store.base_store import StoreBase
 from pledger.web.store.common import _amount_of, _fit_row, _parse_amount, _with_row
 from pledger.web.store.constants import (
+    DEBT_BASE_ACCOUNTS,
     DIFFERENCE_GAIN,
     INSTALLMENTS_COLUMN,
     INVESTMENT_COLUMN,
@@ -171,8 +172,8 @@ class MovementStore(StoreBase):
         comment names them first (prefixed if it doesn't), so the Debt tab adds it to them.
 
         With `remaining_as_difference`, what would remain with them after it, in all the
-        ledger, is settled by a DIFFERENCES movement of the same date and comment, against
-        the equity account, added together with it (see Snapshot.difference_of). Returns
+        ledger, in its debt account (see DEBT_BASE_ACCOUNTS), is settled there by a
+        DIFFERENCES movement of the same date and comment, against the equity account, added together with it (see Snapshot.difference_of). Returns
         its base movement and amount, None if nothing remains or it wasn't asked for.
         """
         snapshot = self.load()
@@ -187,13 +188,14 @@ class MovementStore(StoreBase):
             _, remaining = snapshot.debt_remaining(base_movement, _amount_of(new_row["amount"]), who.strip())
             difference = Snapshot.difference_of(remaining)
         if difference:
-            new_rows.append(self._difference_row(snapshot, move_date, *difference, comment))
+            account = DEBT_BASE_ACCOUNTS[base_movement]
+            new_rows.append(self._difference_row(snapshot, move_date, *difference, comment, account))
         self._append_rows(snapshot, field, new_rows)
         return difference
 
     @staticmethod
-    def _difference_row(snapshot, move_date: str, base_name: str, amount: float, comment: str) -> dict:
-        """The row of a DIFFERENCES movement: out of or into the debt account, against the equity account."""
+    def _difference_row(snapshot, move_date: str, base_name: str, amount: float, comment: str, account: str) -> dict:
+        """The row of a DIFFERENCES movement: out of or into this debt account, against the equity account."""
         base = snapshot.difference_base_movements().get(base_name)
         if base is None:
             gain = base_name == DIFFERENCE_GAIN
@@ -202,7 +204,7 @@ class MovementStore(StoreBase):
                 f"{'gain' if gain else 'loss'} of the base movements YAML"
             )
         debit, credit = (
-            (DEBT_ACCOUNT, base.acc_credit.name) if base_name == DIFFERENCE_GAIN else (base.acc_debit.name, DEBT_ACCOUNT)
+            (account, base.acc_credit.name) if base_name == DIFFERENCE_GAIN else (base.acc_debit.name, account)
         )
         return _movement_row(
             snapshot, move_date, base_name, debit, credit, amount, comment,

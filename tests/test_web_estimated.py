@@ -26,7 +26,7 @@ class Base:
         monkeypatch.setattr("pledger.web.store.common.today", lambda: self.today)
         creditors = tmp_path / "creditors.yaml"
         creditors.write_text(
-            "De:\n  services:\n    Rent:\n      base_movement: Food\n    Gas:\n      base_movement: Food\n",
+            "services:\n  Rent:\n    base_movement: Food\n  Gas:\n    base_movement: Food\n",
             encoding="utf-8",
         )
         services = tmp_path / "services.csv"

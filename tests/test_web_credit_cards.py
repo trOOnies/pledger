@@ -64,7 +64,7 @@ class TestCreditCards:
     def test_cannot_be_debt_accounts(self, settings, tmp_path):
         creditors = tmp_path / "creditors.yaml"
         creditors.write_text("Vi:\n  people:\n    Dad: 1\n", encoding="utf-8")
-        with pytest.raises(LedgerDataError, match=re.escape("only has the creditors of De, not of ['Vi']")):
+        with pytest.raises(LedgerDataError, match=re.escape("The creditors YAML has unknown sections ['Vi']")):
             LedgerStore(replace(settings, creditors_path=creditors)).load()
 
     @pytest.fixture

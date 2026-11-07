@@ -999,10 +999,13 @@ def edit_conversion(
 
 
 @router.get("/form/debt-bases")
-def form_debt_bases(request: Request, store: StoreDep, debt_kind: str = ""):
-    """The debt base movements of a kind of the Debt tab (see views.debt_form_fields)."""
+def form_debt_bases(request: Request, store: StoreDep, debt_kind: str = "", who: str = ""):
+    """
+    The debt base movements of a kind of the Debt tab (see views.debt_form_fields), still
+    about `who` if they can be (see Creditor.accounts).
+    """
     return templates.TemplateResponse(
-        request, "_debt_bases.html", {**debt_form_fields(store.load(), kind=debt_kind), "values": {}}
+        request, "_debt_bases.html", {**debt_form_fields(store.load(), kind=debt_kind), "values": {"who": who}}
     )
 
 

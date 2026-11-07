@@ -44,7 +44,7 @@ class TestCurrencies:
     def test_build_currencies(self, values):
         currencies = build_currencies(LedgerStore(values).load(), self.TODAY)
         assert currencies["base"] == {
-            "name": "ARS", "description": "Pesos", "accounts": 4,  # Ca, Cc, Fi and De
+            "name": "ARS", "description": "Pesos", "accounts": 5,  # Ca, Cc, Fi, Lo and De
             "assets": pytest.approx(159.75), "liabilities": pytest.approx(0), "own": [],
         }
         # Each month's inflation, the CPI at its end; March is projected
@@ -202,16 +202,16 @@ class TestConversions:
 
     def test_assets_and_liabilities_are_apart(self, conv):
         conv.accounts_path.write_text(conv.accounts_path.read_text(encoding="utf-8").replace(
-            "liability:\n", "liability:\n  Lo:\n    description: Dollar loan\n    currency: USD\n    initial_amount: 0\n", 1,
+            "liability:\n", "liability:\n  Dl:\n    description: Dollar loan\n    currency: USD\n    initial_amount: 0\n", 1,
         ), encoding="utf-8")
         data = build_currencies(LedgerStore(conv).load())
         assert {t: [a["name"] for a in accs] for t, accs in data["own_by_type"].items()} == {
-            "Assets": ["Bk"], "Liabilities": ["Lo"],
+            "Assets": ["Bk"], "Liabilities": ["Dl"],
         }
         text = TestClient(create_app(conv)).get("/currencies").text
         section = text.split("<h2>Accounts in other currencies")[1]
         assets, liabilities = section.split("<h3>Liabilities</h3>")
-        assert "<h3>Assets</h3>" in assets and 'id="account-Bk"' in assets and 'id="account-Lo"' in liabilities
+        assert "<h3>Assets</h3>" in assets and 'id="account-Bk"' in assets and 'id="account-Dl"' in liabilities
 
     def test_a_lower_value_is_a_loss(self, conv, tmp_path):
         (tmp_path / "currencies.csv").write_text("date;USD\n2026-01-01;1000\n2026-01-10;900\n2026-01-20;900\n")

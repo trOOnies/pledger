@@ -38,7 +38,7 @@ class TestRemainingAsDifference:
     @pytest.fixture
     def settings(self, settings, tmp_path):
         path = tmp_path / "creditors.yaml"
-        path.write_text("De:\n  people:\n    Dad: 0\n    Mum: 0\n", encoding="utf-8")
+        path.write_text("people:\n  Dad: 0\n  Mum: 0\n", encoding="utf-8")
         with_internal(settings.base_movements_path, DIFFERENCE_YAML, DEBT_YAML)
         return replace(settings, creditors_path=path)
 
@@ -48,7 +48,7 @@ class TestRemainingAsDifference:
 
     @staticmethod
     def balance(settings, who="Dad"):
-        return next(a for a in LedgerStore(settings).load().debt_accounts()).creditors[who].amount
+        return sum(a.creditors[who].amount for a in LedgerStore(settings).load().debt_accounts() if who in a.creditors)
 
     def test_we_owe_less_is_a_gain(self, settings):
         store = LedgerStore(settings)
@@ -63,12 +63,12 @@ class TestRemainingAsDifference:
 
     def test_they_owe_us_less_is_a_loss(self, settings):
         store = LedgerStore(settings)
-        store.add_debt_movement("2026-02-01", "Loan - Given", "De", "Ca", "100", "Dad")
+        store.add_debt_movement("2026-02-01", "Loan - Given", "Lo", "Ca", "100", "Dad")
         assert store.add_debt_movement(
-            "2026-02-05", "Loan - Collected", "Ca", "De", "90", "Dad", remaining_as_difference=True,
+            "2026-02-05", "Loan - Collected", "Ca", "Lo", "90", "Dad", remaining_as_difference=True,
         ) == ("Difference (L)", 10.0)
         last = rows(settings).iloc[-1]
-        assert (last.base_movement, last.acc_debit, last.acc_credit, last.comment) == ("Difference (L)", "Eq", "De", "Dad")
+        assert (last.base_movement, last.acc_debit, last.acc_credit, last.comment) == ("Difference (L)", "Eq", "Lo", "Dad")
         assert self.balance(settings) == pytest.approx(0)
 
     def test_paying_too_much_is_a_loss(self, settings):
@@ -221,7 +221,7 @@ class TestDebtSides:
     @pytest.fixture
     def settings(self, settings, tmp_path):
         path = tmp_path / "creditors.yaml"
-        path.write_text("De:\n  people:\n    Dad: 0\n", encoding="utf-8")
+        path.write_text("people:\n  Dad: 0\n", encoding="utf-8")
         path_yaml = settings.base_movements_path
         with_internal(path_yaml, transfers=DEBT_YAML)
         return replace(settings, creditors_path=path)
@@ -258,13 +258,14 @@ class TestDebtSides:
             store.add_debt_movement("2026-02-01", "Debt - Incurred", "Ca", "De", "1", "Mum")
         with pytest.raises(ValueError, match="Pick who"):
             store.add_debt_movement("2026-02-01", "Debt - Incurred", "Ca", "De", "1", " ")
-        debts = {c.name: c.amount for a in store.load().debt_accounts() for c in a.creditors.values()}
-        assert debts == {"Dad": pytest.approx(16)}
+        de, lo = store.load().debt_accounts()
+        assert {c.name: c.amount for c in de.creditors.values()} == {"Dad": pytest.approx(16)}
+        assert {c.name: c.amount for c in lo.creditors.values()} == {"Dad": 0}
 
     def test_no_debt_movements_of_companies(self, settings, tmp_path):
         settings = replace(settings, work_path=settings.ledger_path.with_name("work.csv"))
         settings.work_path.write_text(WORK_CSV, encoding="utf-8")
-        settings.creditors_path.write_text("De:\n  people:\n    Dad: 0\n")
+        settings.creditors_path.write_text("people:\n  Dad: 0\n")
         store = LedgerStore(with_salaries(settings))
         with pytest.raises(ValueError, match="'Acme' is a company: its debt comes from the salaries of the Work tab"):
             store.add_debt_movement("2026-02-01", "Debt - Incurred", "Ca", "De", "1", "Acme")
@@ -357,10 +358,10 @@ class TestDebtSides:
         assert client.delete("/api/debt/movements/4").status_code == 200 and len(rows(settings)) == 4
 
     def test_who_filter(self, settings, client):
-        settings.creditors_path.write_text("De:\n  people:\n    Dad: 0\n    Mum: 0\n", encoding="utf-8")
+        settings.creditors_path.write_text("people:\n  Dad: 0\n  Mum: 0\n", encoding="utf-8")
         store = LedgerStore(settings)
         store.add_debt_movement("2026-02-01", "Debt - Incurred", "Ca", "De", "20", "Dad")
-        store.add_debt_movement("2026-02-02", "Loan - Given", "De", "Ca", "5", "Mum")
+        store.add_debt_movement("2026-02-02", "Loan - Given", "Lo", "Ca", "5", "Mum")
         with settings.ledger_path.open("a") as f:
             f.write("2026-02-03;Debt - Paid;De;1;Ca;no one\n")
         data = build_debts(store.load(), "", "Mum")
@@ -373,7 +374,7 @@ class TestDebtSides:
 
     def test_debt_tab_form_without_debt_base_movements(self, settings, client):
         path = settings.base_movements_path
-        path.write_text(path.read_text().replace("    Loan - Collected:\n      description: d\n      credit: De\n", ""))
+        path.write_text(path.read_text().replace("    Loan - Collected:\n      description: d\n      credit: Lo\n", ""))
         form = client.get("/debt").text.split('id="debt-form"')[1].split("</form>")[0]
         assert "The Debt tab needs these base movements" in form and "&#39;Loan - Collected&#39;" in form
         assert form.count('name="base_movement"') == 2  # those of Debt, picked first
@@ -416,13 +417,13 @@ class TestDebtSides:
             for row in re.split(r'<tr id="account-[^"]+">', r.text.split("<tbody>", 1)[1])[1:]
             if "<strong>" in row
         }
-        assert specials == {"Ca": "-", "Bk": "-", "Br": "Investment", "Cc": "-", "Fi": "-", "De": "Debt", "Eq": "-"}
+        assert specials == {"Ca": "-", "Bk": "-", "Br": "Investment", "Cc": "-", "Fi": "-", "Lo": "Debt", "De": "Debt", "Eq": "-"}
 
 
 class TestDebtAccounts:
     def test_debt_accounts_are_loaded(self, settings, tmp_path):
         path = tmp_path / "creditors.yaml"
-        path.write_text("De:\n  people:\n    Dad: 10\n", encoding="utf-8")
+        path.write_text("people:\n  Dad: 10\n", encoding="utf-8")
         accounts = LedgerStore(replace(settings, creditors_path=path)).load().accounts
         assert accounts["De"].creditors["Dad"].is_creditor
         assert accounts["De"].initial_amount == 10.0
@@ -433,7 +434,7 @@ class TestDebtPage:
     def settings(self, settings, tmp_path):
         path = tmp_path / "creditors.yaml"
         path.write_text(
-            "De:\n  people:\n    Dad: 100\n    Ana: -30\n    Leo: 0\n  services:\n    Bank: 50.5\n",
+            "people:\n  Dad: 100\n  Ana: -30\n  Leo: 0\nservices:\n  Bank: 50.5\n",
             encoding="utf-8",
         )
         return replace(settings, creditors_path=path)
@@ -482,13 +483,13 @@ class TestDebtPage:
         r = client.get("/debt", params={"month": ""})
         movements = r.text.split('data-sortable="debt-movements"')[1].split("</table>")[0]
         # With their ids, the same as in the Ledger tab
-        assert movement_ids(movements) == ["L-6", "L-5", "A-De"]
+        assert movement_ids(movements) == ["L-6", "L-5", "A-De", "A-Lo"]
         assert set(movement_ids(movements)) <= set(movement_ids(client.get("/", params={"initial": True}).text))
-        # The initial movement too, with the initial amounts of everyone
-        assert "<h2>Movements <small>3, all time</small></h2>" in r.text
+        # The initial movements too, with the initial amounts of everyone: what we owe in De, what we are owed in Lo
+        assert "<h2>Movements <small>4, all time</small></h2>" in r.text
         assert movements.index("2026-02-05") < movements.index("2026-01-05") < movements.index("Initial (L)")
         assert "<strong>Dad</strong>" in movements and 'title="The comment names no one: unassigned debt">-' in movements
-        assert ">Initial amounts</td>" in movements and 'data-sort="120.5"' in movements
+        assert ">Initial amounts</td>" in movements and 'data-sort="150.5"' in movements and 'data-sort="30.0"' in movements
         assert "Salary" not in movements  # not of a debt account
         r = client.get("/debt", params={"month": "2026-02"})
         assert "<h2>Movements <small>1, in 2026-02</small></h2>" in r.text
@@ -527,9 +528,10 @@ class TestDebtPage:
         settings.ledger_path.write_text(
             settings.ledger_path.read_text().replace("2026-01-04;Gift;Ca;10;", "2026-01-04;Gift;Ca;2000;")
         )
-        [cc] = LedgerStore(settings).load().debt_accounts()
-        # The initial amounts are only counted once, from the creditors YAML
-        assert {n: c.amount for n, c in cc.creditors.items()} == {"Dad": 120, "Bank": -990, "Ana": -30, "Leo": 0}
+        cc, lo = LedgerStore(settings).load().debt_accounts()
+        # The initial amounts are only counted once, from the creditors YAML: Ana owes us, in Lo
+        assert {n: c.amount for n, c in cc.creditors.items()} == {"Dad": 120, "Ana": 0, "Leo": 0, "Bank": -990}
+        assert {n: c.amount for n, c in lo.creditors.items()} == {"Dad": 0, "Ana": -30, "Leo": 0}
         assert cc.unassigned == -5
         r = client.get("/debt")
         assert card_labels(r.text) == ["We owe", "Owed to us", "Unassigned", "Net debt"]
@@ -551,7 +553,7 @@ class TestDebtKinds:
     def settings(self, settings, tmp_path):
         creditors = tmp_path / "creditors.yaml"
         creditors.write_text(
-            "De:\n  people:\n    Dad: 100\n  services:\n    Gas: 20\n",
+            "people:\n  Dad: 100\nservices:\n  Gas: 20\n",
             encoding="utf-8",
         )
         work = tmp_path / "work.csv"
@@ -560,29 +562,33 @@ class TestDebtKinds:
 
     def test_companies_come_from_the_work_history(self, settings):
         before = settings.creditors_path.read_text(encoding="utf-8")
-        cc = LedgerStore(settings).load().accounts["De"]
+        accounts = LedgerStore(settings).load().accounts
+        cc, lo = accounts["De"], accounts["Lo"]
         assert {n: (c.kind.value, c.amount) for n, c in cc.creditors.items()} == {
             "Dad": ("people", 100), "Gas": ("services", 20),
-            "Acme": ("companies", 0), "Globex": ("companies", 0),
         }
-        assert cc.initial_amount == 120
+        # The companies are expected to be debtors: only in Lo
+        assert {n: (c.kind.value, c.amount) for n, c in lo.creditors.items()} == {
+            "Dad": ("people", 0), "Acme": ("companies", 0), "Globex": ("companies", 0),
+        }
+        assert cc.initial_amount == 120 and lo.initial_amount == 0
         assert settings.creditors_path.read_text(encoding="utf-8") == before  # never written
 
     def test_new_companies_of_the_work_history(self, settings):
         store = LedgerStore(settings)
         store.save_month("2026-02", "Initech", "Dev", "10", {"Tax": "2"})
         with settings.ledger_path.open("a", encoding="utf-8") as f:
-            f.write("2026-02-05;Food;Eq;7;De;initech bonus\n")
-        assert store.load().debt_accounts()[0].creditors["Initech"].amount == 7
+            f.write("2026-02-05;Food;Eq;7;Lo;initech bonus\n")
+        assert store.load().debt_accounts()[1].creditors["Initech"].amount == 7
 
     def test_a_company_cannot_be_another_kind(self, settings):
         text = settings.creditors_path.read_text(encoding="utf-8")
-        settings.creditors_path.write_text(text.replace("    Gas: 20\n", "    Gas: 20\n    Globex: 1\n"), encoding="utf-8")
-        with pytest.raises(LedgerDataError, match="'Globex' of the account 'De' is a company of the work history"):
+        settings.creditors_path.write_text(text.replace("  Gas: 20\n", "  Gas: 20\n  Globex: 1\n"), encoding="utf-8")
+        with pytest.raises(LedgerDataError, match="'Globex' is a company of the work history"):
             LedgerStore(settings).load()
 
     def test_debt_page_by_kind(self, settings):
-        r = TestClient(create_app(with_salaries(settings, debit="De"))).get("/debt")  # Globex owes us the salaries
+        r = TestClient(create_app(with_salaries(settings, debit="Lo"))).get("/debt")  # Globex owes us the salaries
         assert r.status_code == 200
         for title, count in (("👥 People", 1), ("🧾 Services", 1), ("🏢 Companies", 2)):
             assert f"<h2>{title} <small>{count}</small></h2>" in r.text
@@ -593,3 +599,74 @@ class TestDebtKinds:
         assert '<span class="bar-name">Services</span>' in we_owe and '<span class="bar-name">Gas</span>' in we_owe
         owed = r.text.split("Owed to us <span")[1].split("<h2>👥 People")[0]
         assert '<span class="bar-name">Companies</span>' in owed and "People</span>" not in owed
+
+
+class TestDebtsAndLoans:
+    """De has the debts (what we owe) and Lo the loans (what we are owed), sharing who they are about."""
+
+    @pytest.fixture
+    def settings(self, settings, tmp_path):
+        path = tmp_path / "creditors.yaml"
+        path.write_text(
+            "people:\n  Dad: 0\n  Ann:\n    amount: 0\n    expected: creditor\n  Bob:\n    amount: 0\n    expected: debtor\n",
+            encoding="utf-8",
+        )
+        with_internal(settings.base_movements_path, DIFFERENCE_YAML, DEBT_YAML)
+        return replace(settings, creditors_path=path)
+
+    @pytest.fixture
+    def client(self, settings):
+        return TestClient(create_app(settings))
+
+    def test_each_kind_offers_who_can_be_in_its_account(self, settings, client):
+        snapshot = LedgerStore(settings).load()
+        assert debt_form_fields(snapshot, "Debt - Paid")["who"] == {"People": ["Ann", "Dad"]}
+        assert debt_form_fields(snapshot, "Loan - Given")["who"] == {"People": ["Bob", "Dad"]}
+        assert debt_form_fields(snapshot, "Loan - Given")["account"] == "Lo"
+        # Swapping the kind keeps who was picked, if they can be in its account
+        loan = client.get("/form/debt-bases", params={"debt_kind": "Loan", "who": "Dad"}).text
+        assert "<option selected>Dad</option>" in loan and "Ann" not in loan and "(of Lo)" in loan
+        loan = client.get("/form/debt-bases", params={"debt_kind": "Loan", "who": "Ann"}).text
+        assert "<option selected>" not in loan
+
+    def test_expected_roles_only_move_their_account(self, settings):
+        store = LedgerStore(settings)
+        with pytest.raises(ValueError, match="'Ann' is expected to be a creditor: their movements are in De, not Lo"):
+            store.add_debt_movement("2026-02-01", "Loan - Given", "Lo", "Ca", "10", "Ann")
+        with pytest.raises(ValueError, match="'Bob' is expected to be a debtor: their movements are in Lo, not De"):
+            store.add_debt_movement("2026-02-01", "Debt - Incurred", "Ca", "De", "10", "Bob")
+        with pytest.raises(ValueError, match="Debit account must match: De != Lo"):
+            store.add_debt_movement("2026-02-01", "Loan - Given", "De", "Ca", "10", "Dad")
+
+    def test_who_has_no_expected_role_moves_both(self, settings, client):
+        store = LedgerStore(settings)
+        store.add_debt_movement("2026-02-01", "Debt - Incurred", "Ca", "De", "100", "Dad")
+        store.add_debt_movement("2026-02-02", "Loan - Given", "Lo", "Ca", "30", "Dad")
+        store.add_debt_movement("2026-02-03", "Loan - Given", "Lo", "Ca", "5", "Bob")
+        balances = store.load().balances_today()
+        assert (balances["De"], balances["Lo"]) == (100, 35)  # a liability and an asset
+        r = client.get("/debt")
+        people = r.text.split("<h2>👥 People")[1].split("</table>")[0]
+        assert "<th class=\"num\" title=\"What we owe them in De (Debts)\">De</th>" in people
+        dad = people.split("<strong>Dad</strong>")[1].split("</tr>")[0]
+        # What we owe Dad in De, what he owes us in Lo, and what we owe him in all
+        assert 'data-sort="100.0">$100.00' in dad and 'data-sort="-30.0">-$30.00' in dad and "<strong>$70.00</strong>" in dad
+        bob = people.split("<strong>Bob</strong>")[1].split("</tr>")[0]
+        assert 'title="Not in this account: expected to be a debtor">-</td>' in bob
+        cards = r.text.split('<div class="cards">')[1].split("</div>\n  </div>")[0]
+        assert "$70.00" in cards and "$5.00" in cards and "$65.00" in cards  # we owe, owed to us, net
+        # The remaining with Dad is that of the account of the movement
+        assert store.add_debt_movement(
+            "2026-02-04", "Loan - Collected", "Ca", "Lo", "20", "Dad", remaining_as_difference=True,
+        ) == ("Difference (L)", 10.0)
+        last = rows(settings).iloc[-1]
+        assert (last.acc_debit, last.acc_credit) == ("Eq", "Lo")
+
+    def test_movements_naming_someone_of_the_other_account(self, settings, client):
+        with settings.ledger_path.open("a", encoding="utf-8") as f:
+            f.write("2026-01-05;Food;Eq;20;De;Bob's dinner\n2026-01-06;Food;Eq;5;De;Dad\n")
+        r = client.get("/debt")
+        alerts = r.text.split('<details class="msg warn alert" role="alert">')[1:]
+        misplaced = next(a for a in alerts if "isn't in its debt account" in a).split("</details>")[0]
+        assert "1 movement names" in misplaced and "names <strong>Bob</strong>" in misplaced and "of <code>Lo</code>" in misplaced
+        assert "Dad" not in misplaced

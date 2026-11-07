@@ -14,11 +14,12 @@
     <h2>Services <small>{{ services | length }}</small></h2>
     <div class="table-scroll">
     <table data-sortable="services">
-      <thead><tr><th>Service</th><th>Base movement</th><th class="num" title="Its value in {{ month }}">Value this month</th><th class="num" title="Owed in {{ month }}, up to today">Owed this month</th><th class="num" title="Owed in all">All time</th><th class="num" title="What we owe the service now, after the payments (negative and green: what it owes us)">We owe</th></tr></thead>
+      <thead><tr><th>Service</th><th title="The debt account it is owed in: Lo if it is expected to be a debtor (it charges in advance), else De">Account</th><th>Base movement</th><th class="num" title="Its value in {{ month }}">Value this month</th><th class="num" title="Owed in {{ month }}, up to today">Owed this month</th><th class="num" title="Owed in all">All time</th><th class="num" title="What we owe the service now, after the payments (negative and green: what it owes us)">We owe</th></tr></thead>
       <tbody>
       {% for s in services %}
       <tr>
         <td class="nowrap"><strong>{{ s.name }}</strong></td>
+        <td>{{ s.account }}</td>
         {% if s.base %}<td>{{ s.base }}</td>{% else %}<td class="muted">None: add its <code>base_movement</code> in the creditors file.</td>{% endif %}
         <td class="num money {{ 'muted' if not s.value }} {{ 'estimated' if s.estimated }}" data-sort="{{ s.value }}"{% if s.estimated %} title="Estimated"{% endif %}>{{ s.value | money }}</td>
         <td class="num money {{ 'muted' if not s.this_month }}" data-sort="{{ s.this_month }}">{{ s.this_month | money }}</td>
@@ -29,9 +30,10 @@
       </tbody>
     </table>
     </div>
-    <p class="muted small">The services of <code>De</code> in the creditors file, each with its column of the services file.
-      What we owe them is in the <a href="/debt">Debt</a> tab too, where their payments
-      (<em>Debt - Paid</em>, naming the service in the comment) are added.</p>
+    <p class="muted small">The services of the creditors file, each with its column of the services file. Their values
+      are owed in <code>De</code>, or in <code>Lo</code> for the ones expected to be debtors (they charge in advance).
+      What we owe them is in the <a href="/debt">Debt</a> tab too, where their payments are added, naming the service
+      in the comment: <em>Debt - Paid</em> in <code>De</code>, <em>Loan - Given</em> in <code>Lo</code>.</p>
   </div>
 
   <div class="panel">

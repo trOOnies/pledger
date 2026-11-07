@@ -17,18 +17,18 @@ from pledger.web.store import (
 
 
 class TestServices:
-    """The monthly values of the services of De, a column each, owed to them week by week."""
+    """The monthly values of the services of the debt accounts, a column each, owed to them week by week."""
 
     @pytest.fixture
     def settings(self, settings, tmp_path, monkeypatch):
         monkeypatch.setattr("pledger.web.store.common.today", lambda: dt.date(2026, 2, 15))
         creditors = tmp_path / "creditors.yaml"
         creditors.write_text(
-            "De:\n  people:\n    Dad: 0\n  services:\n"
-            "    Rent:\n      amount: 0\n      base_movement: Food\n"
-            "    Expenses:\n      base_movement: Food\n"
-            "    Gas:\n      amount: 5\n      base_movement: Food\n"
-            "    Water: 0\n",
+            "people:\n  Dad: 0\nservices:\n"
+            "  Rent:\n    amount: 0\n    base_movement: Food\n"
+            "  Expenses:\n    base_movement: Food\n"
+            "  Gas:\n    amount: 5\n    base_movement: Food\n"
+            "  Water: 0\n",
             encoding="utf-8",
         )
         services = tmp_path / "services.csv"
@@ -90,7 +90,7 @@ class TestServices:
     @pytest.mark.parametrize(
         ("old", "new", "message"),
         [
-            ("month;Rent;", "month;Water;", "columns ['Water'] aren't services of De with a base movement"),
+            ("month;Rent;", "month;Water;", "columns ['Water'] aren't services of the debt accounts with a base movement"),
             ("2026-02;;30;\n", "2026-02;;30;\n2026-01;1;;\n", "more than one row of 2026-01"),
             ("2026-02;;30;", "2026-2;;30;", "Invalid month of the services CSV"),
             ("2026-02;;30;", "2026-02;;-30;", "value of Expenses in 2026-02 of the services CSV cannot be negative"),
@@ -105,19 +105,19 @@ class TestServices:
     @pytest.mark.parametrize(
         ("old", "new", "message"),
         [
-            ("      amount: 5\n      base_movement: Food\n", "      base_movement: Salary\n", "must be a loss, not internal, that may credit De: not 'Salary' (Gas)"),
-            ("      amount: 5\n      base_movement: Food\n", "      base_movement: Card fee\n", "not 'Card fee'"),
-            ("      amount: 5\n      base_movement: Food\n", "      base_movement: Nope\n", "not 'Nope'"),
-            ("      amount: 5\n      base_movement: Food\n", "      base_movement: 3\n", "'Gas' of the account 'De' base_movement must be a name: 3"),
-            ("      amount: 5\n", "      amount: 5\n      day: 31\n", "'Gas' of the account 'De' has unknown keys ['day']"),
-            ("      amount: 5\n", "      amount: 5\n      columns: {Gas: Food}\n", "'Gas' of the account 'De' has unknown keys ['columns']"),
-            ("    Water: 0\n", "  people:\n    Dad:\n      amount: 0\n      base_movement: Food\n", "'Dad' of the account 'De' has unknown keys ['base_movement']"),
+            ("    amount: 5\n    base_movement: Food\n", "    base_movement: Salary\n", "must be a loss, not internal, that may credit its debt account, De: not 'Salary' (Gas)"),
+            ("    amount: 5\n    base_movement: Food\n", "    base_movement: Card fee\n", "not 'Card fee'"),
+            ("    amount: 5\n    base_movement: Food\n", "    base_movement: Nope\n", "not 'Nope'"),
+            ("    amount: 5\n    base_movement: Food\n", "    base_movement: 3\n", "'Gas' base_movement must be a name: 3"),
+            ("    amount: 5\n", "    amount: 5\n    day: 31\n", "'Gas' has unknown keys ['day']"),
+            ("    amount: 5\n", "    amount: 5\n    columns: {Gas: Food}\n", "'Gas' has unknown keys ['columns']"),
+            ("  Water: 0\n", "  Water: 0\npeople:\n  Dad:\n    amount: 0\n    base_movement: Food\n", "'Dad' has unknown keys ['base_movement']"),
         ],
     )
     def test_invalid_services(self, settings, old, new, message):
         text = settings.creditors_path.read_text()
         if "people" in new:
-            text = text.replace("  people:\n    Dad: 0\n", "")
+            text = text.replace("people:\n  Dad: 0\n", "")
         settings.creditors_path.write_text(text.replace(old, new, 1))
         with pytest.raises(LedgerDataError, match=re.escape(message)):
             LedgerStore(settings).load()
@@ -136,7 +136,7 @@ class TestServices:
         assert "\n2026-01;;;5.00\n" in settings.services_path.read_text()
         assert [r[5] for r in self.owed(settings) if r[0].startswith("S-Rent-2026-02")] == ["20.00", "20.00"]
         for args, error in [
-            (("2026-02", "Water", "1"), "'Water' is not a service of De with a base movement"),
+            (("2026-02", "Water", "1"), "'Water' is not a service with a base movement"),
             (("2026-02", "Rent", "x"), "Invalid value of Rent"),
             (("2026-02", "Rent", "-1"), "cannot be negative"),
             (("2026-2", "Rent", "1"), "Invalid month"),
@@ -146,11 +146,29 @@ class TestServices:
 
     def test_a_new_column_and_csv(self, settings):
         settings.services_path.unlink()
-        settings.creditors_path.write_text(settings.creditors_path.read_text().replace("    Water: 0\n", "    Water:\n      base_movement: Food\n"))
+        settings.creditors_path.write_text(settings.creditors_path.read_text().replace("  Water: 0\n", "  Water:\n    base_movement: Food\n"))
         store = LedgerStore(settings)
         store.set_service_value("2026-01", "Rent", "1")
         store.set_service_value("2026-01", "Water", "2")  # its column is added
         assert settings.services_path.read_text() == "month;Rent;Water\n2026-01;1.00;2.00\n"
+
+    def test_the_ones_charging_in_advance_are_owed_in_lo(self, settings):
+        path = settings.creditors_path
+        path.write_text(path.read_text().replace("    amount: 0\n    base_movement: Food\n", "    amount: 0\n    expected: debtor\n    base_movement: Food\n", 1))
+        owed = self.owed(settings)
+        assert {r[4] for r in owed if r[0].startswith("S-Rent")} == {"Lo"}
+        assert {r[4] for r in owed if not r[0].startswith("S-Rent")} == {"De"}
+        snapshot = LedgerStore(settings).load()
+        de, lo = snapshot.debt_accounts()
+        assert "Rent" not in de.creditors and lo.creditors["Rent"].amount == 80
+        r = TestClient(create_app(settings)).get("/services")
+        table = r.text.split('data-sortable="services"')[1].split("</table>")[0]
+        assert "<strong>Rent</strong></td>\n        <td>Lo</td>" in table and "<strong>Gas</strong></td>\n        <td>De</td>" in table
+        # Its base movement must be able to credit Lo
+        base = settings.base_movements_path
+        base.write_text(base.read_text().replace("        Food:\n          description: Groceries\n", "        Food:\n          description: Groceries\n          credit: De\n"))
+        with pytest.raises(LedgerDataError, match=re.escape("that may credit its debt account, Lo: not 'Food' (Rent)")):
+            LedgerStore(settings).load()
 
     def test_services_tab(self, settings, client):
         r = client.get("/services")
@@ -198,6 +216,6 @@ class TestServices:
         ]
 
     def test_no_services(self, settings, client):
-        settings.creditors_path.write_text("De:\n  people:\n    Dad: 0\n")
+        settings.creditors_path.write_text("people:\n  Dad: 0\n")
         settings.services_path.write_text("month\n")
         assert "No services yet" in client.get("/services").text

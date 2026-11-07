@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pledger.enums import LedgerSide, MovementType
-from pledger.models import PREVIOUS_MONTH
+from pledger.models import DEBT_ACCOUNT, LOAN_ACCOUNT, PREVIOUS_MONTH
 
 BOM = "﻿"
 
@@ -124,8 +124,9 @@ CONVERSIONS = {CONVERSION_BOUGHT, CONVERSION_SOLD}
 CROSS_CONVERSION = f"{CONVERSION_SOLD} + {CONVERSION_BOUGHT}"
 
 
-# The internal transfers of the debt account, added from the Debt tab, with that side
-# fixed to it (DEBT_ACCOUNT): we owe more or less, or are owed more or less.
+# The internal transfers of the debt accounts, added from the Debt tab, with that side
+# fixed to one of them (DEBT_BASE_ACCOUNTS): we owe more or less (the debts, of the
+# DEBT_ACCOUNT), or are owed more or less (the loans, of the LOAN_ACCOUNT).
 DEBT_INCURRED, DEBT_PAID = "Debt - Incurred", "Debt - Paid"
 
 
@@ -135,6 +136,11 @@ LOAN_GIVEN, LOAN_COLLECTED = "Loan - Given", "Loan - Collected"
 DEBT_BASES = {
     DEBT_INCURRED: LedgerSide.CREDIT, DEBT_PAID: LedgerSide.DEBIT,
     LOAN_GIVEN: LedgerSide.DEBIT, LOAN_COLLECTED: LedgerSide.CREDIT,
+}
+
+
+DEBT_BASE_ACCOUNTS = {
+    DEBT_INCURRED: DEBT_ACCOUNT, DEBT_PAID: DEBT_ACCOUNT, LOAN_GIVEN: LOAN_ACCOUNT, LOAN_COLLECTED: LOAN_ACCOUNT,
 }
 
 
@@ -176,8 +182,8 @@ CORRECTION_LOSS = "Correction (L)"
 CORRECTIONS = {CORRECTION_GAIN: MovementType.GAIN, CORRECTION_LOSS: MovementType.LOSS}
 
 
-# Internal base movements settling what remains with someone after a debt movement, against
-# the equity account: added from the Debt tab with that movement (see
+# Internal base movements settling what remains with someone after a debt movement, in its
+# debt account, against the equity account: added from the Debt tab with that movement (see
 # LedgerStore.add_debt_movement), and deleted from there or the Ledger tab. A gain if what
 # remained is what we owed them.
 DIFFERENCE_GAIN, DIFFERENCE_LOSS = "Difference (G)", "Difference (L)"
@@ -233,10 +239,10 @@ INITIAL_PRICE = PREVIOUS_MONTH
 BEFORE_COLUMN = "before"
 
 
-# The services CSV has the monthly values of the services of the debt account: a row per
+# The services CSV has the monthly values of the services of the debt accounts: a row per
 # month, and a column per service, named after it, with a base movement in the creditors
 # YAML (see Creditor.base_movement). Each value is owed to the service as movements of that
-# loss base movement crediting the debt account, split between the weeks of the month
+# loss base movement crediting the service's debt account (see service_account), split between the weeks of the month
 # (see _service_rows).
 SERVICE_MONTH = "month"
 

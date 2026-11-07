@@ -87,10 +87,16 @@ def _debt_comment(snapshot: Snapshot, acc_debit: str, acc_credit: str, who: str,
     who, comment = who.strip(), comment.replace(";", ",").strip()
     if not who:
         raise ValueError("Pick who the debt movement is about")
-    if debts and not any(who in a.creditors for a in debts):
-        raise ValueError(f"{who!r} is not someone of the debt account {debts[0].name}")
-    if any(a.creditors[who].kind == CreditorKind.COMPANY for a in debts if who in a.creditors):
+    found = [a for a in snapshot.accounts.values() if isinstance(a, DebtAccount) and who in a.creditors]
+    if debts and any(a.creditors[who].kind == CreditorKind.COMPANY for a in found):
         raise ValueError(f"{who!r} is a company: its debt comes from the salaries of the Work tab")
+    if debts and not any(who in a.creditors for a in debts):
+        if found:
+            raise ValueError(
+                f"{who!r} is expected to be a {found[0].creditors[who].expected.value}: their movements are in "
+                f"{found[0].name}, not {debts[0].name}"
+            )
+        raise ValueError(f"{who!r} is not someone of the debt account {debts[0].name}")
     if not debts or debts[0].creditor_in(comment) != who:
         comment = f"{who}: {comment}" if comment else who
     return comment

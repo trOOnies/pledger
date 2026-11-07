@@ -416,15 +416,15 @@ class TestInternalResultTypes:
         before = settings.ledger_path.read_text()
         store = LedgerStore(settings)
         store.add_account("Sv", "asset", "Savings", "1,234.5", "USD", False, "2026-01-15")
-        store.add_account("Lo", "liability", "Loan", 300)
+        store.add_account("Ln", "liability", "Loan", 300)
         store.add_account("Zr", "asset", "Zero", 0)
         assert settings.ledger_path.read_text() == before
         assert self.initial_rows(settings)[1:] == [
             (-2, "2026-01-15", "Initial (G)", "Sv", "1234500.0", "Eq"),  # 1,234.50 USD at 1,000
-            (-3, "2026-01-01", "Initial (L)", "Eq", "300.0", "Lo"),  # on the first ledger date
+            (-3, "2026-01-01", "Initial (L)", "Eq", "300.0", "Ln"),  # on the first ledger date
         ]
         balances = store.load().ledger().balances()
-        assert (balances["Sv"], balances["Lo"]) == (1234500.0, 300.0)
+        assert (balances["Sv"], balances["Ln"]) == (1234500.0, 300.0)
 
     def test_initial_amounts_in_other_currencies_need_their_values(self, settings):
         (settings.currencies_path.parent / "currencies.csv").write_text("date;USD\n")
@@ -444,15 +444,15 @@ class TestInternalResultTypes:
         # The last week of 2025-11 is that of Thursday 2025-11-27: from Monday 2025-11-24 to Sunday 2025-11-30
         path = settings.accounts_path
         path.write_text("previous_month: 2025-11\n" + path.read_text())
-        LedgerStore(settings).add_account("Lo", "liability", "Loan", 300, initial_date="2025-11-24")
-        assert "Lo:\n    description: Loan\n    currency: ARS\n    is_liquid: false\n    initial_amount: 300.0\n" in path.read_text()
+        LedgerStore(settings).add_account("Ln", "liability", "Loan", 300, initial_date="2025-11-24")
+        assert "Ln:\n    description: Loan\n    currency: ARS\n    is_liquid: false\n    initial_amount: 300.0\n" in path.read_text()
         snapshot = LedgerStore(settings).load()
         assert snapshot.start_date == "2025-11-24"
-        assert snapshot.accounts["Lo"].initial_date == dt.date(2025, 11, 24)  # the default
+        assert snapshot.accounts["Ln"].initial_date == dt.date(2025, 11, 24)  # the default
         assert snapshot.accounts["Bk"].initial_date == dt.date(2025, 12, 31)  # its own, after the initial week
         assert [r[1] for r in self.initial_rows(settings)] == ["2025-12-31", "2025-11-24"]
         with pytest.raises(ValueError, match=re.escape("must be after the initial week (2025-11-24 to 2025-11-30)")):
-            LedgerStore(settings).add_account("Lo2", "liability", "Loan", 300, initial_date="2025-11-30")
+            LedgerStore(settings).add_account("Ln2", "liability", "Loan", 300, initial_date="2025-11-30")
 
     def test_the_initial_week_only_has_the_initial_movements(self, settings):
         path = settings.accounts_path
@@ -494,12 +494,21 @@ class TestInternalResultTypes:
 
     def test_without_ledger_rows_start_on_the_first_initial_date(self, settings):
         settings.ledger_path.write_text("move_date;base_movement;acc_debit;amount;acc_credit;comment\n")
-        LedgerStore(settings).add_account("Lo", "liability", "Loan", 300)
+        LedgerStore(settings).add_account("Ln", "liability", "Loan", 300)
         assert [r[1] for r in self.initial_rows(settings)] == ["2025-12-31", "2025-12-31"]
+
+    def test_what_we_owe_and_are_owed_are_apart(self, settings, tmp_path):
+        path = tmp_path / "creditors.yaml"
+        path.write_text("people:\n  Ann: 50\n  Bob: -80\n")
+        settings = replace(settings, creditors_path=path)
+        # What Bob owes us is an asset of Lo, a gain; what we owe Ann a liability of De, a loss
+        assert self.initial_rows(settings)[1:] == [
+            (-2, "2026-01-01", "Initial (G)", "Lo", "80.0", "Eq"), (-3, "2026-01-01", "Initial (L)", "Eq", "50.0", "De"),
+        ]
 
     def test_a_negative_debt_is_a_gain(self, settings, tmp_path):
         path = tmp_path / "creditors.yaml"
-        path.write_text("De:\n  people:\n    Ann: 50\n    Bob: -80\n")
+        path.write_text("people:\n  Ann:\n    amount: -30\n    expected: creditor\n")
         settings = replace(settings, creditors_path=path)
         assert self.initial_rows(settings)[1:] == [(-2, "2026-01-01", "Initial (G)", "De", "30.0", "Eq")]
 

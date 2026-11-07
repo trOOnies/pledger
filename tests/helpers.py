@@ -99,8 +99,8 @@ INVEST_TRANSFERS_YAML = (
 DEBT_YAML = (
     "    Debt - Incurred:\n      description: d\n      credit: De\n"
     "    Debt - Paid:\n      description: d\n      debit: De\n"
-    "    Loan - Given:\n      description: d\n      debit: De\n"
-    "    Loan - Collected:\n      description: d\n      credit: De\n"
+    "    Loan - Given:\n      description: d\n      debit: Lo\n"
+    "    Loan - Collected:\n      description: d\n      credit: Lo\n"
 )
 
 
