@@ -185,7 +185,7 @@ date). `prices.csv` has no ids.
 | **Account** | A place where money is kept or owed: an *asset*, a *liability* or *equity* (assets minus liabilities). |
 | **Movement** | One ledger line: a date, a base movement, a debit account, a credit account and an amount. |
 | **Base movement** | The category of a movement (e.g. `Basic - Food`). It can fix the debit or credit account. |
-| **Result type** | A family of gain and loss base movements (e.g. *Operative*, *Taxes*). |
+| **Result type** | A family of gain and loss base movements (e.g. *Operative*, *Taxes*). Each one names the result type right before it in its `after` (exactly one is `after: FIRST` and one `after: LAST`), in a single chain: pledger numbers them 1 to N in that order. |
 | **Gain / Loss / Transfer** | A gain is credited to equity, a loss is debited from it, and a transfer moves money between your own accounts. |
 
 ---
@@ -283,7 +283,7 @@ A correction is a movement dated today, in the ledger CSV, of one of these inter
 internal:
   result_types:
     Corr:   # or any other internal result type
-      id: 9
+      after: LAST   # the result type right before it, FIRST or LAST (see Result types)
       long_name: Corrections
       description: Results because of untracked movements that prompted balance corrections
       base_movements:
@@ -681,7 +681,7 @@ if nothing remains. It needs these internal base movements of any internal resul
 internal:
   result_types:
     Corr:
-      id: 9
+      after: LAST   # the result type right before it, FIRST or LAST (see Result types)
       long_name: Corrections
       description: Results because of corrections and differences
       base_movements:

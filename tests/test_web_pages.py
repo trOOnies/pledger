@@ -690,9 +690,11 @@ class TestApi:
         assert client.post("/api/result-types", json=body).status_code == 201
         assert client.post("/api/result-types", json=body).status_code == 422
         result_types = client.get("/api/result-types").json()
-        assert result_types[-1] == {
-            "id": 4, "name": "Tax", "long_name": "Taxes", "description": "d", "internal": False,
-        }
+        # Right before the LAST one, Init
+        assert result_types[-2:] == [
+            {"id": 3, "name": "Tax", "long_name": "Taxes", "description": "d", "internal": False},
+            {"id": 4, "name": "Init", "long_name": "Initial", "description": "d", "internal": True},
+        ]
 
 
 @pytest.mark.parametrize(

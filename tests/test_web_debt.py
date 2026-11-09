@@ -246,7 +246,7 @@ class TestDebtSides:
             "move_date": "2026-02-01", "base_movement": "Debt - Incurred", "acc_debit": "Ca", "acc_credit": "De", "amount": 1,
         }).status_code == 422
         r = client.get("/form/bases", params={"move_type": "transfer"})
-        assert "Debt" not in r.text and "Loan" not in r.text and "Move" in r.text
+        assert ">Debt - " not in r.text and ">Loan - " not in r.text and ">Move<" in r.text
 
     def test_add_debt_movement_names_who_first(self, settings):
         store = LedgerStore(settings)

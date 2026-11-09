@@ -5,19 +5,45 @@ from __future__ import annotations
 from pledger.enums import AccountType, LedgerSide, MovementType
 from pledger.models import SPECIAL_LABELS, MovementBase
 from pledger.web.store import Snapshot
+from pledger.web.views.common import ACCOUNT_GROUPS, account_group
 
 
-def by_currency(snapshot: Snapshot, names: list[str]) -> dict[str, list[str]]:
-    """These accounts grouped by their currency, in the order of the currencies: the base one first."""
-    groups = {c: [n for n in names if snapshot.accounts[n].currency.name == c] for c in snapshot.currencies}
-    return {c: found for c, found in groups.items() if found}
+def by_group(snapshot: Snapshot, names: list[str]) -> dict[str, list[str]]:
+    """
+    These accounts grouped by their type, labelled (see ACCOUNT_GROUPS: general assets,
+    credit cards…), in that order, each sorted alphabetically. Those in another currency
+    are by currency too, in the order of the currencies, e.g. "Foreign currency assets (USD)".
+    """
+    def key(name: str) -> tuple[str, str]:
+        account = snapshot.accounts[name]
+        group = account_group(account)
+        if group is None:
+            return AccountType.EQUITY.value, "Equity"
+        label = ACCOUNT_GROUPS[group][1]
+        if group.startswith("foreign_"):
+            label = f"{label} ({account.currency.name})"
+        return group, label
+
+    order = {g: i for i, g in enumerate(ACCOUNT_GROUPS)}
+    currencies = {c: i for i, c in enumerate(snapshot.currencies)}
+    groups: dict[tuple[str, str], list[str]] = {}
+    for name in names:
+        groups.setdefault(key(name), []).append(name)
+    ordered = sorted(
+        groups.items(),
+        key=lambda item: (
+            order.get(item[0][0], len(order)),
+            currencies.get(snapshot.accounts[item[1][0]].currency.name, len(currencies)),
+        ),
+    )
+    return {label: sorted(found, key=str.casefold) for (_, label), found in ordered}
 
 
 def account_fields(snapshot: Snapshot, base_name: str) -> dict:
     """
     Which debit/credit accounts are fixed or selectable for a base movement: any
     non-equity account, or only the accounts of a special side (see SPECIAL_SIDES, with
-    that side's label, e.g. "Investment"), also grouped by currency to pick from.
+    that side's label, e.g. "Investment"), also grouped by type to pick from (see by_group).
     """
     base = snapshot.base_movements.get(base_name)
     free = [a.name for a in snapshot.free_accounts()]
@@ -25,7 +51,7 @@ def account_fields(snapshot: Snapshot, base_name: str) -> dict:
         return {
             "debit_fixed": None, "credit_fixed": None, "debit_options": free,
             "credit_options": free, "debit_special": None, "credit_special": None, "type": "",
-            "debit_groups": by_currency(snapshot, free), "credit_groups": by_currency(snapshot, free),
+            "debit_groups": by_group(snapshot, free), "credit_groups": by_group(snapshot, free),
             "blocked": snapshot.blocked_accounts(),
         }
     debit = [a.name for a in snapshot.side_accounts(base, LedgerSide.DEBIT)]
@@ -35,8 +61,8 @@ def account_fields(snapshot: Snapshot, base_name: str) -> dict:
         "credit_fixed": base.acc_credit.name if base.acc_credit else None,
         "debit_options": debit,
         "credit_options": credit,
-        "debit_groups": by_currency(snapshot, debit),
-        "credit_groups": by_currency(snapshot, credit),
+        "debit_groups": by_group(snapshot, debit),
+        "credit_groups": by_group(snapshot, credit),
         "debit_special": SPECIAL_LABELS.get(base.debit_special),
         "credit_special": SPECIAL_LABELS.get(base.credit_special),
         "type": base.move_type.value,

@@ -35,6 +35,7 @@ from pledger.models import (
     daily_cpi,
     next_month,
     parse_month,
+    result_type_order,
     special_of,
 )
 
@@ -223,11 +224,41 @@ class TestAccount:
             Account.load_yaml(str(tmp_path / "accounts.yml"), *Currency.load_yaml(currencies_yaml))
 
 
+class TestResultTypeOrder:
+    def test_a_linear_chain_from_first_to_last(self):
+        after = {"Corr": "LAST", "Gifts": "Op", "Init": "FIRST", "Op": "Init", "Tax": "Gifts"}
+        assert result_type_order(after) == ["Init", "Op", "Gifts", "Tax", "Corr"]
+
+    def test_first_and_last_alone(self):
+        assert result_type_order({"B": "LAST", "A": "FIRST"}) == ["A", "B"]
+
+    @pytest.mark.parametrize(
+        ("after", "message"),
+        [
+            ({"A": "FIRST", "B": "C", "C": "B", "D": "LAST"}, r"\(a loop of 'after'\): \['B', 'C'\]"),
+            ({"A": "FIRST", "B": "A", "C": "A", "D": "LAST"}, "'B' and 'C' are both after 'A'"),
+            ({"A": "FIRST", "B": "FIRST", "D": "LAST"}, r"after: FIRST\. Values seen: \['A', 'B'\]"),
+            ({"A": "FIRST", "B": "LAST", "D": "LAST"}, r"after: LAST\. Values seen: \['B', 'D'\]"),
+            ({"A": "FIRST", "B": "A"}, r"after: LAST\. Values seen: \[\]"),
+            ({"A": "LAST", "B": "A"}, "'B' cannot be after 'A', which is after: LAST"),
+        ],
+    )
+    def test_rejects(self, after, message):
+        with pytest.raises(ValueError, match=message):
+            result_type_order(after)
+
+
+def standalone(text: str) -> str:
+    """The base movements YAML of the tests on its own, without internal result types: Gifts is the LAST one."""
+    assert "    after: Op\n" in text
+    return text.replace("    after: Op\n", "    after: LAST\n", 1)
+
+
 INTERNAL_YAML = """\
 internal:
   result_types:
     Init:
-      id: 3
+      after: LAST
       long_name: Initial
       description: Account initializations
       base_movements:
@@ -250,9 +281,11 @@ class TestMovementBase:
         assert move.move_type == MovementType.TRANSFER
         assert not move.debit_fixed and not move.credit_fixed
 
-    def test_load_yaml(self, accounts_yaml, base_movements_yaml, currencies_yaml):
+    def test_load_yaml(self, tmp_path, accounts_yaml, base_movements_yaml, currencies_yaml):
         accounts = Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml))
-        bases, result_types = MovementBase.load_yaml(base_movements_yaml, accounts)
+        path = tmp_path / "result_types.yaml"
+        path.write_text(standalone(Path(base_movements_yaml).read_text(encoding="utf-8")), encoding="utf-8")
+        bases, result_types = MovementBase.load_yaml(str(path), accounts)
 
         assert bases["Salary"].acc_debit is accounts["Bk"]
         assert bases["Salary"].acc_credit is accounts["Eq"]
@@ -272,8 +305,14 @@ class TestMovementBase:
     @pytest.mark.parametrize(
         ("old", "new", "message"),
         [
-            ("    id: 2\n", "    id: 3\n", "must be unique and go from 1"),
-            ("    id: 2\n", "    id: 1\n", "must be unique and go from 1"),
+            ("    after: LAST\n", "    after: Op\n", r"Exactly one result type must be after: LAST\. Values seen: \[\]"),
+            ("    after: LAST\n", "    after: FIRST\n", r"must be after: FIRST\. Values seen: \['Gifts', 'Op'\]"),
+            ("    after: LAST\n", "    after: Gifts\n", "'Gifts' cannot be after itself"),
+            ("    after: LAST\n", "    after: Tax\n", "'Gifts' is after an unknown result type: 'Tax'"),
+            ("    after: FIRST\n", "    after: Gifts\n", "'Op' cannot be after 'Gifts', which is after: LAST"),
+            ("    after: LAST\n", "    after: LAST\n    id: 2\n", "'Gifts' must not set 'id'"),
+            ("    after: LAST\n", "", "'Gifts' needs an 'after'"),
+            ("  Gifts:\n", "  LAST:\n", r"keywords of 'after', not result type names: \['LAST'\]"),
             ("      gain:\n        Gift:", "      transfer:\n        Gift:", "only include 'gain' and 'loss'"),
             ("  Move:\n", "  Food:\n", "Duplicated base movement name: 'Food'"),
             ("  Move:\n    description: Free transfer\n",
@@ -285,7 +324,7 @@ class TestMovementBase:
     ):
         accounts = Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml))
         path = tmp_path / "result_types.yaml"
-        text = Path(base_movements_yaml).read_text(encoding="utf-8")
+        text = standalone(Path(base_movements_yaml).read_text(encoding="utf-8"))
         assert old in text
         path.write_text(text.replace(old, new, 1), encoding="utf-8")
         with pytest.raises(ValueError, match=message):
@@ -320,8 +359,8 @@ class TestMovementBase:
             ("internal:\n", "  Adjust2:\n    description: d\n    internal: true\ninternal:\n",
              "must not set 'internal'"),
             ("  transfer:\n    Adjust:", "  transfer:\n    Move:", "Duplicated base movement name: 'Move'"),
-            ("      id: 3\n", "      id: 2\n", r"ids \(internal ones included\) must be unique and go from 1 to 3"),
-            ("      id: 3\n", "      id: 4\n", r"Values seen: \[1, 2, 4\]"),
+            ("      after: LAST\n", "      after: Op\n", "'Gifts' and 'Init' are both after 'Op': the chain of result types must be linear"),
+            ("      after: LAST\n", "      after: Gifts\n", r"must be after: LAST\. Values seen: \[\]"),
             ("    Init:\n", "    Op:\n", r"both internal and not: \['Op'\]"),
             ("        gain:\n", "        transfer:\n", "only include 'gain' and 'loss'"),
             ("  result_types:\n", "  types:\n", r"only has 'result_types' and 'transfer', not \['types'\]"),
@@ -344,7 +383,7 @@ class TestMovementBase:
         accounts = Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml))
         path = tmp_path / "result_types.yaml"
         text = Path(base_movements_yaml).read_text(encoding="utf-8")
-        text = text.replace("        Food:\n          description: Groceries\n", "        Food: Groceries\n")
+        text = standalone(text).replace("        Food:\n          description: Groceries\n", "        Food: Groceries\n")
         text = text.replace("  Move:\n    description: Free transfer\n", "  Move: Free transfer\n")
         path.write_text(text, encoding="utf-8")
         bases, result_types = MovementBase.load_yaml(str(path), accounts)
@@ -898,7 +937,7 @@ class TestSpecialSides:
     def test_load_yaml(self, tmp_path, accounts_yaml, base_movements_yaml, currencies_yaml):
         accounts = Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml))
         path = tmp_path / "result_types.yaml"
-        text = Path(base_movements_yaml).read_text(encoding="utf-8")
+        text = standalone(Path(base_movements_yaml).read_text(encoding="utf-8"))
         text += "  Buy:\n    description: d\n    debit: INVESTMENT\n    credit: Ca\n"
         text += "  Lend:\n    description: d\n    debit: FOREIGN CURRENCY\n    credit: INVESTMENT\n"
         text = text.replace("        Gift:\n", "        Gains:\n          description: d\n          debit: INVESTMENT\n        Gift:\n")

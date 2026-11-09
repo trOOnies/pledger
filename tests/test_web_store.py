@@ -354,10 +354,12 @@ class TestSetupStore:
         store = LedgerStore(settings)
         store.add_result_type(" Tax ", "Taxes", "Taxes paid")
         result_types = store.load().result_types
-        assert (result_types[4].name, result_types[4].long_name) == ("Tax", "Taxes")
+        # Right before the LAST one, Init, which stays last
+        assert (result_types[3].name, result_types[3].long_name) == ("Tax", "Taxes")
+        assert result_types[4].name == "Init"
         data = yaml.safe_load(settings.base_movements_path.read_text())
         assert data["result_types"]["Tax"] == {
-            "id": 4, "long_name": "Taxes", "description": "Taxes paid",
+            "after": "Gifts", "long_name": "Taxes", "description": "Taxes paid",
         }
         # Base movements can then be added under it
         store.add_base_movement("Income tax", "loss", "Income tax", result_type="Tax")
@@ -568,7 +570,7 @@ class TestInternalResultTypes:
         LedgerStore(settings).add_result_type("New", "New one", "d")
         result_types = client.get("/api/result-types").json()
         assert [(rt["id"], rt["name"], rt["internal"]) for rt in result_types] == [
-            (1, "Op", False), (2, "Gifts", False), (3, "Init", True), (4, "New", False),
+            (1, "Op", False), (2, "Gifts", False), (3, "New", False), (4, "Init", True),
         ]
 
 

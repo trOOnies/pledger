@@ -4,8 +4,10 @@ import datetime as dt
 from dataclasses import replace
 
 import pytest
-from helpers import HTMX
+from fastapi.testclient import TestClient
+from helpers import HTMX, MOVEMENT, WORK_CSV, with_salaries
 
+from pledger.web.app import create_app
 from pledger.web.store import (
     LedgerStore,
     row_fingerprint,
@@ -160,3 +162,40 @@ class TestEditableFilter:
     def test_the_tab_has_it(self, client):
         assert 'name="editable" value="true" >' in client.get("/").text
         assert 'name="editable" value="true" checked' in client.get("/", params={"editable": "true"}).text
+
+
+class TestAutoBaseMovements:
+    """The base movements whose movements are created elsewhere can't get new ones from the Ledger tab."""
+
+    @pytest.fixture
+    def settings(self, settings, tmp_path, monkeypatch):
+        monkeypatch.setattr("pledger.web.store.common.today", lambda: dt.date(2026, 2, 15))
+        creditors = tmp_path / "creditors.yaml"
+        creditors.write_text("services:\n  Rent:\n    amount: 0\n    base_movement: Food\n", encoding="utf-8")
+        services = tmp_path / "services.csv"
+        services.write_text("month;Rent\n2026-01;100\n", encoding="utf-8")
+        work = tmp_path / "work.csv"
+        work.write_text(WORK_CSV, encoding="utf-8")
+        return replace(with_salaries(settings), creditors_path=creditors, services_path=services, work_path=work)
+
+    def test_are_classified_by_the_tab_that_creates_them(self, settings):
+        snapshot = LedgerStore(settings).load()
+        auto = snapshot.auto_base_movements()
+        assert {n: auto[n] for n in ("Food", "Tax", "Work - Salary Main", "Initial (G)")} == {
+            "Food": "Services", "Tax": "Work", "Work - Salary Main": "Work", "Initial (G)": "Accounts",
+        }
+        assert "Card fee" not in auto and "Gift" not in auto
+        ledger = snapshot.ledger_base_movements()
+        assert "Food" not in ledger and "Tax" not in ledger and "Card fee" in ledger
+
+    @pytest.mark.parametrize(("base", "debit", "credit", "tab"), [("Food", "Eq", "Ca", "Services"), ("Tax", "Eq", "Ca", "Work")])
+    def test_cannot_be_added_from_the_ledger_tab(self, settings, base, debit, credit, tab):
+        with pytest.raises(ValueError, match=f"{base!r} are created from the {tab} tab"):
+            LedgerStore(settings).add("2026-02-02", base, debit, credit, "1")
+
+    def test_arent_in_the_form(self, settings):
+        client = TestClient(create_app(settings))
+        form = client.get("/form/bases", params={"move_type": "loss"}).text
+        assert ">Card fee<" in form and ">Food<" not in form and ">Tax<" not in form
+        r = client.post("/movements", data={**MOVEMENT, "base_movement": "Food", "acc_debit": "Eq", "acc_credit": "Ca"})
+        assert "are created from the Services tab" in r.text

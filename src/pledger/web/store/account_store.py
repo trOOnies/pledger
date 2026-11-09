@@ -9,6 +9,7 @@ import yaml
 
 from pledger.enums import AccountType, MovementType
 from pledger.models import (
+    AFTER,
     INTEREST_FREQUENCY,
     INTERNAL,
     SPECIAL_SIDES,
@@ -153,7 +154,11 @@ class AccountStore(MovementStore):
         return base_name, amount
 
     def add_result_type(self, name: str, long_name: str, description: str) -> None:
-        """Validate a new result type and add it, with the next id, to the base movements YAML."""
+        """
+        Validate a new result type and add it to the base movements YAML, at the end of the
+        chain of `after` (see result_type_order): right after the one before the LAST one,
+        which stays last.
+        """
         snapshot = self.load()
         existing = {rt.name: rt for rt in snapshot.result_types.values()}
         name = _check_name(name, existing, "result type")
@@ -165,7 +170,7 @@ class AccountStore(MovementStore):
             raise ValueError("The result type long name is required")
         description = _check_description(description, "result type")
         fields = {
-            "id": max(snapshot.result_types, default=0) + 1,
+            AFTER: snapshot.result_types[len(snapshot.result_types) - 1].name,
             "long_name": long_name,
             "description": description,
         }

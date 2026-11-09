@@ -1,6 +1,8 @@
 """Tests for broker fees, investing in other currencies, cards in other currencies and the weeks without interest."""
 
 import datetime as dt
+import html
+import re
 from dataclasses import replace
 
 import pytest
@@ -29,7 +31,7 @@ def settings(revalued, tmp_path, monkeypatch):
     monkeypatch.setattr("pledger.web.store.common.today", lambda: dt.date(2026, 3, 11))
     settings = with_conversion_bases(revalued)
     with_internal(
-        settings.base_movements_path, INVEST_YAML.replace("Dividends: d", f"{DIVIDENDS}: d").replace("id: 4", "id: 5"),
+        settings.base_movements_path, INVEST_YAML.replace("Dividends: d", f"{DIVIDENDS}: d").replace("after: Gifts", "after: Expo"),
         INVEST_TRANSFERS_YAML + CARD_PAYMENT_YAML,
     )
     path = settings.accounts_path
@@ -287,7 +289,7 @@ class TestMissingInterest:
     @pytest.fixture
     def settings(self, settings):
         with_internal(settings.base_movements_path, (
-            "    Interest:\n      id: 6\n      long_name: I\n      description: d\n      base_movements:\n"
+            "    Interest:\n      after: Invest\n      long_name: I\n      description: d\n      base_movements:\n"
             "        gain:\n          Interest on Money (G): d\n        loss:\n          Interest on Money (L): d\n"
         ))
         with_interest_frequency(settings, Ca="weekly", Ud="weekly")
@@ -343,23 +345,37 @@ class TestMissingInterest:
         assert "without interest" not in TestClient(create_app(settings)).get("/investments").text
 
 
-class TestAccountsByCurrency:
+class TestAccountsByType:
     @staticmethod
     def groups(text, side):
         select = text.split(f'name="{side}"')[1].split("</select>")[0]
         return [g.split('"')[0] for g in select.split('<optgroup label="')[1:]]
 
-    def test_debit_and_credit_are_separated(self, settings):
+    @staticmethod
+    def options(text, side, group):
+        select = text.split(f'name="{side}"')[1].split("</select>")[0]
+        found = select.split(f'<optgroup label="{html.escape(group)}">')[1].split("</optgroup>")[0]
+        return re.findall(r"<option [^>]*>([^<]+)</option>", found)
+
+    def test_debit_and_credit_are_grouped_by_type_then_sorted(self, settings):
         client = TestClient(create_app(settings))
         text = client.get("/form/accounts", params={"base_movement": "Move"}).text
         for side in ("acc_debit", "acc_credit"):
-            assert self.groups(text, side) == ["ARS", "USD", "EUR"]
-        select = text.split('name="acc_debit"')[1].split("</select>")[0]
-        assert "<option >Ud</option>" in select.split('label="USD"')[1].split("</optgroup>")[0]
+            groups = self.groups(text, side)
+            # In the order of ACCOUNT_GROUPS, those in other currencies by currency
+            assert groups == sorted(groups, key=lambda g: [
+                "General assets", "Foreign currency assets (USD)", "Foreign currency assets (EUR)",
+                "Investment accounts", "General liabilities", "Debts &amp; loans", "Credit cards",
+            ].index(g))
+            assert "Foreign currency assets (USD)" in groups and "Credit cards" in groups
+            for group in groups:
+                names = self.options(text, side, html.unescape(group))
+                assert names and names == sorted(names, key=str.casefold)
+        assert "Ud" in self.options(text, "acc_debit", "Foreign currency assets (USD)")
 
-    def test_a_single_currency_has_no_groups(self, settings):
+    def test_a_single_group_is_named_too(self, settings):
         text = TestClient(create_app(settings)).get(f"/form/accounts?base_movement={SURPLUS}").text
-        assert self.groups(text, "acc_credit") == []  # only Vd, in USD
+        assert self.groups(text, "acc_credit") == ["Credit cards"]  # only Vd
 
     def test_the_selected_one_stays(self, settings):
         client = TestClient(create_app(settings))

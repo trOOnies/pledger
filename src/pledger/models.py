@@ -58,6 +58,58 @@ DEBT_ACCOUNTS = (DEBT_ACCOUNT, LOAN_ACCOUNT)
 # owe are in the debt account, and the ones that owe us in the loan account.
 ROLE_ACCOUNTS = {DebtRole.CREDITOR: DEBT_ACCOUNT, DebtRole.DEBTOR: LOAN_ACCOUNT}
 INTERNAL = "internal"
+# The `after` of a result type in the base movements YAML: the name of the one right
+# before it, or one of these keywords, each used by exactly one result type: the first
+# and the last ones (see result_type_order).
+AFTER = "after"
+FIRST, LAST = "FIRST", "LAST"
+
+
+def result_type_order(after: dict[str, str]) -> list[str]:
+    """
+    The result types in order, from the `after` of each one (its name to the name of the
+    one right before it, FIRST or LAST): a single linear chain from the FIRST one, each
+    right after the one it names, and the LAST one at its end. Their ids are their
+    positions in it, from 1 to N.
+    """
+    names = set(after)
+    reserved = sorted(names & {FIRST, LAST})
+    if reserved:
+        raise ValueError(f"{FIRST} and {LAST} are keywords of {AFTER!r}, not result type names: {reserved}")
+    following: dict[str, str] = {}
+    for name, before in after.items():
+        if before in (FIRST, LAST):
+            continue
+        if before == name:
+            raise ValueError(f"Result type {name!r} cannot be after itself")
+        if before not in names:
+            raise ValueError(f"Result type {name!r} is after an unknown result type: {before!r}")
+        if after[before] == LAST:
+            raise ValueError(f"Result type {name!r} cannot be after {before!r}, which is {AFTER}: {LAST}")
+        if before in following:
+            raise ValueError(
+                f"Result types {following[before]!r} and {name!r} are both after {before!r}: "
+                "the chain of result types must be linear"
+            )
+        following[before] = name
+    for keyword in (FIRST, LAST):
+        found = sorted(n for n, a in after.items() if a == keyword)
+        if len(found) != 1:
+            raise ValueError(
+                f"Exactly one result type must be {AFTER}: {keyword}. Values seen: {found}"
+            )
+    last = next(n for n, a in after.items() if a == LAST)
+    order = [next(n for n, a in after.items() if a == FIRST)]
+    while order[-1] in following:
+        order.append(following[order[-1]])
+    order.append(last)
+    missing = sorted(names - set(order))
+    if missing:
+        raise ValueError(
+            f"Result types not in the chain from the {FIRST} one to the {LAST} one "
+            f"(a loop of {AFTER!r}): {missing}"
+        )
+    return order
 
 INITIAL_DATE = "initial_date"  # of an account in the accounts YAML
 INTEREST_FREQUENCY = "interest_frequency"  # of an account in the accounts YAML (see InterestFrequency)
@@ -1129,7 +1181,9 @@ class MovementBase:
 
         The top-level `internal` key has the same structure (its `result_types` next to
         a `transfer` dict): those base movements and result types are internal, reserved
-        for pledger itself. Result type ids are shared by internal and other ones.
+        for pledger itself. Each result type names the one right before it in its `after`
+        (see result_type_order): their ids, shared by internal and other ones, are their
+        positions in that chain, from 1 to N.
         """
         data = _load_yaml(path)
         internal_data = dict(data.get(INTERNAL) or {})
@@ -1140,8 +1194,8 @@ class MovementBase:
 
         def result_types_of(rt_dicts: dict, is_internal: bool) -> dict[int, ResultType]:
             return {
-                rt_dict["id"]: ResultType(
-                    id=rt_dict["id"],
+                ids[name]: ResultType(
+                    id=ids[name],
                     name=name,
                     long_name=rt_dict["long_name"],
                     description=rt_dict["description"],
@@ -1153,8 +1207,8 @@ class MovementBase:
         def sections_of(rt_dicts: dict, result_types: dict[int, ResultType]) -> list[tuple]:
             """Gains and losses, grouped by ResultType."""
             sections = [
-                (result_types[rt["id"]], move_type, mt_base_moves)
-                for rt in rt_dicts.values()
+                (result_types[ids[name]], move_type, mt_base_moves)
+                for name, rt in rt_dicts.items()
                 for move_type, mt_base_moves in (rt.get("base_movements") or {}).items()
             ]
             if any(
@@ -1170,12 +1224,22 @@ class MovementBase:
         repeated = sorted(set(data["result_types"]) & set(internal))
         if repeated:
             raise ValueError(f"Result type names are both internal and not: {repeated}")
-        ids = sorted(rt["id"] for rt in [*data["result_types"].values(), *internal.values()])
-        if ids != list(range(1, len(ids) + 1)):
-            raise ValueError(
-                "ResultType ids (internal ones included) must be unique and go from 1 to "
-                f"{len(ids)}. Values seen: {ids}"
+        all_rts = {**data["result_types"], **internal}
+        for name, rt_dict in all_rts.items():
+            if "id" in rt_dict:
+                raise ValueError(
+                    f"Result type {name!r} must not set 'id': ids are given by the chain of {AFTER!r}"
+                )
+            if AFTER not in rt_dict:
+                raise ValueError(
+                    f"Result type {name!r} needs an {AFTER!r}: the result type right before it, {FIRST} or {LAST}"
+                )
+        # The ids, 1 to N, internal ones included: their positions in the chain
+        ids = {
+            name: i for i, name in enumerate(
+                result_type_order({n: str(rt[AFTER]) for n, rt in all_rts.items()}), 1
             )
+        }
         result_types = {
             **result_types_of(data["result_types"], is_internal=False),
             **result_types_of(internal, is_internal=True),

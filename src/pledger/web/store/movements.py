@@ -130,6 +130,10 @@ def _movement_row(
         raise ValueError(f"Unknown base movement: {base_movement!r}")
     _check_invest(snapshot, base_movement, invest, "added")
     _check_tab(snapshot, base_movement, invest, debt, card_payment, correction=correction, difference=difference)
+    if not (invest or debt or card_payment or correction or difference):
+        tab = snapshot.auto_base_movements().get(base_movement)
+        if tab is not None:
+            raise ValueError(f"The movements of the base movement {base_movement!r} are created from the {tab} tab")
     has_details = str(investment).strip() or str(quantity).strip()
     if has_details and (not invest or base_movement in INTEREST):
         raise ValueError("Only movements of the investments have an investment and a quantity")

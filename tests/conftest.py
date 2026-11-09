@@ -63,7 +63,7 @@ liability:
 BASE_MOVEMENTS_YAML = """\
 result_types:
   Op:
-    id: 1
+    after: FIRST
     long_name: Operative
     description: Operative results
     base_movements:
@@ -78,7 +78,7 @@ result_types:
           description: Credit card fee
           credit: Cc
   Gifts:
-    id: 2
+    after: Op
     long_name: Gifts
     description: Results because of gifts
     base_movements:
@@ -177,7 +177,7 @@ def ledger_csv(tmp_path):
 # The internal base movements required to load the ledger: an empty `transfer` section
 # and the `result_types` one, with Init last (see with_internal)
 INITIAL_YAML = (
-    "internal:\n  transfer:\n  result_types:\n    Init:\n      id: 3\n      long_name: Initial\n      description: d\n"
+    "internal:\n  transfer:\n  result_types:\n    Init:\n      after: LAST\n      long_name: Initial\n      description: d\n"
     "      base_movements:\n        gain:\n          Initial (G): Initial balance\n"
     "        loss:\n          Initial (L): Initial balance\n"
 )
@@ -186,7 +186,7 @@ INITIAL_YAML = (
 # The internal base movements of the results of the accounts in other currencies,
 # required once one is revalued; appended to the internal `result_types` of INITIAL_YAML
 RESULT_YAML = (
-    "    Expo:\n      id: 4\n      long_name: Exposition\n      description: d\n"
+    "    Expo:\n      after: Gifts\n      long_name: Exposition\n      description: d\n"
     "      base_movements:\n        gain:\n          Foreign currency (G):\n            description: d\n"
     "            debit: FOREIGN CURRENCY\n        loss:\n          Foreign currency (L):\n"
     "            description: d\n            credit: FOREIGN CURRENCY\n"

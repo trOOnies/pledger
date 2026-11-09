@@ -6,10 +6,10 @@
   {% else %}
   <select name="{{ name }}" required>
     <option value="">Choose…</option>
-    {% if groups | length > 1 %}
-    {# The accounts by currency, to tell apart those of another one #}
-    {% for currency, names in groups.items() %}
-    <optgroup label="{{ currency }}">
+    {% if groups %}
+    {# The accounts by type, each group sorted alphabetically (see by_group) #}
+    {% for group, names in groups.items() %}
+    <optgroup label="{{ group }}">
       {% for acc in names %}<option {% if acc == values[name] %}selected{% endif %}>{{ acc }}</option>{% endfor %}
     </optgroup>
     {% endfor %}

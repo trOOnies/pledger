@@ -41,6 +41,8 @@
 <p>Result types group gains and losses into <strong>larger families</strong>, such as
   <em>Operative</em> (everyday income and spending), <em>Investments</em> or <em>Taxes</em>.
   Every gain and loss base movement belongs to <strong>exactly one</strong> result type;
-  transfers have none. Result types are <strong>numbered</strong>, and the Results tab lists
-  them in that order, with a <strong>running total</strong> that shows how each family adds to
+  transfers have none. Result types are <strong>chained</strong>: each one says which comes
+  right <em>before</em> it (its <code>after</code>), from the <code>FIRST</code> one to the
+  <code>LAST</code> one, and pledger numbers them 1 to N in that order. The Results tab lists
+  them so, with a <strong>running total</strong> that shows how each family adds to
   or takes from your profit.</p>
