@@ -104,6 +104,8 @@
   {% if relative %}<div data-relative="true">{{ result_by_type(relative.statement, relative.waterfall, pct=True) }}</div>{% endif %}
 </section>
 
+{% include "_expenses.html" %}
+
 <section class="panel">
   <h2>Equity over time <small>{{ ("in " ~ month) if month else "all time" }}, at each entry date</small></h2>
   {% if equity %}

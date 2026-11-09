@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request
+from typing import Annotated
+
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 
 from pledger.web.dependencies import StoreDep
@@ -34,6 +36,7 @@ from pledger.web.views import (
     build_view,
     build_work,
     conversion_filter,
+    expense_months,
     invest_filter,
     months_of,
     price_rows,
@@ -140,15 +143,35 @@ def currencies(request: Request, store: StoreDep, currency: str = "", account: s
     return templates.TemplateResponse(request, "currencies.html", context)
 
 
+# The loss result types of the Equity in months of expenses chart, once its filter was used
+# (`expenses_filtered`, even with none of them): the non-internal ones by default.
+ExpenseTypes = Annotated[list[str] | None, Query()]
+
+
 @router.get("/results")
-def results(request: Request, store: StoreDep, month: str | None = None, initial: bool = False):
+def results(
+    request: Request, store: StoreDep, month: str | None = None, initial: bool = False,
+    expense_types: ExpenseTypes = None, expenses_filtered: bool = False,
+):
     snapshot = store.load()
     month = remembered_month(request, month, months_of(snapshot))
-    context = build_results(snapshot, month, initial)
+    context = build_results(snapshot, month, initial, (expense_types or []) if expenses_filtered else None)
     if is_partial(request):
         return remember_month(templates.TemplateResponse(request, "_results.html", context), month)
     context = {**context, **setup_context(snapshot), "settings": store.settings}
     return remember_month(templates.TemplateResponse(request, "results.html", context), month)
+
+
+@router.get("/results/expenses")
+def results_expenses(
+    request: Request, store: StoreDep, month: str = "", initial: bool = False,
+    expense_types: ExpenseTypes = None, expenses_filtered: bool = False,
+):
+    """The Equity in months of expenses panel alone, as its filter changes."""
+    snapshot = store.load()
+    selected = (expense_types or []) if expenses_filtered else None
+    context = {"month": month, "expenses": expense_months(snapshot, month, initial, selected)}
+    return templates.TemplateResponse(request, "_expenses.html", context)
 
 
 @router.get("/audit")

@@ -136,6 +136,55 @@ def column_chart(series: list[dict], tick_label=compact) -> dict | None:
     }
 
 
+def stacked_column_chart(series: list[dict], slots: dict[str, int], tick_label=compact) -> dict | None:
+    """
+    Stacked columns of a {month, values} series, one band per month: each of its values
+    (a name to a value, not negative) a segment up from the ones before it, in the
+    order of `slots` (each name to its categorical color slot), the first one at the
+    bottom. Coordinates are percentages of the plot area, like column_chart. None if
+    every value is 0.
+    """
+    totals = [sum(max(p["values"].get(n, 0.0), 0.0) for n in slots) for p in series]
+    if not series or max(totals) < 1e-9:
+        return None
+    ticks = nice_ticks(0.0, max(totals))
+
+    def y(v: float) -> float:
+        return round(100 * (1 - (v - ticks[0]) / (ticks[-1] - ticks[0])), 2)
+
+    band = 100 / len(series)
+    every = math.ceil(len(series) / 8)
+    columns = []
+    for i, (p, total) in enumerate(zip(series, totals)):
+        segments, below = [], 0.0
+        for name, slot in slots.items():
+            value = max(p["values"].get(name, 0.0), 0.0)
+            if value < 1e-9:
+                continue
+            # Within the column, from its top: a share of its height
+            segments.append({"name": name, "slot": slot, "value": value, "height": round(100 * value / total, 2)})
+            below += value
+        columns.append({
+            **p,
+            "total": total,
+            "x": round(band * (i + 0.5), 2),
+            "y": y(total),
+            "top": y(total),
+            "height": round(abs(y(total) - y(0.0)), 2),
+            "segments": segments[::-1],  # drawn from the top down
+        })
+    return {
+        "columns": columns,
+        "width": round(band * 0.7, 2),
+        "y_ticks": [{"y": y(t), "label": tick_label(t), "axis": abs(t) < 1e-9} for t in ticks],
+        "x_ticks": [
+            {"x": c["x"], "label": dt.date.fromisoformat(f"{c['month']}-01").strftime("%b %Y")}
+            for c in columns[::every]
+        ],
+        "last": columns[-1],
+    }
+
+
 def waterfall_chart(statement: list[dict], tick_label=compact) -> dict | None:
     """
     Floating columns to draw a result statement as a waterfall: the gains of each

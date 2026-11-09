@@ -1,0 +1,83 @@
+{# The Equity in months of expenses panel (see views.expense_months): its filter of the loss
+   result types (with their colors: the legend of the raw chart) re-renders it alone, and the
+   Raw toggle shows their averages instead. #}
+{% from "_line.html" import column_chart, stacked_column_chart with context %}
+<section class="panel expenses-view" id="expenses-panel">
+  <div class="panel-head">
+    <h2>Equity in months of expenses <small>{{ ("in " ~ month) if month else "all time" }}, at each month end</small></h2>
+    <label class="check toggle" title="The average monthly losses of each result type of the year up to each month end, stacked, instead of the months of them that equity covers">
+      <input type="checkbox" name="expenses-raw"> Raw monthly averages
+    </label>
+  </div>
+  <form id="expenses-filter" class="expenses-filter" hx-get="/results/expenses" hx-include="#filters"
+        hx-target="#expenses-panel" hx-swap="outerHTML" hx-trigger="change">
+    <input type="hidden" name="expenses_filtered" value="true">
+    {% for f in expenses.filters %}
+    <label class="check" title="{{ f.long_name }}{% if f.internal %} (internal){% endif %}: include its losses in the expenses">
+      <input type="checkbox" name="expense_types" value="{{ f.name }}" {% if f.checked %}checked{% endif %}>
+      <span class="swatch" style="background: var(--series-{{ f.slot }})"></span> {{ f.long_name }}
+    </label>
+    {% endfor %}
+  </form>
+  {% set rows = expenses.months %}
+  <div data-raw="false">
+    {% if expenses.chart %}
+    {% set ns = namespace(points=[]) %}
+    {% for c in expenses.chart.columns %}
+      {% set r = rows[loop.index0] %}
+      {% set ns.points = ns.points + [{
+        "x": c.x, "y": c.y, "label": r.month,
+        "value_text": ("%.1f months" | format(r.months)) if r.months is not none else "No expenses",
+        "change_text": (r.equity | money) ~ " ÷ " ~ (r.monthly | money) ~ " a month",
+      }] %}
+    {% endfor %}
+    {% set last = rows[-1] %}
+    <p class="equity-headline">
+      <span class="num-lg {{ 'loss' if last.months is not none and last.months < 0 }}">{% if last.months is none %}-{% else %}{{ "%.1f" | format(last.months) }}{% endif %}</span>
+      <span class="muted">months at the end of {{ last.month }}</span>
+    </p>
+    {{ column_chart(expenses.chart, ns.points, "Equity in months of the expenses of the selected result types, from " ~ rows[0].month ~ " to " ~ last.month, series=1, money=False) }}
+    {% else %}
+    <p class="muted">No expenses of the selected result types in this period.</p>
+    {% endif %}
+  </div>
+  <div data-raw="true">
+    {% if expenses.raw_chart %}
+    {% set ns = namespace(points=[]) %}
+    {% for c in expenses.raw_chart.columns %}
+      {% set tip = namespace(rows=[["Total", c.total | money]]) %}
+      {% for s in c.segments %}{% set tip.rows = tip.rows + [[s.name, s.value | money]] %}{% endfor %}
+      {% set ns.points = ns.points + [{"x": c.x, "y": c.y, "label": c.month, "rows": tip.rows}] %}
+    {% endfor %}
+    {{ stacked_column_chart(expenses.raw_chart, ns.points, "Average monthly losses of the selected result types, stacked, from " ~ rows[0].month ~ " to " ~ rows[-1].month) }}
+    {% else %}
+    <p class="muted">No expenses of the selected result types in this period.</p>
+    {% endif %}
+  </div>
+  {% if rows %}
+  <p class="muted small">At each month end: its equity over the average monthly losses, in the year up to then, of the
+    base movements of the result types ticked above (the non-internal ones by default). Unlike the card, these
+    include the deductions of the salary of the result types ticked.</p>
+  <details class="chart-table">
+    <summary>Show table</summary>
+    <div class="table-wrap">
+      <table data-sortable="expenses">
+        <thead><tr><th>Month</th><th class="num">Equity</th>
+          {% for f in expenses.filters if f.checked %}<th class="num">{{ f.long_name }}</th>{% endfor %}
+          <th class="num">Expenses a month</th><th class="num">Months</th></tr></thead>
+        <tbody>
+        {% for r in rows | reverse %}
+        <tr>
+          <td class="nowrap">{{ r.month }}</td>
+          <td class="num money" data-sort="{{ r.equity }}">{{ r.equity | money }}</td>
+          {% for f in expenses.filters if f.checked %}{% set v = r.averages.get(f.name, 0.0) %}<td class="num money {{ 'muted' if not v }}" data-sort="{{ v }}">{{ v | money }}</td>{% endfor %}
+          <td class="num money" data-sort="{{ r.monthly }}">{{ r.monthly | money }}</td>
+          <td class="num" data-sort="{{ r.months if r.months is not none else '' }}">{{ ("%.1f" | format(r.months)) if r.months is not none else "-" }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </details>
+  {% endif %}
+</section>

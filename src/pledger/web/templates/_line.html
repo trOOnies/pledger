@@ -200,3 +200,30 @@
   {% endif %}
 </section>
 {% endmacro %}
+
+{# Stacked columns from views.stacked_column_chart: each segment in the color of its slot
+   (their legend is up to the caller). Each point of `points` adds its tooltip: its `label`
+   and `rows`. With `money`, the y axis is in amounts. #}
+{% macro stacked_column_chart(chart, points, aria, money=True) %}
+<div class="line-chart columns stacked-columns" data-points='{{ points | tojson }}'>
+  <div class="y-axis" aria-hidden="true">
+    {% for t in chart.y_ticks %}<span class="{{ 'money' if money }}" style="top: {{ t.y }}%">{{ t.label }}</span>{% endfor %}
+  </div>
+  <div class="plot">
+    <svg viewBox="0 0 100 100" preserveAspectRatio="none" role="img" aria-label="{{ aria }}">
+      {% for t in chart.y_ticks %}
+      <line class="{{ 'axis' if t.axis else 'grid' }}" x1="0" x2="100" y1="{{ t.y }}" y2="{{ t.y }}"/>
+      {% endfor %}
+      <line class="crosshair" x1="0" x2="0" y1="0" y2="100"/>
+    </svg>
+    {% for c in chart.columns %}<span class="column" style="left: {{ c.x }}%; top: {{ c.top }}%; width: {{ chart.width }}%; height: {{ c.height }}%">{% for s in c.segments %}<span class="segment" style="height: {{ s.height }}%; background: var(--series-{{ s.slot }})"></span>{% endfor %}</span>{% endfor %}
+    <div class="tooltip" aria-hidden="true">
+      <div class="tip-date muted"></div>
+      <div class="tip-rows"></div>
+    </div>
+  </div>
+  <div class="x-axis" aria-hidden="true">
+    {% for t in chart.x_ticks %}<span style="left: {{ t.x }}%">{{ t.label }}</span>{% endfor %}
+  </div>
+</div>
+{% endmacro %}

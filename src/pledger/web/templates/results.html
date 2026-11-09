@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% block title %}Results · pledger{% endblock %}
 {% block content %}
-<form id="filters" class="filters" hx-get="/results" hx-target="#results-view" hx-push-url="true" hx-trigger="change">
+{# With the result types of the Equity in months of expenses filter, kept as the month changes #}
+<form id="filters" class="filters" hx-get="/results" hx-target="#results-view" hx-push-url="true" hx-trigger="change" hx-include="#expenses-filter">
   <label>Month
     <select name="month">
       <option value="">All time</option>
@@ -20,9 +21,9 @@
 <div id="setup">{% include "_setup.html" %}</div>
 
 <script>
-  // Keep the result by type over the gains of a result type, and the cumulative gains and
-  // losses, when the results re-render.
-  const resultsToggles = { "results-relative": false, "results-cumulative": false };
+  // Keep the result by type over the gains of a result type, the cumulative gains and
+  // losses, and the raw averages of the expenses, when the results re-render.
+  const resultsToggles = { "results-relative": false, "results-cumulative": false, "expenses-raw": false };
   document.addEventListener("change", (e) => {
     if (e.target.name in resultsToggles) resultsToggles[e.target.name] = e.target.checked;
   });

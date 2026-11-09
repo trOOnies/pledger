@@ -503,6 +503,14 @@ button.compact:disabled { cursor: default; color: var(--muted); }
 .line-chart.columns .crosshair, .line-chart.columns .hover-dot { display: none; }
 .line-chart.columns .x-axis span:first-child { transform: translateX(-50%); }
 .line-chart.waterfall .column { border-radius: 2px; min-height: 1px; }
+/* A stacked column (see stacked_column_chart): its segments from the top down, a thin gap between them */
+.line-chart.stacked-columns .column { display: flex; flex-direction: column; background: none; overflow: hidden; }
+.line-chart.stacked-columns .segment { flex: none; box-shadow: inset 0 -1px 0 var(--surface); }
+.expenses-view [data-raw="true"],
+.expenses-view:has(input[name="expenses-raw"]:checked) [data-raw="false"] { display: none; }
+.expenses-view:has(input[name="expenses-raw"]:checked) [data-raw="true"] { display: block; }
+.expenses-filter { display: flex; flex-wrap: wrap; gap: .25rem 1rem; margin: 0 0 .75rem; font-size: .85rem; }
+.expenses-filter .swatch { display: inline-block; width: 10px; height: 10px; border-radius: 2px; }
 .line-chart.waterfall .column.gain { background: var(--gain); }
 .line-chart.waterfall .column.loss { background: var(--loss); }
 .line-chart.waterfall .column.total { background: var(--series-asset); }

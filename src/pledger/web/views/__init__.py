@@ -115,6 +115,7 @@ from pledger.web.views.results import (
     cumulative_composition,
     equity_metrics,
     equity_series,
+    expense_months,
 )
 from pledger.web.views.services import (
     build_services,
@@ -191,6 +192,7 @@ __all__ = [
     "default_move_type",
     "equity_metrics",
     "equity_series",
+    "expense_months",
     "fees_share",
     "grouped_composition",
     "growth",
