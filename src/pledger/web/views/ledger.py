@@ -6,6 +6,7 @@ import shlex
 
 from pledger.web.store import Snapshot
 from pledger.web.views.common import months_of, movement_rows
+from pledger.web.views.forms import bases_by_group, by_group
 
 
 def search_terms(q: str) -> list[str]:
@@ -67,8 +68,10 @@ def build_view(
         "initial": initial,
         "editable": editable,
         "accounts": list(snapshot.accounts),
+        "account_groups": by_group(snapshot, list(snapshot.accounts)),
         "base": base,
         "bases": list(snapshot.base_movements),
+        "base_groups": bases_by_group(snapshot, list(snapshot.base_movements)),
         "q": q,
         "movements": movements,
         # Not shown in the Ledger tab, but in /api/summary

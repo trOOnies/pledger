@@ -39,6 +39,24 @@ def by_group(snapshot: Snapshot, names: list[str]) -> dict[str, list[str]]:
     return {label: sorted(found, key=str.casefold) for (_, label), found in ordered}
 
 
+def bases_by_group(snapshot: Snapshot, names: list[str]) -> dict[str, list[str]]:
+    """
+    These base movements grouped by their result type, labelled with its long name, in the
+    order of the result types (see result_type_order), then the transfers and the internal
+    transfers, each sorted alphabetically, like the Setup of the Results tab.
+    """
+    groups: dict[tuple[int, str], list[str]] = {}
+    last = len(snapshot.result_types) + 1
+    for name in names:
+        base = snapshot.base_movements[name]
+        if base.result_type is not None:
+            key = base.result_type.id, base.result_type.long_name
+        else:
+            key = (last + 1, "Internal transfers") if base.internal else (last, "Transfers")
+        groups.setdefault(key, []).append(name)
+    return {label: sorted(found, key=str.casefold) for (_, label), found in sorted(groups.items())}
+
+
 def account_fields(snapshot: Snapshot, base_name: str) -> dict:
     """
     Which debit/credit accounts are fixed or selectable for a base movement: any
@@ -96,12 +114,15 @@ def base_fields(snapshot: Snapshot, move_type: str = "", base_movement: str = ""
     base = ledger_bases.get(base_movement)
     if move_type not in by_type:
         move_type = base.move_type.value if base else default_move_type(by_type)
-    bases = by_type[move_type]
+    groups = bases_by_group(snapshot, by_type[move_type])
+    bases = [name for names in groups.values() for name in names]  # in the order shown
     if base_movement not in bases:
         base_movement = bases[0] if bases else ""
     return {
         "move_type": move_type,
         "bases": bases,
+        # By result type, but the transfers, which have none (see bases_by_group)
+        "base_groups": groups if move_type != MovementType.TRANSFER.value else None,
         "base_movement": base_movement,
         "fields": account_fields(snapshot, base_movement),
     }

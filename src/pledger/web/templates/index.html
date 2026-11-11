@@ -12,13 +12,23 @@
   <label>Account
     <select name="account">
       <option value="">All accounts</option>
-      {% for a in accounts %}<option value="{{ a }}" {% if a == account %}selected{% endif %}>{{ a }}</option>{% endfor %}
+      {# By type, like the debit and credit of the movement form (see by_group) #}
+      {% for group, names in account_groups.items() %}
+      <optgroup label="{{ group }}">
+        {% for a in names %}<option value="{{ a }}" {% if a == account %}selected{% endif %}>{{ a }}</option>{% endfor %}
+      </optgroup>
+      {% endfor %}
     </select>
   </label>
   <label>Base movement
     <select name="base">
       <option value="">All base movements</option>
-      {% for b in bases %}<option value="{{ b }}" {% if b == base %}selected{% endif %}>{{ b }}</option>{% endfor %}
+      {# By result type, then the transfers (see bases_by_group) #}
+      {% for group, names in base_groups.items() %}
+      <optgroup label="{{ group }}">
+        {% for b in names %}<option value="{{ b }}" {% if b == base %}selected{% endif %}>{{ b }}</option>{% endfor %}
+      </optgroup>
+      {% endfor %}
     </select>
   </label>
   <label title="Words that must all be in the id, date, base movement, accounts, comment or amount; &quot;quote&quot; a phrase to search it whole">Search

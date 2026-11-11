@@ -199,3 +199,26 @@ class TestAutoBaseMovements:
         assert ">Card fee<" in form and ">Food<" not in form and ">Tax<" not in form
         r = client.post("/movements", data={**MOVEMENT, "base_movement": "Food", "acc_debit": "Eq", "acc_credit": "Ca"})
         assert "are created from the Services tab" in r.text
+
+
+class TestGroupedSelects:
+    def test_filters_by_account_type_and_result_type(self, client):
+        filters = client.get("/").text.split('id="filters"')[1].split("</form>")[0]
+        accounts = filters.split('name="account"')[1].split("</select>")[0]
+        groups = [g.split('"')[0] for g in accounts.split('<optgroup label="')[1:]]
+        assert groups == ["General assets", "Foreign currency assets (USD)", "General liabilities", "Debts &amp; loans", "Equity"]
+        bases = filters.split('name="base"')[1].split("</select>")[0]
+        groups = [g.split('"')[0] for g in bases.split('<optgroup label="')[1:]]
+        assert groups == ["Operative", "Gifts", "Initial", "Transfers"]
+        operative = bases.split('<optgroup label="Operative">')[1].split("</optgroup>")[0]
+        assert operative.index(">Card fee<") < operative.index(">Food<") < operative.index(">Salary<")
+
+    def test_base_movement_field_by_result_type(self, client):
+        form = client.get("/").text.split('id="base-fields"')[1].split("</select>")[0]
+        # The losses by result type, the first one picked by default
+        assert '<optgroup label="Operative">' in form and "<option selected>Card fee</option>" in form
+        gains = client.get("/form/bases", params={"move_type": "gain"}).text.split("</select>")[0]
+        assert '<optgroup label="Operative">' in gains and '<optgroup label="Gifts">' in gains
+        # The transfers have no result type: no groups
+        transfers = client.get("/form/bases", params={"move_type": "transfer"}).text.split("</select>")[0]
+        assert "<optgroup" not in transfers and ">Move</option>" in transfers
