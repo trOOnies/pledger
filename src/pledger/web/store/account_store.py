@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -10,12 +11,14 @@ import yaml
 from pledger.enums import AccountType, MovementType
 from pledger.models import (
     AFTER,
+    CLOSING_DATES,
     INTEREST_FREQUENCY,
     INTERNAL,
     SPECIAL_SIDES,
     CreditCardAccount,
     DebtAccount,
     InvestmentAccount,
+    parse_month,
 )
 from pledger.web.store.common import (
     LedgerDataError,
@@ -120,6 +123,40 @@ class AccountStore(MovementStore):
         except LedgerDataError as e:
             _atomic_write(path, before)
             raise ValueError(f"Could not edit {name!r}: {e}") from None
+
+    def set_closing_date(self, card: str, month: str, date: str = "") -> None:
+        """
+        Set the statement closing date of a credit card for a YYYY-MM month, in its entry
+        of the credit cards YAML (see CreditCardAccount), or, without a date, remove it
+        so it is autocompleted again. Rolls back if the files no longer load.
+        """
+        snapshot = self.load()
+        account = snapshot.accounts.get(card)
+        if not isinstance(account, CreditCardAccount):
+            raise ValueError(f"Unknown credit card: {card!r}")  # noqa: TRY004 (a bad pick)
+        month = parse_month(month, "month")
+        value = None
+        if date.strip():
+            try:
+                value = dt.date.fromisoformat(date.strip())
+            except ValueError:
+                raise ValueError(f"Invalid closing date: {date!r}") from None
+
+        def update(entry: dict) -> dict:
+            dates = {str(m): d for m, d in (entry.get(CLOSING_DATES) or {}).items() if str(m) != month}
+            if value is not None:
+                dates[month] = value
+            entry = {k: v for k, v in entry.items() if k != CLOSING_DATES}
+            return {**entry, CLOSING_DATES: dict(sorted(dates.items()))} if dates else entry
+
+        path = self.settings.credit_cards_path
+        before = path.read_bytes().decode("utf-8")
+        _atomic_write(path, _replace_yaml_entry(before, (card,), update))
+        try:
+            self.load()
+        except LedgerDataError as e:
+            _atomic_write(path, before)
+            raise ValueError(str(e)) from None
 
     def correct_balance(self, name: str, balance: str | float) -> tuple[str, float] | None:
         """

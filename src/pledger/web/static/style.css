@@ -563,6 +563,18 @@ td.budget-bar .bar-track { display: block; }
 /* Tables that scroll sideways in their panel when narrower than them */
 .table-scroll { overflow-x: auto; }
 
+/* The statement closing dates of the credit cards, a month per row and a card per column: bold if set by hand, muted if autocompleted */
+#closing-dates .panel-head label { display: flex; align-items: center; gap: .5rem; }
+#closing-dates .panel-head select { width: auto; padding: .25rem .5rem; font-size: .8rem; }
+.closing-dates td.closing { padding: .25rem .2rem; }
+.closing-cell { display: flex; align-items: center; }
+.closing-dates input[type="date"] { width: 8.6rem; padding: .25rem .35rem; font-size: .8rem; font-variant-numeric: tabular-nums; }
+.closing-dates td.set input { font-weight: 600; border-color: var(--accent); }
+.closing-dates td.auto input { color: var(--muted); font-style: italic; }
+.closing-dates td.closing button.icon { font-size: .9rem; padding: 0 .2rem; }
+.closing-dates td.auto button.icon { opacity: .35; }
+.closing-dates td.auto:hover button.icon, .closing-dates td.auto button.icon:focus-visible { opacity: 1; }
+
 /* The audit form and results: the asset accounts on the left, the liability ones on the right */
 .audit-sides { display: grid; gap: 0 2rem; align-items: start; }
 .audit-side { min-width: 0; }

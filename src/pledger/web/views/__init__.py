@@ -57,6 +57,7 @@ from pledger.web.views.credit_cards import (
     build_credit_cards,
     card_payment_fields,
     charged_chart,
+    closing_dates,
     owed_charts,
 )
 from pledger.web.views.currencies import (
@@ -179,6 +180,7 @@ __all__ = [
     "build_work",
     "card_payment_fields",
     "charged_chart",
+    "closing_dates",
     "column_chart",
     "compact",
     "composition",

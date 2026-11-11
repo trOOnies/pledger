@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import calendar
 import datetime as dt
 import os
 import re
@@ -465,7 +466,8 @@ class Account:
         work history) are creditors too, with no initial debt.
 
         Credit card accounts are the ones in the credit cards YAML (if given), set
-        like the others but always liquid liabilities.
+        like the others but always liquid liabilities, with their optional statement
+        `closing_dates` (see CreditCardAccount).
 
         Any account may list `checks` (AccountCheck values) on its daily balance, and set
         the `interest_frequency` (InterestFrequency value) expected of its interest on money:
@@ -602,6 +604,8 @@ class Account:
                     "interest_frequency": interest_frequency_of(name, acc_d),
                     "internal": name in INTERNAL_ACCOUNTS,
                 }
+                if acc_cls is CreditCardAccount:
+                    fields[CLOSING_DATES] = acc_d.get(CLOSING_DATES)
                 if name in (INTERMEDIARY, *DEBT_ACCOUNTS) and not fields["currency"].is_base_currency:
                     raise ValueError(f"The internal account {name!r} must be in the base currency")
                 if name in investments_data:
@@ -670,15 +674,116 @@ def load_previous_month(path: str) -> str | None:
     return previous_month_of_yaml(_load_yaml(path))
 
 
+CLOSING_DATES = "closing_dates"  # key of a credit card in the credit cards YAML
+
+
 @dataclass
 class CreditCardAccount(Account):
-    """Liability account of a credit card: what is owed on it. Always liquid."""
+    """
+    Liability account of a credit card: what is owed on it. Always liquid. Its
+    `closing_dates` are the statement closing dates set by hand: YYYY-MM month to its
+    date, in that month or the next one, later in each month (see closing_date for the
+    other months).
+    """
+
+    closing_dates: dict[str, dt.date] = field(default_factory=dict)
 
     def __post_init__(self):
         super().__post_init__()
         if self.acc_type != AccountType.LIABILITY:
             raise ValueError(f"Credit card account {self.name!r} must be a liability account")
         self.is_liquid = True
+        self.closing_dates = check_closing_dates(self.name, self.closing_dates)
+
+    def closing_date(self, month: str) -> dt.date:
+        """
+        The statement closing date of a YYYY-MM month: the one set for it, else that of the
+        last month before it with one, as many months later (on the 1st of the month after
+        if that month hasn't that day: a 31st, then the 1st of March in February), else the
+        last day of the month.
+        """
+        if month in self.closing_dates:
+            return self.closing_dates[month]
+        earlier = [m for m in self.closing_dates if m < month]
+        if not earlier:
+            return month_last_day(month)
+        last = max(earlier)
+        return months_after(self.closing_dates[last], month_index(month) - month_index(last))
+
+    def is_closing_set(self, month: str) -> bool:
+        """Whether the closing date of a month was set by hand, not autocompleted."""
+        return month in self.closing_dates
+
+    def statement_month(self, date: dt.date) -> str:
+        """
+        The YYYY-MM month of the statement a charge on this date is billed in: the first one
+        closing on or after it (see closing_date), from the month before its own, since a
+        closing date can be in the month after its own.
+        """
+        month = add_months(date.strftime("%Y-%m"), -1)
+        while date > self.closing_date(month):
+            month = next_month(month)
+        return month
+
+
+def month_index(month: str) -> int:
+    """A YYYY-MM month as a count of months, to subtract them."""
+    return int(month[:4]) * 12 + int(month[5:]) - 1
+
+
+def add_months(month: str, months: int) -> str:
+    """The YYYY-MM month this many months after another one (before it, if negative)."""
+    year, mon = divmod(month_index(month) + months, 12)
+    return f"{year:04d}-{mon + 1:02d}"
+
+
+def month_last_day(month: str) -> dt.date:
+    """The last day of a YYYY-MM month."""
+    year, mon = int(month[:4]), int(month[5:])
+    return dt.date(year, mon, calendar.monthrange(year, mon)[1])
+
+
+def months_after(date: dt.date, months: int) -> dt.date:
+    """
+    The same day this many months later, or the 1st of the month after that one if it
+    hasn't that day (the 31st of January a month later is the 1st of March).
+    """
+    year, mon = divmod(date.month - 1 + months, 12)
+    year, mon = date.year + year, mon + 1
+    if date.day <= calendar.monthrange(year, mon)[1]:
+        return dt.date(year, mon, date.day)
+    return dt.date(year + mon // 12, mon % 12 + 1, 1)
+
+
+def check_closing_dates(name: str, values) -> dict[str, dt.date]:
+    """
+    The statement closing dates of a credit card (YYYY-MM month to date), validated and
+    sorted: each in its month or the next one, and later in each month.
+    """
+    if values is None:
+        return {}
+    if not isinstance(values, dict):
+        raise ValueError(f"Credit card {name!r} {CLOSING_DATES} must map YYYY-MM months to dates: {values!r}")  # noqa: TRY004 (a bad config value)
+    dates = {}
+    for key, value in values.items():
+        month = parse_month(key, f"month of the {CLOSING_DATES} of the credit card {name!r}")
+        if month in dates:
+            raise ValueError(f"Credit card {name!r} repeats the closing date of {month}")
+        date = _parse_date(value, f"Credit card {name!r} has an invalid closing date for {month}")
+        if date is None:
+            raise ValueError(f"Credit card {name!r} has no closing date for {month}: remove the month instead")
+        if date.strftime("%Y-%m") not in {month, next_month(month)}:
+            raise ValueError(
+                f"The closing date of {month} of the credit card {name!r} ({date}) must be in that month or the next one"
+            )
+        dates[month] = date
+    dates = dict(sorted(dates.items()))
+    for (m1, d1), (m2, d2) in pairwise(dates.items()):
+        if d2 <= d1:
+            raise ValueError(
+                f"The closing date of {m2} of the credit card {name!r} ({d2}) must be after that of {m1} ({d1})"
+            )
+    return dates
 
 
 @dataclass

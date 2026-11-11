@@ -1,0 +1,52 @@
+{# The statement closing dates of the credit cards for each month of a year (views.credit_cards.closing_dates). #}
+<section id="closing-dates" class="panel">
+  <div class="panel-head">
+    <h2>Statement closing dates <small>{{ closing_year }}</small></h2>
+    <label class="field-label">Year
+      <select name="year" class="compact" hx-get="/credit-cards/closing-dates" hx-target="#closing-dates" hx-swap="outerHTML">
+        {% for y in closing_years %}<option {% if y == closing_year %}selected{% endif %}>{{ y }}</option>{% endfor %}
+      </select>
+    </label>
+  </div>
+  {% if closing_error %}<p class="msg error">{{ closing_error }}</p>{% endif %}
+  {% if closing_success %}<p class="msg success">{{ closing_success }}</p>{% endif %}
+  <div class="table-scroll">
+    <table class="closing-dates">
+      <thead><tr><th>Month</th>{% for c in closing_cards %}<th class="nowrap" title="{{ c.description }}">{{ c.name }}</th>{% endfor %}</tr></thead>
+      <tbody>
+      {% for m in closing_months %}
+      {% set i = loop.index0 %}
+      <tr>
+        <td class="nowrap">{{ m }}</td>
+        {% for c in closing_cards %}
+        {% set d = c.months[i] %}
+        {% set vals = {"card": c.name, "month": d.month, "year": closing_year} %}
+        <td class="closing {{ 'set' if d.set else 'auto' }}">
+          <span class="closing-cell">
+            <input type="date" name="date" value="{{ d.date }}" required
+              aria-label="Closing date of {{ d.month }} of {{ c.name }}"
+              title="{{ 'Set by hand' if d.set else ('Autocompleted from the last month set' if c.any_set else 'Autocompleted: the last day of the month') }}"
+              hx-post="/credit-cards/closing-dates" hx-trigger="change" hx-vals='{{ vals | tojson }}'
+              hx-target="#closing-dates" hx-swap="outerHTML">
+            {% if d.set %}
+            <button type="button" class="icon" title="Autocomplete it again" aria-label="Unset the closing date of {{ d.month }} of {{ c.name }}"
+              hx-post="/credit-cards/closing-dates" hx-vals='{{ dict(vals, date="") | tojson }}'
+              hx-target="#closing-dates" hx-swap="outerHTML">&times;</button>
+            {% else %}
+            <button type="button" class="icon edit" title="Confirm it" aria-label="Confirm the closing date of {{ d.month }} of {{ c.name }}"
+              hx-post="/credit-cards/closing-dates" hx-vals='{{ dict(vals, date=d.date) | tojson }}'
+              hx-target="#closing-dates" hx-swap="outerHTML">&check;</button>
+            {% endif %}
+          </span>
+        </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="muted small">In bold, the closing dates set by hand (&times; to autocomplete one again); the others,
+    autocompleted (&check; to confirm one): the last one set before, as many months later (on the 1st of the month after
+    if that one hasn't its day), or the last day of the month for a card with none set before. Kept in
+    <code>{{ settings.credit_cards_path or "credit_cards.yaml" }}</code>.</p>
+</section>

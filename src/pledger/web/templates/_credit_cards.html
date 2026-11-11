@@ -1,6 +1,7 @@
 {% from "_bars.html" import bars with context %}
 {% from "_line.html" import column_chart, line_chart, ratio_panel with context %}
 {% from "_account_movements.html" import account_movements with context %}
+{% from "_id.html" import id_cell, id_header %}
 <div class="view">
   {% if negative %}
   <details class="msg warn alert" role="alert">
@@ -41,8 +42,9 @@
       }] %}
     {% endfor %}
     {{ column_chart(charged_chart, ns.points, "Charged to the credit cards per month from " ~ charged_series[0].month ~ " to " ~ charged_chart.last.month ~ ", " ~ (charged_chart.last.value | money) ~ " in the last one", series=8) }}
-    <p class="muted small">What was charged to the credit cards (their credits) in each month, without the payments
-      nor the initial amounts.</p>
+    <p class="muted small">What was charged to the credit cards (their credits) in each statement month, without the
+      payments nor the initial amounts: a charge counts in the first statement closing on or after its date (see the
+      statement closing dates below), so it may count in the month after its own. The results still count it in its own month.</p>
     <details class="chart-table">
       <summary>Show table</summary>
       <div class="table-wrap">
@@ -66,7 +68,7 @@
   </section>
 
   <section class="panel">
-    <h2>Paid per month <small>{{ ("of the charges up to " ~ month) if month else "all time" }}, installments included</small></h2>
+    <h2>Paid per month <small>{{ ("of the statements up to " ~ month) if month else "all time" }}, installments included</small></h2>
     {% if paid_chart %}
     <p class="equity-headline">
       <span class="num-lg money">{{ paid_due | money }}</span>
@@ -85,9 +87,10 @@
       }] %}
     {% endfor %}
     {{ column_chart(paid_chart, ns.points, "Paid of the charges to the credit cards per month from " ~ paid_series[0].month ~ " to " ~ paid_chart.last.month ~ ", " ~ (paid_due | money) ~ " still due", series="neutral") }}
-    <p class="muted small">What is paid of the charges to the credit cards in each month: a charge in installments is
-      split into them, one a month from its date on, and a charge in one installment is paid in its own month.
-      Striped, the installments still due (after today); solid, the ones already made.</p>
+    <p class="muted small">What is paid of the charges to the credit cards in each statement month: a charge in
+      installments is split into them, one a statement from its own on (as in Charged per month), and a charge in one
+      installment is paid in its own statement. Striped, the installments still due (their statement hasn't closed
+      yet); solid, the ones already made.</p>
     <details class="chart-table">
       <summary>Show table</summary>
       <div class="table-wrap">
@@ -187,6 +190,8 @@
   <p class="muted small">Credit cards are liquid liabilities: charging them is a credit, paying them a debit.
     Charged and paid leave out the initial amounts.</p>
 
+  {% include "_closing_dates.html" %}
+
   <form id="card-filter" class="filters" hx-get="/credit-cards" hx-target="#credit-cards-view" hx-include="#filters" hx-push-url="true" hx-trigger="change">
     <label>Credit card
       <select name="card">
@@ -195,5 +200,39 @@
       </select>
     </label>
   </form>
-  {{ account_movements(movements, "credit-card-movements", ("in " ~ month) if month else "all time", added_here="the card payments", edit="/credit-cards/payments/%d/edit", delete="/credit-cards/payments/%d/delete", form_id="card-payment-form", running=("Owed", "What we owe on its credit card right after it", "balance")) }}
+  {{ account_movements(movements, "credit-card-movements", ("in " ~ month) if month else "all time", added_here="the card payments", edit="/credit-cards/payments/%d/edit", delete="/credit-cards/payments/%d/delete", form_id="card-payment-form", running=("Owed", "What we owe on its credit card right after it", "balance"), title="Movements (includes Charges)") }}
+
+  {# The installments of the charges, by statement month (views.card_installments) #}
+  <div class="panel">
+    <h2>Installments <small>{{ installments | length }}, {{ ("of the statement of " ~ month) if month else "all time" }}{% if installments %}:
+      {{ installments_made | money }} made, {{ installments_due | money }} due{% endif %}</small></h2>
+    <div class="table-wrap">
+      <table class="movements" data-sortable="credit-card-installments">
+        <thead>
+          <tr>{{ id_header() }}<th>Statement</th><th title="The closing date of the statement">Closes</th><th title="The date of the charge">Date</th><th>Base movement</th><th>Credit card</th><th class="num" title="Its number, out of the installments of the charge">Installment</th><th class="num">Amount</th><th title="Made once its statement has closed; due until then">Status</th><th>Comment</th></tr>
+        </thead>
+        <tbody>
+          {% for p in installments %}
+          <tr>
+            {{ id_cell(p.id, ledger_link(p.id, p.date, false) if p.id) }}
+            <td class="nowrap">{{ p.statement }}</td>
+            <td class="nowrap muted">{{ p.closes }}</td>
+            <td class="nowrap">{{ p.date }}</td>
+            <td><span class="badge {{ p.type }}">{{ p.type[0] | upper }}</span> {{ p.base }}</td>
+            <td>{{ p.card }}</td>
+            <td class="num" data-sort="{{ p.number }}">{{ p.number }}/{{ p.of }}</td>
+            <td class="num money" data-sort="{{ p.amount }}">{{ p.amount | money }}</td>
+            <td>{% if p.made %}Made{% else %}<span class="hint warn">Due</span>{% endif %}</td>
+            <td class="muted money">{{ p.comment }}</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="10" class="muted">No installments.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="muted small">Each charge is split into its installments, one a statement from the first one closing on or
+      after its date (by the statement closing dates above), so the month filter picks them by statement month, not by
+      the date of their charge as the movements above. Add and edit the charges from the <a href="/">Ledger</a> tab.</p>
+  </div>
 </div>

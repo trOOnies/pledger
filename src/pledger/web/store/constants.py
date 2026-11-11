@@ -59,7 +59,7 @@ LEDGER_CSV_COLUMNS = ["move_date", "base_movement", "acc_debit", "amount", "acc_
 # Optional column of the ledger CSV, added with the first one: the number of monthly
 # installments of a charge to a credit card (crediting it), 1 if empty. The card is charged
 # the whole amount on its date all the same: the installments only spread what is paid
-# of it, one a month from its date on (see views.paid_chart).
+# of it, one a statement from that of its date on (see views.paid_chart).
 INSTALLMENTS_COLUMN = "installments"
 
 

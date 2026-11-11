@@ -181,10 +181,10 @@ class TestCreditCards:
         assert movement_ids(movements)[-1].startswith("A-")  # the ids of the Ledger tab, even filtered
         assert set(movement_ids(movements)) <= set(movement_ids(client.get("/", params={"initial": True}).text))
         # With the initial ones, but not the ones of other accounts
-        assert "<h2>Movements <small>4, all time</small></h2>" in r.text
+        assert "<h2>Movements (includes Charges) <small>4, all time</small></h2>" in r.text
         assert movements.count("<tr") == 5 and "Initial (L)" in movements and "Salary" not in movements
         r = client.get("/credit-cards", params={"month": "2026-01"}, headers=HTMX)
-        assert "<h2>Movements <small>2, in 2026-01</small></h2>" in r.text  # with the initial one
+        assert "<h2>Movements (includes Charges) <small>2, in 2026-01</small></h2>" in r.text  # with the initial one
 
     def test_net_owed_chart(self, settings, client):
         cards = build_credit_cards(LedgerStore(settings).load())
@@ -326,17 +326,17 @@ class TestInstallments:
     def test_paid_per_month(self, settings, store):
         store.add_ledger_movement("2026-01-31", "Food", "Eq", "Vi", "100", installments="3")
         data = build_credit_cards(store.load())
-        # 33.33 on 01-31 and on 02-28 (still due on 02-15), and the cents left on 03-31
+        # Without closing dates, a statement a calendar month: 33.33 in January (closed on 01-31), 33.33 in
+        # February (not closed on 02-15, like the 20 of MM), and the cents left in March
         assert [(p["month"], round(p["made"], 2), round(p["due"], 2), p["count"]) for p in data["paid_series"]] == [
             ("2025-12", 0.0, 0.0, 0),
             ("2026-01", 63.33, 0.0, 2),
-            ("2026-02", 20.0, 33.33, 2),
+            ("2026-02", 0.0, 53.33, 2),
             ("2026-03", 0.0, 33.34, 1),
         ]
-        assert data["paid_due"] == pytest.approx(66.67)
+        assert data["paid_due"] == pytest.approx(86.67)
         columns = data["paid_chart"]["columns"]
-        assert columns[1]["due_share"] == 0 and columns[3]["due_share"] == 100
-        assert columns[2]["due_share"] == pytest.approx(100 * 33.33 / 53.33, abs=0.01)
+        assert columns[1]["due_share"] == 0 and columns[2]["due_share"] == 100 and columns[3]["due_share"] == 100
         page = TestClient(create_app(settings)).get("/credit-cards", params={"month": ""}).text
         assert "Paid per month <small>all time, installments included</small>" in page
         assert '<span class="due" style="height: 100.0%"></span>' in page
@@ -345,10 +345,182 @@ class TestInstallments:
         assert [p["month"] for p in series] == ["2025-12", "2026-01", "2026-02", "2026-03"]
         assert series[2]["made"] == 0.0 and series[2]["due"] == pytest.approx(33.33)
 
-    def test_installments_reach_the_end_of_shorter_months(self):
-        from pledger.web.views.credit_cards import installments, months_later
+    def test_installments_split_the_amount(self):
+        from pledger.web.views.credit_cards import installments
 
-        assert months_later(dt.date(2026, 1, 31), 1) == dt.date(2026, 2, 28)
-        assert months_later(dt.date(2026, 11, 30), 3) == dt.date(2027, 2, 28)
         assert installments(100, 3) == [33.33, 33.33, 33.34]
         assert installments(10, 1) == [10]
+
+
+class TestClosingDates:
+    @pytest.fixture
+    def settings(self, settings, tmp_path):
+        path = tmp_path / "credit_cards.yaml"
+        path.write_text(CREDIT_CARDS_YAML, encoding="utf-8")
+        return replace(settings, credit_cards_path=path)
+
+    @pytest.fixture
+    def client(self, settings):
+        return TestClient(create_app(settings))
+
+    def card(self, settings, name="Vi") -> CreditCardAccount:
+        return LedgerStore(settings).load().accounts[name]
+
+    def test_without_any_set_they_are_the_last_day_of_each_month(self, settings):
+        vi = self.card(settings)
+        assert vi.closing_dates == {}
+        assert [vi.closing_date(m) for m in ("2026-01", "2026-02", "2028-02", "2026-04")] == [
+            dt.date(2026, 1, 31), dt.date(2026, 2, 28), dt.date(2028, 2, 29), dt.date(2026, 4, 30),
+        ]
+        assert not vi.is_closing_set("2026-01")
+
+    def test_the_others_follow_the_last_one_set(self, settings):
+        store = LedgerStore(settings)
+        store.set_closing_date("Vi", "2026-01", "2026-01-31")
+        store.set_closing_date("Vi", "2026-06", "2026-06-24")
+        vi = self.card(settings)
+        assert vi.closing_dates == {"2026-01": dt.date(2026, 1, 31), "2026-06": dt.date(2026, 6, 24)}
+        assert vi.is_closing_set("2026-01") and not vi.is_closing_set("2026-02")
+        got = {m: vi.closing_date(m) for m in ("2025-12", "2026-02", "2026-03", "2026-04", "2026-05", "2026-07", "2027-02")}
+        assert got == {
+            "2025-12": dt.date(2025, 12, 31),  # none set before: the last day
+            "2026-02": dt.date(2026, 3, 1),  # no 31st in February: the 1st of March
+            "2026-03": dt.date(2026, 3, 31),  # no drift from that 1st
+            "2026-04": dt.date(2026, 5, 1),
+            "2026-05": dt.date(2026, 5, 31),
+            "2026-07": dt.date(2026, 7, 24),
+            "2027-02": dt.date(2027, 2, 24),
+        }
+        # The other card stays on the last days
+        assert self.card(settings, "MM").closing_date("2026-02") == dt.date(2026, 2, 28)
+
+    def test_written_to_the_yaml_and_unset(self, settings):
+        store = LedgerStore(settings)
+        store.set_closing_date("Vi", "2026-03", "2026-03-27")
+        store.set_closing_date("Vi", "2026-01", "2026-01-26")
+        text = settings.credit_cards_path.read_text()
+        assert "  closing_dates:\n    2026-01: 2026-01-26\n    2026-03: 2026-03-27\nMM:" in text
+        assert "long_name: Visa (L)" in text
+        store.set_closing_date("Vi", "2026-01", "")
+        store.set_closing_date("Vi", "2026-03")
+        assert settings.credit_cards_path.read_text() == CREDIT_CARDS_YAML
+
+    @pytest.mark.parametrize(
+        ("card", "month", "date", "message"),
+        [
+            ("Ca", "2026-01", "2026-01-26", "Unknown credit card: 'Ca'"),
+            ("Vi", "2026-13", "2026-01-26", "Invalid month"),
+            ("Vi", "2026-01", "26/01/2026", "Invalid closing date"),
+            ("Vi", "2026-01", "2026-03-01", "must be in that month or the next one"),
+            ("Vi", "2026-02", "2026-01-31", "must be in that month or the next one"),
+            ("Vi", "2026-04", "2026-04-01", "must be after that of 2026-03"),
+        ],
+    )
+    def test_invalid(self, settings, card, month, date, message):
+        store = LedgerStore(settings)
+        store.set_closing_date("Vi", "2026-03", "2026-04-01")
+        before = settings.credit_cards_path.read_text()
+        with pytest.raises(ValueError, match=message):
+            store.set_closing_date(card, month, date)
+        assert settings.credit_cards_path.read_text() == before
+
+    def test_invalid_in_the_yaml(self, settings):
+        settings.credit_cards_path.write_text(
+            CREDIT_CARDS_YAML.replace("MM:\n", "  closing_dates: [2026-01-26]\nMM:\n"), encoding="utf-8"
+        )
+        with pytest.raises(LedgerDataError, match="closing_dates must map YYYY-MM months to dates"):
+            LedgerStore(settings).load()
+
+    def test_in_the_tab(self, settings, client):
+        LedgerStore(settings).set_closing_date("Vi", "2026-01", "2026-01-31")
+        r = client.get("/credit-cards", params={"month": "2026-01"})
+        assert r.status_code == 200
+        section = r.text[r.text.index('id="closing-dates"'):]
+        assert "Statement closing dates <small>2026</small>" in section
+        # A column per card, a row per month
+        assert re.search(r"<thead><tr><th>Month</th><th[^>]*>Vi</th><th[^>]*>MM</th></tr></thead>", section)
+        assert section[:section.index("</section>")].count("<td class=\"nowrap\">2026-") == 12
+        assert section.count('type="date"') == 24
+        assert 'class="closing set"' in section and 'value="2026-01-31"' in section
+        assert 'value="2026-03-01"' in section and 'value="2026-03-31"' in section  # Vi, February and March
+        assert 'value="2026-02-28"' in section  # MM, February
+
+    def test_set_from_the_tab(self, settings, client):
+        r = client.post("/credit-cards/closing-dates", data={"card": "MM", "month": "2025-11", "date": "2025-11-20", "year": "2025"}, headers=HTMX)
+        assert r.status_code == 200 and "Set the closing date of 2025-11 of MM: 2025-11-20" in r.text
+        assert "Statement closing dates <small>2025</small>" in r.text and 'value="2025-12-20"' in r.text
+        assert self.card(settings, "MM").closing_dates == {"2025-11": dt.date(2025, 11, 20)}
+        r = client.post("/credit-cards/closing-dates", data={"card": "MM", "month": "2025-12", "date": "2025-11-30"}, headers=HTMX)
+        assert 'class="msg error"' in r.text and "must be in that month or the next one" in r.text
+        r = client.post("/credit-cards/closing-dates", data={"card": "MM", "month": "2025-11", "date": ""}, headers=HTMX)
+        assert "autocompleted again" in r.text and self.card(settings, "MM").closing_dates == {}
+
+    def test_pick_a_year(self, client):
+        r = client.get("/credit-cards/closing-dates", params={"year": "1990"}, headers=HTMX)
+        this_year = dt.date.today().year
+        assert f"Statement closing dates <small>{this_year}</small>" in r.text
+        assert f">{this_year + 1}</option>" in r.text
+
+    def test_statement_month(self, settings):
+        store = LedgerStore(settings)
+        mm = self.card(settings, "MM")
+        assert mm.statement_month(dt.date(2026, 1, 1)) == "2026-01"  # without any set, the calendar month
+        assert mm.statement_month(dt.date(2026, 1, 31)) == "2026-01"
+        store.set_closing_date("Vi", "2026-01", "2026-01-25")
+        store.set_closing_date("Vi", "2026-02", "2026-03-01")
+        vi = self.card(settings)
+        assert vi.statement_month(dt.date(2026, 1, 25)) == "2026-01"  # on the closing day
+        assert vi.statement_month(dt.date(2026, 1, 26)) == "2026-02"  # after it
+        assert vi.statement_month(dt.date(2026, 3, 1)) == "2026-02"  # February closes on 03-01
+        assert vi.statement_month(dt.date(2026, 3, 2)) == "2026-03"  # March: on 04-01
+        assert vi.statement_month(dt.date(2025, 12, 31)) == "2025-12"
+
+    def test_the_charts_follow_the_statements(self, settings, monkeypatch):
+        monkeypatch.setattr("pledger.web.store.common.today", lambda: dt.date(2026, 3, 1))
+        store = LedgerStore(settings)
+        store.set_closing_date("Vi", "2026-01", "2026-01-25")
+        store.add_ledger_movement("2026-01-28", "Food", "Eq", "Vi", "90", installments="3")
+        data = build_credit_cards(store.load())
+        charged = {p["month"]: p["value"] for p in data["charged_series"]}
+        assert charged["2026-01"] == 0.0 and charged["2026-02"] == 90.0
+        # One a statement from February on; February's closes on 02-25, March's on 03-25
+        paid = {p["month"]: (p["made"], p["due"]) for p in data["paid_series"]}
+        assert paid["2026-02"] == (30.0, 0.0) and paid["2026-03"] == (0.0, 30.0) and paid["2026-04"] == (0.0, 30.0)
+        assert data["paid_due"] == pytest.approx(60)
+        # The month filter takes the statements up to it
+        assert build_credit_cards(store.load(), month="2026-01")["charged_series"][-1] == {
+            "month": "2026-01", "value": 0.0, "count": 0
+        }
+        assert build_credit_cards(store.load(), month="2026-01")["paid_due"] == 0.0
+        # Everything else counts it in its own month
+        assert build_credit_cards(store.load(), month="2026-01")["charged"] == 90.0
+
+    def test_installments_table(self, settings, monkeypatch):
+        monkeypatch.setattr("pledger.web.store.common.today", lambda: dt.date(2026, 3, 1))
+        store = LedgerStore(settings)
+        store.set_closing_date("Vi", "2026-01", "2026-01-25")
+        store.add_ledger_movement("2026-01-28", "Food", "Eq", "Vi", "90", "Dinner", installments="3")
+        store.add_ledger_movement("2026-01-10", "Food", "Eq", "MM", "40")
+        data = build_credit_cards(store.load())
+        got = [(p["card"], p["statement"], p["closes"], p["number"], p["of"], p["amount"], p["made"]) for p in data["installments"]]
+        assert got == [
+            ("Vi", "2026-04", "2026-04-25", 3, 3, 30.0, False),
+            ("Vi", "2026-03", "2026-03-25", 2, 3, 30.0, False),
+            ("Vi", "2026-02", "2026-02-25", 1, 3, 30.0, True),
+            ("MM", "2026-01", "2026-01-31", 1, 1, 40.0, True),
+        ]
+        assert data["installments"][0]["comment"] == "Dinner" and data["installments"][0]["date"] == "2026-01-28"
+        assert data["installments_made"] == 70.0 and data["installments_due"] == 60.0
+        # By statement month, while the movements go by their date
+        january = build_credit_cards(store.load(), month="2026-01")
+        assert [p["card"] for p in january["installments"]] == ["MM"]
+        assert {m["credit"] for m in january["movements"] if m["base"] == "Food"} == {"Vi", "MM"}
+        february = build_credit_cards(store.load(), month="2026-02", card="Vi")
+        assert [(p["card"], p["number"]) for p in february["installments"]] == [("Vi", 1)]
+        assert build_credit_cards(store.load(), month="2026-02", card="MM")["installments"] == []
+        # In the tab
+        r = TestClient(create_app(settings)).get("/credit-cards", params={"month": "2026-03", "card": "Vi"}, headers=HTMX)
+        assert "<h2>Movements (includes Charges) <small>" in r.text
+        table = r.text.split("<h2>Installments <small>")[1].split("</table>")[0]
+        assert table.startswith("1, of the statement of 2026-03:")
+        assert "2/3" in table and "Due" in table and "2026-03-25" in table

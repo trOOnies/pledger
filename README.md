@@ -79,7 +79,7 @@ A FastAPI + HTMX UI, one tab per area:
 | 📈 **Investments** | The investments of the investment accounts with their price (amount over quantity), their composition by type or by account, the results of each one, the interest on money of regular accounts, and charts of the total invested and the total result. The broker fees of each investment are shown over its amount. The **Investment account**, **Investment** and **Base movement** filters narrow the movements down (an investment shows all its movements, whatever their accounts), each with the total of its account and the amount and quantity of its investment after it. The internal `Invest` movements are added, edited and deleted here, and so are new prices of the investments, from which their capital gains and losses are generated. |
 | 🤝 **Debt** | Who we owe and who owes us in the debt accounts `De` (debts) and `Lo` (loans) (people, services and companies), with alerts and the movements of the month, each with what we owe whoever it names after it. The debt and loan movements are added and edited here. |
 | 🧾 **Services** | The services of the debt accounts with their base movements and monthly values, what was owed to them this month and in all, and what we owe them now, with the table of monthly values and the movements owed to each one. The monthly values are set here. |
-| 💳 **Credit Cards** | What we owe on each card (also in its currency, for a card in another one), what was charged and paid in the month, a chart of the monthly charges, the net owed over equity, and the movements of the month, each with what we owe on its card after it. The card payments are added and edited here. |
+| 💳 **Credit Cards** | What we owe on each card (also in its currency, for a card in another one), what was charged and paid in the month, a chart of the monthly charges, the net owed over equity, and the movements of the month (charges included), each with what we owe on its card after it, and the installments of the statement of the month, made or still due. The card payments are added and edited here, and so are the statement closing dates of each card for each month. |
 | 🎯 **Budget** | Monthly budgets by loss base movement against what was spent, and saving goals tracking the balance of an account. See [Budget](#budget). |
 | ✈️ **Trip** | The planned expenses of a trip, in any currency, against what was spent on it in the ledger. See [Trip](#trip). |
 | 🔍 **Audit** | Fill in the balances you checked by hand, without seeing pledger's, then compare them with the actual ones and, if you want, add a correction for each difference. |
@@ -714,6 +714,31 @@ liabilities, and can't be investment or internal accounts.
 Vi:
   description: Visa Credit Card from Santander
   initial_amount: 57236.80
+```
+
+**Statement closing dates.** A card may list the `closing_dates` of its statements, a
+YYYY-MM month to its date, in that month or the next one, each later than the one before. The
+Credit Cards tab shows them in a table of the months of a year (rows) by card (columns), and sets (or unsets) them there. A month
+without one is autocompleted: it is the last one set before it, as many months later (or the 1st
+of the month after, if that month hasn't its day: after a 31st of January, the 1st of March in
+February, then the 31st of March), or the last day of the month for a card without any set
+before it.
+
+The *Charged per month* and *Paid per month* charts of the tab follow them: a charge counts in
+the first statement closing on or after its date (so a charge after the closing date counts in
+the next month), and its installments one a statement from that one on, each still due until its
+statement closes. Everything else, the results included, counts the charge in the month of its
+date, like any other movement. So does the *Movements (includes Charges)* table, while the
+*Installments* table below it lists the installments of the statement of the picked month (both
+by the *Credit card* filter too).
+
+```yaml
+Vi:
+  description: Visa Credit Card from Santander
+  initial_amount: 57236.80
+  closing_dates:
+    2026-01: 2026-01-29
+    2026-06: 2026-06-25
 ```
 
 A card in another `currency` is followed in that currency, like the other accounts in other

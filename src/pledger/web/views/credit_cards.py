@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import calendar
 import datetime as dt
 
 from pledger.models import (
     CREDIT_CARD,
     CreditCardAccount,
+    add_months,
     is_foreign,
     next_month,
     rounds_to_zero,
@@ -26,6 +26,7 @@ from pledger.web.views.common import (
     month_end,
     month_end_balances,
     months_of,
+    movement_rows,
     own_balance,
     percent,
     ratio_series,
@@ -41,7 +42,8 @@ def build_credit_cards(snapshot: Snapshot, month: str = "", card: str = "") -> d
     cards with a negative balance (we are owed): rare, so possibly an error. Charts
     the net owed on them at each month end, nominal, real and over equity, and what
     was charged to them in each month, up to `month`. A card in another currency also
-    has its balance in that currency, in `own` (None for the others).
+    has its balance in that currency, in `own` (None for the others). With the statement
+    closing dates of each card in the year of `month` (of today for all time).
     """
     cards = [a for a in snapshot.accounts.values() if isinstance(a, CreditCardAccount)]
     if card not in {a.name for a in cards}:
@@ -82,37 +84,126 @@ def build_credit_cards(snapshot: Snapshot, month: str = "", card: str = "") -> d
             editable=snapshot.card_payment_base_movements(),
         ),
         "card": card,
+        **card_installments(snapshot, [card] if card else [a.name for a in cards], month),
         **owed_charts(snapshot, [a.name for a in cards], month),
         **charged_chart(snapshot, [a.name for a in cards], month),
         **paid_chart(snapshot, [a.name for a in cards], month),
+        **closing_dates(snapshot, month[:4]),
+    }
+
+
+def closing_dates(snapshot: Snapshot, year: int | str | None = None) -> dict:
+    """
+    The statement closing dates of each credit card for each month of a year (of today
+    by default): the ones set by hand, and the others autocompleted from them (see
+    CreditCardAccount.closing_date). The years to pick from go from the first one of the
+    ledger or of a closing date to the year after today.
+    """
+    cards = [a for a in snapshot.accounts.values() if isinstance(a, CreditCardAccount)]
+    today = snapshot.today
+    first = [int(d[:4]) for d in snapshot.all_rows.move_date[:1]]
+    set_years = [int(m[:4]) for a in cards for m in a.closing_dates]
+    years = list(range(min([today.year, *first, *set_years]), max([today.year + 1, *set_years]) + 1))
+    try:
+        year = int(year) if year else today.year
+    except ValueError:
+        year = today.year
+    if year not in years:
+        year = today.year
+    months = [f"{year}-{m:02d}" for m in range(1, 13)]
+    return {
+        "closing_year": year,
+        "closing_years": years,
+        "closing_months": months,
+        "closing_cards": [
+            {
+                "name": a.name,
+                "description": a.description,
+                "any_set": bool(a.closing_dates),
+                "months": [
+                    {"month": m, "date": a.closing_date(m).isoformat(), "set": a.is_closing_set(m)}
+                    for m in months
+                ],
+            }
+            for a in cards
+        ],
+    }
+
+
+def card_charges(snapshot: Snapshot, cards: list[str]):
+    """The rows of the charges to these credit cards: their credits, leaving out the initial movements."""
+    rows = snapshot.all_rows
+    return rows[rows.acc_credit.isin(cards) & ~rows.base_movement.isin(snapshot.initial_base_names)]
+
+
+def charge_statements(snapshot: Snapshot, cards: list[str]) -> list[tuple[int, str, CreditCardAccount, float, int]]:
+    """
+    The charges to the credit cards (see card_charges): the index of the row of each, the
+    statement month it is billed in (see CreditCardAccount.statement_month), its card, its
+    amount and its number of installments.
+    """
+    charges = card_charges(snapshot, cards)
+    found = []
+    for (ix, row), move in zip(charges.iterrows(), snapshot.ledger(charges).movements):
+        card = move.acc_credit
+        date = dt.date.fromisoformat(str(move.move_date)[:10])
+        found.append((int(ix), card.statement_month(date), card, move.amount, installments_of(snapshot, row)))
+    return found
+
+
+def card_installments(snapshot: Snapshot, cards: list[str], month: str = "") -> dict:
+    """
+    The installments of the charges to these credit cards (see paid_chart), of the statement
+    `month` (all of them by default), newest statement first: each with its charge (its ID,
+    date, base movement and comment), its card, statement month and closing date, its number
+    out of how many, its amount and whether it is made (its statement closed before today)
+    or still due. With their totals made and due.
+    """
+    charges = card_charges(snapshot, cards)
+    moves = {m["index"]: m for m in movement_rows(snapshot, charges, snapshot.ledger(charges))}
+    today = snapshot.today
+    found = []
+    for ix, statement, card, amount, n in charge_statements(snapshot, cards):
+        move = moves[ix]
+        for i, value in enumerate(installments(amount, n)):
+            when = add_months(statement, i)
+            if month and when != month:
+                continue
+            closes = card.closing_date(when)
+            found.append({
+                "id": move["id"], "date": move["date"], "base": move["base"], "type": move["type"],
+                "comment": move["comment"], "card": card.name, "statement": when,
+                "closes": closes.isoformat(), "number": i + 1, "of": n, "amount": value,
+                "made": closes < today,
+            })
+    found.sort(key=lambda p: (p["statement"], str(p["date"]), p["number"]), reverse=True)
+    return {
+        "installments": found,
+        "installments_made": sum(p["amount"] for p in found if p["made"]),
+        "installments_due": sum(p["amount"] for p in found if not p["made"]),
     }
 
 
 def charged_chart(snapshot: Snapshot, cards: list[str], month: str = "") -> dict:
     """
-    What was charged to the credit cards (their credits, leaving out the initial
-    movements and the payments) in each month, from the first month of the ledger
-    to the last one (or to `month`).
+    What was charged to the credit cards (see charge_statements) in each statement month,
+    by the closing dates of the cards, from the first month of the ledger to the last one
+    (or to `month`), or to the last statement month with a charge.
     """
     rows = snapshot.all_rows
     if not len(rows):
         return {"charged_chart": None, "charged_series": []}
-    charges = rows[rows.acc_credit.isin(cards) & ~rows.base_movement.isin(snapshot.initial_base_names)]
-    totals: dict[str, list[float]] = {}  # month to its charges
-    for move in snapshot.ledger(charges).movements:
-        totals.setdefault(str(move.move_date)[:7], []).append(move.amount)
-    series, cur, last = [], min(rows.move_date)[:7], month or max(rows.move_date)[:7]
+    totals: dict[str, list[float]] = {}  # statement month to its charges
+    for _ix, statement, _card, amount, _n in charge_statements(snapshot, cards):
+        if not month or statement <= month:
+            totals.setdefault(statement, []).append(amount)
+    first = min([min(rows.move_date)[:7], *totals])
+    last = month or max([max(rows.move_date)[:7], *totals])
+    series, cur = [], first
     while cur <= last:
         series.append({"month": cur, "value": sum(totals.get(cur, [])), "count": len(totals.get(cur, []))})
         cur = next_month(cur)
     return {"charged_chart": column_chart(series), "charged_series": series}
-
-
-def months_later(date: dt.date, months: int) -> dt.date:
-    """The same day this many months later, or the last day of that month if it has fewer days."""
-    year, month = divmod(date.month - 1 + months, 12)
-    year, month = date.year + year, month + 1
-    return date.replace(year=year, month=month, day=min(date.day, calendar.monthrange(year, month)[1]))
 
 
 def installments(amount: float, n: int) -> list[float]:
@@ -123,29 +214,29 @@ def installments(amount: float, n: int) -> list[float]:
 
 def paid_chart(snapshot: Snapshot, cards: list[str], month: str = "") -> dict:
     """
-    What is paid of the charges to the credit cards (as in charged_chart) in each month:
-    each charge split into its installments (see INSTALLMENTS_COLUMN), one a month from
-    its date on, so a charge in one installment is paid in its own month. An installment is
-    made once its date has come (by today), else it is still due. With `month`, only of the
-    charges up to it. From the first month of the ledger to the last one with an installment.
+    What is paid of the charges to the credit cards (see charge_statements) in each statement
+    month: each charge split into its installments (see INSTALLMENTS_COLUMN), one a statement
+    from its own on, so a charge in one installment is paid in its own statement. An
+    installment is made once its statement has closed (before today), else it is still due.
+    With `month`, only of the charges of the statements up to it. From the first month of the
+    ledger to the last one with an installment.
     """
     rows = snapshot.all_rows
     if not len(rows):
         return {"paid_chart": None, "paid_series": [], "paid_due": 0.0}
-    charges = rows[rows.acc_credit.isin(cards) & ~rows.base_movement.isin(snapshot.initial_base_names)]
-    if month:
-        charges = charges[charges.move_date.str[:7] <= month]
     today = snapshot.today
-    totals: dict[str, dict] = {}  # month to its installments made and due
-    for (_, row), move in zip(charges.iterrows(), snapshot.ledger(charges).movements):
-        date = dt.date.fromisoformat(str(move.move_date)[:10])
-        for i, value in enumerate(installments(move.amount, installments_of(snapshot, row))):
-            when = months_later(date, i)
-            total = totals.setdefault(when.strftime("%Y-%m"), {"made": 0.0, "due": 0.0, "count": 0})
-            total["made" if when <= today else "due"] += value
+    totals: dict[str, dict] = {}  # statement month to its installments made and due
+    for _ix, statement, card, amount, n in charge_statements(snapshot, cards):
+        if month and statement > month:
+            continue
+        for i, value in enumerate(installments(amount, n)):
+            when = add_months(statement, i)
+            total = totals.setdefault(when, {"made": 0.0, "due": 0.0, "count": 0})
+            total["made" if card.closing_date(when) < today else "due"] += value
             total["count"] += 1
+    first = min([min(rows.move_date)[:7], *totals])
     last = max([month or max(rows.move_date)[:7], *totals])
-    series, cur = [], min(rows.move_date)[:7]
+    series, cur = [], first
     while cur <= last:
         total = totals.get(cur, {"made": 0.0, "due": 0.0, "count": 0})
         series.append({"month": cur, "value": total["made"] + total["due"], **total})

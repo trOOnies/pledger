@@ -49,6 +49,7 @@ from pledger.web.views import (
     build_conversions,
     build_invest_movements,
     build_work,
+    closing_dates,
     conversion_fields,
     conversion_filter,
     debt_difference,
@@ -581,6 +582,37 @@ def create_card_payment(
     )
     response.headers["HX-Trigger"] = "credit-cards-changed"
     return response
+
+
+def render_closing_dates(request: Request, store: LedgerStore, year: str = "", **extra):
+    """The statement closing dates of the credit cards in a year (see views.closing_dates)."""
+    context = {**closing_dates(store.load(), year), "settings": store.settings, **extra}
+    return templates.TemplateResponse(request, "_closing_dates.html", context)
+
+
+@router.get("/credit-cards/closing-dates")
+def get_closing_dates(request: Request, store: StoreDep, year: str = ""):
+    return render_closing_dates(request, store, year)
+
+
+@router.post("/credit-cards/closing-dates")
+def set_closing_date(
+    request: Request,
+    store: StoreDep,
+    card: Annotated[str, Form()],
+    month: Annotated[str, Form()],
+    date: Annotated[str, Form()] = "",
+    year: Annotated[str, Form()] = "",
+):
+    """Set the closing date of a credit card for a month, or, without a date, autocomplete it again."""
+    try:
+        store.set_closing_date(card, month, date)
+    except ValueError as e:
+        return render_closing_dates(request, store, year, closing_error=str(e))
+    success = f"Set the closing date of {month} of {card}: {date}" if date.strip() else (
+        f"The closing date of {month} of {card} is autocompleted again"
+    )
+    return render_closing_dates(request, store, year, closing_success=success)
 
 
 def card_amount_text(store: LedgerStore, acc_debit: str, acc_credit: str, amount: str) -> str:

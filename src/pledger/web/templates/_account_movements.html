@@ -3,12 +3,12 @@
    `delete` URLs (with the row index as %d), the editable ones (the movements added in the tab)
    get their ✎ button, filling the form `form_id`, and their × one (the deletable ones only the latter). With `running`, a (header, tooltip,
    key) triple, a column shows that key of each movement: a running total, green if negative (owed to
-   us), "-" if None. #}
+   us), "-" if None. The panel is titled `title` (Movements by default). #}
 {% from "_id.html" import id_cell, id_header %}
 {% from "_edit.html" import edit_button %}
-{% macro account_movements(movements, key, period, who=False, account=False, added_here=False, edit=none, delete=none, form_id="", running=none) %}
+{% macro account_movements(movements, key, period, who=False, account=False, added_here=False, edit=none, delete=none, form_id="", running=none, title="Movements") %}
 <div class="panel">
-  <h2>Movements <small>{{ movements | length }}, {{ period }}</small></h2>
+  <h2>{{ title }} <small>{{ movements | length }}, {{ period }}</small></h2>
   <div class="table-wrap">
     <table class="movements" data-sortable="{{ key }}">
       <thead>
