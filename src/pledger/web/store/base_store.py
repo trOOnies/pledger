@@ -53,6 +53,7 @@ from pledger.web.store.conversions import linked_ids
 from pledger.web.store.investments import _check_invest, initial_prices
 from pledger.web.store.movements import (
     _check_initial_base_movements,
+    _check_not_cart,
     _check_tab,
     installments_of,
 )
@@ -286,16 +287,21 @@ class StoreBase:
         """
         csv_file = self._read_file(len(getattr(snapshot, field)), self._csv_of(field)[1])
         line = csv_file.row_lines[index]
-        header = next(csv.reader([csv_file.lines[0]], delimiter=";"))
-        fields = next(csv.reader([csv_file.lines[line]], delimiter=";"))
+        csv_file.lines[line] = self._replaced_line(csv_file.lines[0], csv_file.lines[line], new_row)
+        self._write_file(csv_file)
+
+    @staticmethod
+    def _replaced_line(header_line: str, line: str, new_row: dict) -> str:
+        """A line of a CSV with the values of `new_row` in their columns of its header, but the id."""
+        header = next(csv.reader([header_line], delimiter=";"))
+        fields = next(csv.reader([line], delimiter=";"))
         fields += [""] * (len(header) - len(fields))
         for col, value in new_row.items():
             if col in header and col != ID_COLUMN:
                 fields[header.index(col)] = value
         buf = io.StringIO()
         csv.writer(buf, delimiter=";", lineterminator="").writerow(fields)
-        csv_file.lines[line] = buf.getvalue()
-        self._write_file(csv_file)
+        return buf.getvalue()
 
     def _delete_row(
         self, field: str, index: int, fingerprint: str | None, debt: bool = False, card_payment: bool = False,
@@ -310,6 +316,7 @@ class StoreBase:
         path = self._csv_of(field)[1]
         self.current_row(snapshot, field, index, fingerprint)
         if field == "rows":
+            _check_not_cart(rows.iloc[index], "deleted")
             _check_invest(snapshot, rows.iloc[index]["base_movement"], False, "deleted")
             _check_tab(
                 snapshot, rows.iloc[index]["base_movement"], False, debt, card_payment, "deleted", correction, difference,

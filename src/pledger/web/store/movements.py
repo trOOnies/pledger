@@ -26,6 +26,7 @@ from pledger.web.store.common import (
     own_initial_amount,
 )
 from pledger.web.store.constants import (
+    CART_COLUMN,
     ID_COLUMN,
     INITIAL_GAIN,
     INITIAL_ID,
@@ -75,6 +76,20 @@ def installments_of(snapshot: Snapshot, row) -> int:
     if n > 1 and not isinstance(snapshot.accounts.get(row["acc_credit"]), CreditCardAccount):
         raise ValueError(f"Only a movement crediting a credit card can be in installments ({row['move_date']})")
     return n
+
+
+def cart_of(row) -> str | None:
+    """The id of the cart a row of the ledger CSV is a product of (see CART_COLUMN), None if of no cart."""
+    value = row.get(CART_COLUMN, "")
+    text = "" if value is None or (isinstance(value, float) and math.isnan(value)) else str(value).strip()
+    return text.split("/")[0].strip() or None if text else None
+
+
+def _check_not_cart(row, action: str) -> None:
+    """The movements of a cart are only edited and deleted from the Cart tab (see CartStore)."""
+    cart = cart_of(row)
+    if cart is not None:
+        raise ValueError(f"The movement is a product of the cart {cart}: it is {action} from the Cart tab")
 
 
 def _debt_comment(snapshot: Snapshot, acc_debit: str, acc_credit: str, who: str, comment: str) -> str:

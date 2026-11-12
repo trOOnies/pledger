@@ -1,0 +1,185 @@
+{# The Cart tab: the form of a cart, with its bags and products, and the carts (views.cart). #}
+{% from "_id.html" import id_cell, id_header %}
+{% macro base_select(name, picked) %}
+<select name="{{ name }}" required data-cart-base>
+  <option value="">Choose…</option>
+  {% for group, names in base_groups.items() %}
+  <optgroup label="{{ group }}">
+    {% for b in names %}<option {% if b == picked %}selected{% endif %}>{{ b }}</option>{% endfor %}
+  </optgroup>
+  {% endfor %}
+</select>
+{% endmacro %}
+{% macro product_row(n, p) %}
+<div class="cart-product" data-product>
+  <input type="hidden" name="bags-{{ n }}-id" value="{{ p.id }}">
+  <input name="bags-{{ n }}-name" value="{{ p.name }}" placeholder="Product (optional)" autocomplete="off" aria-label="Product">
+  <span class="money-input">
+    <span class="prefix">{{ currency }}</span>
+    <input name="bags-{{ n }}-amount" inputmode="decimal" min="0" value="{{ p.amount }}" placeholder="0.00" autocomplete="off" aria-label="Amount" data-money>
+  </span>
+  <button type="button" class="icon" title="Remove product" aria-label="Remove this product" data-remove-product>&times;</button>
+</div>
+{% endmacro %}
+{% macro bag_fieldset(n, bag) %}
+<fieldset class="stack cart-bag" data-bag>
+  <legend>Bag <span data-bag-number>{{ n }}</span> · <span class="money" data-bag-total></span></legend>
+  <div class="pair">
+    <label>Base movement {{ base_select("bags-%s-base_movement" % n, bag.base_movement) }}</label>
+    {# Shown (and sent) only while the account is a credit card: see cart.html #}
+    <label data-cart-installments>
+      <span>Installments <em class="optional">(1 by default)</em></span>
+      <input name="bags-{{ n }}-installments" inputmode="numeric" pattern="[0-9]*" value="{{ bag.installments }}" placeholder="1" autocomplete="off"
+        title="The number of monthly installments of each product of the bag, from 1 to {{ max_installments }}">
+    </label>
+  </div>
+  <div class="stack cart-products" data-products>
+    {% for p in bag.products %}{{ product_row(n, p) }}{% endfor %}
+  </div>
+  <div class="cart-bag-actions">
+    <button type="button" class="secondary" data-add-product>+ Product</button>
+    <button type="button" class="secondary" data-remove-bag>Remove bag</button>
+  </div>
+</fieldset>
+{% endmacro %}
+<div class="layout cart">
+  <aside>
+    <section class="panel">
+      <form id="cart-form" class="stack" hx-post="/cart/carts" hx-target="#cart"
+        data-cart-form data-credit-cards='{{ credit_cards | tojson }}' data-account-bases='{{ account_bases | tojson }}'>
+        {% if form.id %}
+        <div class="form-head">
+          <h2>Edit cart <small>{{ form.id }}</small></h2>
+          <button type="button" class="secondary" hx-get="/cart" hx-vals='{{ {"cart": form.id, "month": month} | tojson }}' hx-target="#cart">Cancel</button>
+        </div>
+        {% else %}
+        <h2>New cart</h2>
+        {% endif %}
+        {% if cart_error %}<p class="msg error">{{ cart_error }}</p>{% endif %}
+        {% if cart_success %}<p class="msg success">{{ cart_success }}</p>{% endif %}
+        <input type="hidden" name="cart_id" value="{{ form.id }}">
+        <input type="hidden" name="month" value="{{ month }}">
+        <div class="pair">
+          <label>Date
+            <input type="date" name="date" value="{{ form.date }}" required data-future-warning>
+            <span class="hint warn" hidden>⚠️ This date is in the future.</span>
+          </label>
+          <label>Store
+            <input name="store" value="{{ form.store }}" required autocomplete="off" list="cart-stores">
+          </label>
+        </div>
+        <datalist id="cart-stores">{% for s in stores %}<option value="{{ s }}">{% endfor %}</datalist>
+        <label>Paid from
+          <select name="account" required data-cart-account>
+            <option value="">Choose…</option>
+            {% for group, names in account_groups.items() %}
+            <optgroup label="{{ group }}">
+              {% for acc in names %}<option {% if acc == form.account %}selected{% endif %}>{{ acc }}</option>{% endfor %}
+            </optgroup>
+            {% endfor %}
+          </select>
+        </label>
+        <div class="stack" data-bags>
+          {% for bag in form.bags %}{{ bag_fieldset(loop.index, bag) }}{% endfor %}
+        </div>
+        <button type="button" class="secondary" data-add-bag>+ Bag</button>
+        <p class="cart-total"><span class="muted">Total</span> <strong class="money" data-cart-total></strong></p>
+        <p class="muted small">Each product is a movement of its bag's base movement, its comment naming the store, then the product. Empty products and bags are left out.</p>
+        <button type="submit">{{ "Save changes" if form.id else "Add cart" }}</button>
+        <template data-bag-template>{{ bag_fieldset("__n__", {"base_movement": "", "installments": "", "products": [{"id": "", "name": "", "amount": ""}]}) }}</template>
+        <template data-product-template>{{ product_row("__n__", {"id": "", "name": "", "amount": ""}) }}</template>
+      </form>
+    </section>
+  </aside>
+  <div class="view">
+    {% for w in warnings %}<p class="msg warn small">{{ w }}</p>{% endfor %}
+    {% if missing %}<p class="msg warn small">The ledger has movements of the carts {{ missing | join(", ") }}, which aren't in the carts CSV: they can't be edited here, nor in the Ledger tab, until their <code>cart</code> cell is emptied.</p>{% endif %}
+    {% if all_count %}
+    <div class="filters">
+      <label>Month
+        <select name="month" hx-get="/cart" hx-target="#cart" hx-trigger="change" hx-push-url="true">
+          <option value="">All</option>
+          {% for m in months %}<option {% if m == month %}selected{% endif %}>{{ m }}</option>{% endfor %}
+        </select>
+      </label>
+    </div>
+    {% endif %}
+    {% if cart %}
+    <section class="panel">
+      <div class="form-head">
+        <h2>Cart {{ cart.id }} <small>{{ cart.store }}, {{ cart.date }}, paid from {{ cart.account }}</small></h2>
+        <span class="nowrap">
+          <button class="icon edit" title="Edit" aria-label="Edit the cart {{ cart.id }}"
+            hx-get="/cart/{{ cart.id }}/edit" hx-vals='{{ {"month": month} | tojson }}' hx-target="#cart">&#9998;</button>
+          <button class="icon" title="Delete" aria-label="Delete the cart {{ cart.id }}"
+            hx-post="/cart/{{ cart.id }}/delete" hx-vals='{{ {"month": month} | tojson }}' hx-target="#cart"
+            hx-confirm="Delete the cart {{ cart.id }} at {{ cart.store }} and its {{ cart.products }} movement{{ 's' if cart.products != 1 }} ({{ cart.total | money }})?"
+            data-confirm-money="{{ cart.total | money }}">&times;</button>
+        </span>
+      </div>
+      <div class="table-wrap">
+        <table data-sortable="cart-products">
+          <thead><tr>{{ id_header() }}<th>Bag</th><th>Base movement</th><th>Product</th><th class="num">Installments</th><th class="num">Amount</th></tr></thead>
+          <tbody>
+          {% for b in cart.bags %}
+          {% for p in b.products %}
+          <tr{% if p.id %} id="{{ row_anchor('movement', p.id) }}"{% endif %}>
+            {{ id_cell(p.id, ledger_link(p.id, cart.date) if p.id) }}
+            <td data-sort="{{ b.number }}">{{ b.number }}</td>
+            <td class="base"><span class="badge loss">L</span> {{ b.base }}</td>
+            <td class="muted money">{{ p.name }}</td>
+            <td class="num">{{ b.installments if b.installments > 1 else "" }}</td>
+            <td class="num money" data-sort="{{ p.amount }}">{{ p.amount | money }}</td>
+          </tr>
+          {% endfor %}
+          {% else %}
+          <tr><td colspan="6" class="muted">No movements: they were deleted from the ledger CSV.</td></tr>
+          {% endfor %}
+          </tbody>
+          {% if cart.bags %}
+          <tfoot>
+            {% if cart.bags | length > 1 %}
+            {% for b in cart.bags %}
+            <tr><td></td><td>{{ b.number }}</td><td colspan="3" class="muted">{{ b.base }}{% if b.installments > 1 %} in {{ b.installments }} installments{% endif %}</td><td class="num money">{{ b.total | money }}</td></tr>
+            {% endfor %}
+            {% endif %}
+            <tr><th colspan="5">Total</th><th class="num money">{{ cart.total | money }}</th></tr>
+          </tfoot>
+          {% endif %}
+        </table>
+      </div>
+    </section>
+    {% endif %}
+    <section class="panel">
+      <h2>Carts <small>{{ carts | length }}{% if month %} in {{ month }}{% endif %}</small></h2>
+      <div class="table-wrap">
+        <table data-sortable="carts">
+          <thead><tr><th>Cart</th><th>Date</th><th>Store</th><th>Paid from</th><th class="num">Bags</th><th class="num">Products</th><th class="num">Total</th><th></th></tr></thead>
+          <tbody>
+          {% for c in carts %}
+          <tr{% if cart and c.id == cart.id %} class="selected"{% endif %}>
+            <td class="nowrap" data-sort="{{ c.id | int }}"><a href="/cart?cart={{ c.id }}{% if month %}&month={{ month }}{% endif %}" hx-get="/cart" hx-vals='{{ {"cart": c.id, "month": month} | tojson }}' hx-target="#cart" hx-push-url="/cart?cart={{ c.id }}{% if month %}&month={{ month }}{% endif %}">{{ c.id }}</a></td>
+            <td class="nowrap">{{ c.date }}</td>
+            <td>{{ c.store }}</td>
+            <td>{{ c.account }}</td>
+            <td class="num">{{ c.bags | length }}</td>
+            <td class="num">{{ c.products }}</td>
+            <td class="num money" data-sort="{{ c.total }}">{{ c.total | money }}</td>
+            <td class="nowrap">
+              <button class="icon edit" title="Edit" aria-label="Edit the cart {{ c.id }}"
+                hx-get="/cart/{{ c.id }}/edit" hx-vals='{{ {"month": month} | tojson }}' hx-target="#cart">&#9998;</button>
+              <button class="icon" title="Delete" aria-label="Delete the cart {{ c.id }}"
+                hx-post="/cart/{{ c.id }}/delete" hx-vals='{{ {"month": month} | tojson }}' hx-target="#cart"
+                hx-confirm="Delete the cart {{ c.id }} at {{ c.store }} and its {{ c.products }} movement{{ 's' if c.products != 1 }} ({{ c.total | money }})?"
+                data-confirm-money="{{ c.total | money }}">&times;</button>
+            </td>
+          </tr>
+          {% else %}
+          <tr><td colspan="8" class="muted">No carts{% if month %} in {{ month }}{% endif %} yet: add one with the form.</td></tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+</div>

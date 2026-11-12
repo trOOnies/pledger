@@ -33,6 +33,7 @@ web app.
   - [Accounts](#accounts)
   - [Audit](#audit)
   - [Budget](#budget)
+  - [Cart](#cart)
   - [Trip](#trip)
   - [Base movements and internal movements](#base-movements-and-internal-movements)
   - [Currencies and inflation](#currencies-and-inflation)
@@ -80,6 +81,7 @@ A FastAPI + HTMX UI, one tab per area:
 | 🤝 **Debt** | Who we owe and who owes us in the debt accounts `De` (debts) and `Lo` (loans) (people, services and companies), with alerts and the movements of the month, each with what we owe whoever it names after it. The debt and loan movements are added and edited here. |
 | 🧾 **Services** | The services of the debt accounts with their base movements and monthly values, what was owed to them this month and in all, and what we owe them now, with the table of monthly values and the movements owed to each one. The monthly values are set here. |
 | 💳 **Credit Cards** | What we owe on each card (also in its currency, for a card in another one), what was charged and paid in the month, a chart of the monthly charges, the net owed over equity, and the movements of the month (charges included), each with what we owe on its card after it, and the installments of the statement of the month, made or still due. The card payments are added and edited here, and so are the statement closing dates of each card for each month. |
+| 🛒 **Cart** | Many movements at once: a purchase at a store on a date, paid from an account, with its products in bags of a base movement (and installments, with a credit card). The carts are listed, edited and deleted here. See [Cart](#cart). |
 | 🎯 **Budget** | Monthly budgets by loss base movement against what was spent, and saving goals tracking the balance of an account. See [Budget](#budget). |
 | ✈️ **Trip** | The planned expenses of a trip, in any currency, against what was spent on it in the ledger. See [Trip](#trip). |
 | 🔍 **Audit** | Fill in the balances you checked by hand, without seeing pledger's, then compare them with the actual ones and, if you want, add a correction for each difference. |
@@ -125,6 +127,7 @@ with an environment variable:
 | `goals.csv` | | `PLEDGER_GOALS` | The saving goals |
 | `trips.csv` | | `PLEDGER_TRIPS` | The trips |
 | `trip_items.csv` | | `PLEDGER_TRIP_ITEMS` | The planned expenses of the trips |
+| `carts.csv` | | `PLEDGER_CARTS` | The carts of the Cart tab (their products are in `ledger.csv`) |
 | `currencies.yaml` | ✅ | `PLEDGER_CURRENCIES` | Base and other currencies (with `base_currency.csv` and `currencies.csv` next to it) |
 | `investment.yaml` | | `PLEDGER_INVESTMENTS` | The investments of each investment account |
 | `creditors.yaml` | | `PLEDGER_CREDITORS` | Who the debt accounts are owed by or owe to |
@@ -308,6 +311,34 @@ date. What is saved is the balance of that account today, so goals on the same a
 all of it, and are flagged. With a due date, it shows what to save each month to get there.
 
 Neither of them adds movements to the ledger, and saving a goal with the name of another updates it.
+
+### Cart
+
+The Cart tab adds many movements at once: a **cart** is a purchase at a store on a date, paid from an
+account, kept in `carts.csv` (`id;date;store;account`). Its products go in **bags**: each bag has a
+loss base movement of the Ledger tab and, if the cart is paid with a credit card, a number of
+installments (see [Credit cards](#credit-cards)), shared by its products. Bags only organize the cart:
+two of them may have the same base movement and installments.
+
+Each product is a movement of `ledger.csv`: its bag's base movement from equity, crediting the account
+of the cart, of its amount, on the date of the cart, its comment naming the store then the product
+(e.g. `Coto: Milk`, or just the store without a product name). Its cart and bag are in an optional
+`cart` column of `ledger.csv`, as `<cart id>/<bag number>`, added with the first one:
+
+```csv
+move_date;base_movement;acc_debit;amount;acc_credit;comment;id;installments;cart
+2026-11-10;Basic - Food;Eq;1,200.00;Vi;Coto: Milk;L-1335;;1/1
+2026-11-10;Basic - Fixed assets;Eq;90,000.00;Vi;Coto: Microwave;L-1337;3;1/2
+```
+
+- A cart is paid from an asset or liability account in the base currency: not an internal, investment
+  or debt one. The base movement of each bag must take that account on its credit side.
+- Saving a cart adds or replaces all of its movements together, or none of them, and leaves the rest of
+  the file as it was. Editing it keeps the line and ID of each product kept, appends the new ones and
+  deletes those removed; deleting it deletes all of its movements.
+- Its movements are only edited and deleted from the Cart tab: the Ledger tab shows them with a 🟤
+  linking there. The tab warns about a movement whose date or account differs from its cart's (e.g.
+  edited by hand), until the cart is saved again.
 
 ### Trip
 

@@ -18,6 +18,7 @@ from pledger.web.store.constants import (
 )
 from pledger.web.store.investments import _check_invest, _check_known_investment
 from pledger.web.store.movements import (
+    _check_not_cart,
     _check_tab,
     _debt_comment,
     _installments_text,
@@ -134,6 +135,7 @@ class MovementStore(StoreBase):
         """
         snapshot = self.load()
         current = self.current_row(snapshot, "rows", index, fingerprint)
+        _check_not_cart(current, "edited")
         if self._linked_group(snapshot, "rows", index) and not card_payment and (
             move_date != current["move_date"] or _parse_amount(amount, "amount") != _amount_of(current["amount"])
         ):

@@ -1,0 +1,121 @@
+{% extends "base.html" %}
+{% block title %}Cart · pledger{% endblock %}
+{% block content %}
+<div id="cart">
+  {% include "_cart.html" %}
+</div>
+<script>
+  // The cart form (data-cart-form): its bags and products are added and removed in the browser,
+  // and its fields renumbered (bags-<n>-...) in their order, as the server reads them.
+  (() => {
+    const amountOf = (input) => Number((input.value || "").replace(/,/g, "")) || 0;
+    const currency = {{ currency | tojson }};
+    const format = (value) => (value < 0 ? "-" : "") + currency + (/[a-z]$/i.test(currency) ? " " : "")
+      + Math.abs(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    function fromTemplate(form, which, n) {
+      const html = form.querySelector(`template[data-${which}-template]`).innerHTML.replaceAll("__n__", n);
+      const holder = document.createElement("div");
+      holder.innerHTML = html.trim();
+      return holder.firstElementChild;
+    }
+
+    // Number the bags 1, 2... and their fields after them.
+    function renumber(form) {
+      form.querySelectorAll("[data-bags] > [data-bag]").forEach((bag, i) => {
+        const n = i + 1;
+        bag.querySelector("[data-bag-number]").textContent = n;
+        bag.querySelectorAll("[name^=bags-]").forEach((field) => {
+          field.name = field.name.replace(/^bags-[^-]+-/, `bags-${n}-`);
+        });
+      });
+    }
+
+    // Installments only for a credit card; base movements only those the account takes.
+    function refresh(form) {
+      const account = form.querySelector("[data-cart-account]").value;
+      const card = JSON.parse(form.dataset.creditCards).includes(account);
+      const takes = JSON.parse(form.dataset.accountBases)[account];
+      form.querySelectorAll("[data-bags] [data-cart-installments]").forEach((label) => {
+        label.hidden = !card;
+        label.querySelector("input").disabled = !card;
+      });
+      form.querySelectorAll("[data-bags] select[data-cart-base]").forEach((select) => {
+        select.querySelectorAll("option[value=''] ~ option, optgroup option").forEach((option) => {
+          option.hidden = option.disabled = Boolean(takes) && !takes.includes(option.value);
+        });
+        select.querySelectorAll("optgroup").forEach((group) => {
+          group.hidden = [...group.children].every((o) => o.hidden);
+        });
+        if (select.selectedOptions[0]?.disabled) select.value = "";
+      });
+      totals(form);
+    }
+
+    function totals(form) {
+      let total = 0;
+      form.querySelectorAll("[data-bags] > [data-bag]").forEach((bag) => {
+        const sum = [...bag.querySelectorAll("input[name$=-amount]")].reduce((s, i) => s + amountOf(i), 0);
+        bag.querySelector("[data-bag-total]").textContent = format(sum);
+        total += sum;
+      });
+      form.querySelector("[data-cart-total]").textContent = format(total);
+      if (typeof maskMoney === "function" && document.documentElement.classList.contains("hide-money")) {
+        form.querySelectorAll("[data-bag-total], [data-cart-total]").forEach((el) => delete el.dataset.masked);
+        maskMoney(form);
+      }
+    }
+
+    document.addEventListener("click", (e) => {
+      const form = e.target.closest("form[data-cart-form]");
+      if (!form) return;
+      const bags = form.querySelector("[data-bags]");
+      if (e.target.closest("[data-add-bag]")) {
+        const bag = fromTemplate(form, "bag", bags.children.length + 1);
+        bags.append(bag);
+        renumber(form);
+        refresh(form);
+        bag.querySelector("select").focus();
+      } else if (e.target.closest("[data-remove-bag]")) {
+        e.target.closest("[data-bag]").remove();
+        renumber(form);
+        totals(form);
+      } else if (e.target.closest("[data-add-product]")) {
+        const bag = e.target.closest("[data-bag]");
+        const n = bag.querySelector("[data-bag-number]").textContent;
+        const product = fromTemplate(form, "product", n);
+        bag.querySelector("[data-products]").append(product);
+        product.querySelector("input[name$=-name]").focus();
+      } else if (e.target.closest("[data-remove-product]")) {
+        e.target.closest("[data-product]").remove();
+        totals(form);
+      }
+    });
+
+    // Enter in the amount of the last product of a bag adds another one, rather than sending the cart.
+    document.addEventListener("keydown", (e) => {
+      const input = e.target;
+      if (e.key !== "Enter" || !input.matches("form[data-cart-form] input[name$=-amount]")) return;
+      const product = input.closest("[data-product]");
+      if (product.nextElementSibling) return;
+      e.preventDefault();
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      product.closest("[data-bag]").querySelector("[data-add-product]").click();
+    });
+
+    document.addEventListener("change", (e) => {
+      const form = e.target.closest("form[data-cart-form]");
+      if (!form) return;
+      if (e.target.matches("[data-cart-account]")) refresh(form);
+      else totals(form);
+    });
+    document.addEventListener("input", (e) => {
+      const form = e.target.closest("form[data-cart-form]");
+      if (form && e.target.matches("input[name$=-amount]")) totals(form);
+    });
+    const init = () => document.querySelectorAll("form[data-cart-form]").forEach(refresh);
+    document.addEventListener("DOMContentLoaded", init);
+    document.addEventListener("htmx:afterSettle", init);
+  })();
+</script>
+{% endblock %}

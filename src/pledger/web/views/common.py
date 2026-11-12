@@ -17,7 +17,7 @@ from pledger.models import (
     is_foreign,
     next_month,
 )
-from pledger.web.store import Snapshot, row_fingerprint
+from pledger.web.store import Snapshot, cart_of, row_fingerprint
 
 # The tab where each kind of movement that can't be deleted from the Ledger tab is
 # handled: its colored circle there and its tooltip. The circle links to its row in
@@ -34,6 +34,7 @@ MOVEMENT_SOURCES = {
     "differences": ("🟡", "A Difference added with a debt movement, in the Debt tab; it can be deleted here"),
     "services": ("🟡", "Generated from the monthly value of the service, in the Services tab"),
     "credit-cards": ("🔴", "Added, edited and deleted from the Credit Cards tab"),
+    "cart": ("🟤", "A product of a cart, added, edited and deleted from the Cart tab"),
 }
 
 
@@ -97,6 +98,11 @@ def source_link(source: str, move, move_id: str | None) -> str:
     return f"{tab}#{row_anchor('movement', move_id)}" if move_id else tab
 
 
+def cart_link(cart_id: str, move_id: str | None = None) -> str:
+    """The link to a cart in the Cart tab, at the row of one of its movements if given."""
+    return f"/cart?cart={cart_id}" + (f"#{row_anchor('movement', move_id)}" if move_id else "")
+
+
 def ledger_link(move_id: str, move_date: str, initial: bool = False) -> str:
     """
     The link from a movement of another tab to its row in the Ledger tab, in its month
@@ -123,7 +129,9 @@ def movement_rows(snapshot: Snapshot, rows: DataFrame, ledger: Ledger) -> list[d
     debt_bases, card_bases = snapshot.debt_base_movements(), snapshot.card_payment_base_movements()
     corrections, differences = snapshot.correction_base_movements(), snapshot.difference_base_movements()
 
-    def source(ix, move) -> str | None:
+    def source(ix, move, row) -> str | None:
+        if cart_of(row) is not None and ix >= 0:
+            return "cart"
         if ix in capital:
             return "prices"
         if move.move_base.name in invest:
@@ -164,7 +172,8 @@ def movement_rows(snapshot: Snapshot, rows: DataFrame, ledger: Ledger) -> list[d
             "invest": move.move_base.name in invest,  # added and deleted from the Investments tab
             "conversion": ix in conversions,  # added and deleted from the Currencies tab
             "salary": ix in salaries,  # generated from the Work tab
-            "source": source(ix, move),  # a key of MOVEMENT_SOURCES, if not deletable here
+            "source": source(ix, move, row),  # a key of MOVEMENT_SOURCES, if not deletable here
+            "cart": cart_of(row) if ix >= 0 else None,
             # Can be edited from the movement form of the Ledger tab
             "editable": move.move_base.name in ledger_bases and not move.move_base.internal,
             # Can be deleted from the Ledger tab, though added from another tab
@@ -173,7 +182,10 @@ def movement_rows(snapshot: Snapshot, rows: DataFrame, ledger: Ledger) -> list[d
         for (ix, row), move in zip(rows.iterrows(), ledger.movements)
     ]
     for m, move in zip(movements, ledger.movements):
-        m["link"] = source_link(m["source"], move, m["id"]) if m["source"] else None
+        if m["source"] == "cart":
+            m["link"] = cart_link(m["cart"], m["id"])
+        else:
+            m["link"] = source_link(m["source"], move, m["id"]) if m["source"] else None
         m["editable"] = m["editable"] and not m["source"]  # e.g. not the generated ones of a Food service
     movements.reverse()
     return movements

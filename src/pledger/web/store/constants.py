@@ -66,6 +66,17 @@ INSTALLMENTS_COLUMN = "installments"
 MAX_INSTALLMENTS = 120
 
 
+# Optional column of the ledger CSV, added with the first one: the cart and bag a movement
+# of the Cart tab is a product of, as `<cart id>/<bag number>` (see CartStore). Empty for the
+# other movements. Those of a cart are only added, edited and deleted from the Cart tab.
+CART_COLUMN = "cart"
+
+
+# The carts CSV: a purchase at a store on a date, paid from an account. Its products are
+# movements of the ledger CSV, with the cart in their CART_COLUMN.
+CART_COLUMNS = ["id", "date", "store", "account"]
+
+
 # Columns of the conversions CSV, of the movements between an account in the base
 # currency and one in another currency: the amount in each currency. Its movements
 # are added to the ledger with the amount in the base currency.

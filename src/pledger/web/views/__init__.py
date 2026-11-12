@@ -19,6 +19,7 @@ from pledger.web.views.audit import (
     audit_results,
 )
 from pledger.web.views.budget import budget_form_fields, build_budgets, build_goals
+from pledger.web.views.cart import build_carts, cart_form_of, new_cart_form
 from pledger.web.views.charts import (
     MAX_CHART_POINTS,
     column_chart,
@@ -165,6 +166,7 @@ __all__ = [
     "budget_form_fields",
     "build_accounts",
     "build_budgets",
+    "build_carts",
     "build_conversions",
     "build_credit_cards",
     "build_currencies",
@@ -179,6 +181,7 @@ __all__ = [
     "build_view",
     "build_work",
     "card_payment_fields",
+    "cart_form_of",
     "charged_chart",
     "closing_dates",
     "column_chart",
@@ -214,6 +217,7 @@ __all__ = [
     "months_of",
     "movement_rows",
     "multi_line_chart",
+    "new_cart_form",
     "new_investment_fields",
     "nice_ticks",
     "over_time_charts",

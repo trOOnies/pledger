@@ -248,7 +248,15 @@ main { padding: 1rem 1.5rem 2rem; max-width: 1840px; width: 100%; margin: 0 auto
 /* Result types and base movements one on top of the other when their tables don't fit side by side */
 @media (max-width: 1200px) { .layout.setup { grid-template-columns: minmax(0, 1fr); } }
 .layout .column { display: grid; gap: 1rem; min-width: 0; }
-#view, #audit, #budget, #trip, .layout > .view, main > .view, #debt-view > .view, #credit-cards-view > .view, #services-view > .view {
+/* The Cart tab: a wider form, for its bags of products */
+.layout.cart { grid-template-columns: minmax(340px, 30rem) minmax(0, 1fr); }
+.layout.cart > aside { position: static; }
+.cart-product { display: grid; grid-template-columns: minmax(0, 1fr) minmax(7rem, 9rem) auto; gap: .4rem; align-items: center; }
+.cart-products { gap: .4rem; }
+.cart-bag-actions { display: flex; justify-content: space-between; gap: .5rem; }
+.cart-total { margin: 0; display: flex; justify-content: space-between; align-items: baseline; }
+tr.selected > td { background: var(--accent-bg, rgba(127, 127, 127, .08)); }
+#view, #audit, #budget, #trip, #cart, .layout > .view, main > .view, #debt-view > .view, #credit-cards-view > .view, #services-view > .view {
   display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; min-width: 0;
 }
 
@@ -545,7 +553,7 @@ tfoot th { position: static; color: var(--text); border-top: 2px solid var(--bor
 
 @media (max-width: 860px) {
   main { padding: 1rem; }
-  .layout, .layout.setup { grid-template-columns: 1fr; }
+  .layout, .layout.setup, .layout.cart { grid-template-columns: 1fr; }
   .layout > aside { position: static; }
   .help { grid-template-columns: 1fr; }
   .help-toc { position: static; }

@@ -28,7 +28,7 @@
         ("Info", (("/accounts", "Accounts"), ("/currencies", "Currencies"), ("/results", "Results"))),
         ("Revenue", (("/work", "Work"), ("/investments", "Investments"))),
         ("Debt", (("/debt", "Debts &amp; Loans"), ("/services", "Services"), ("/credit-cards", "Credit Cards"))),
-        ("Other", (("/audit", "Audit"), ("/budget", "Budget"), ("/trip", "Trip"))),
+        ("Other", (("/cart", "Cart"), ("/audit", "Audit"), ("/budget", "Budget"), ("/trip", "Trip"))),
       ) %}
       <div class="nav-section {{ 'current' if tabs | selectattr(0, 'equalto', path) | list }}">
         <button type="button" class="nav-label" aria-haspopup="true">{{ section }}</button>
