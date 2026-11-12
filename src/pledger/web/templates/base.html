@@ -47,6 +47,21 @@
     </button>
   </header>
   <div id="flash" class="flash" role="alert" hidden></div>
+  {# The Save & Quit confirmation (see the quit button below): a modal of pledger's own #}
+  <dialog id="quit-dialog" class="dialog" aria-labelledby="quit-title" aria-describedby="quit-text">
+    <form method="dialog">
+      <div class="dialog-head">
+        <img src="{{ url_for('static', path='favicon.svg') }}?v={{ static_version('favicon.svg') }}" alt="" width="32" height="32">
+        <h2 id="quit-title">Save &amp; quit pledger?</h2>
+      </div>
+      <p id="quit-text" class="muted">Everything left to save is saved, and pledger stops. Run <code>make serve</code> to start it again.</p>
+      <p id="quit-unsent" class="msg warn small" hidden>⚠️ What you typed in forms you didn't send will be lost.</p>
+      <div class="dialog-actions">
+        <button type="submit" value="cancel" class="secondary" autofocus>Cancel</button>
+        <button type="submit" value="quit">Save &amp; Quit</button>
+      </div>
+    </form>
+  </dialog>
   <main>{% block content %}{% endblock %}</main>
   <footer class="site-footer">
     <p>&copy; 2026 Pledger by trOOnies</p>
@@ -352,9 +367,16 @@
         return "defaultValue" in el && el.type !== "hidden" && el.value !== el.defaultValue;
       }));
     }
-    document.getElementById("quit").addEventListener("click", async () => {
-      const lost = unsentForms().length ? " What you typed in forms you didn't send will be lost." : "";
-      if (!window.confirm(`Save and quit pledger?${lost}`)) return;
+    const quitDialog = document.getElementById("quit-dialog");
+    document.getElementById("quit").addEventListener("click", () => {
+      document.getElementById("quit-unsent").hidden = !unsentForms().length;
+      quitDialog.returnValue = "";
+      quitDialog.showModal();
+    });
+    // A click on the backdrop, outside the box, cancels it, like Escape
+    quitDialog.addEventListener("click", (e) => { if (e.target === quitDialog) quitDialog.close("cancel"); });
+    quitDialog.addEventListener("close", async () => {
+      if (quitDialog.returnValue !== "quit") return;
       try {
         const r = await fetch("/quit", { method: "POST" });
         if (!r.ok) throw new Error(r.statusText);

@@ -597,3 +597,26 @@ td.budget-bar .bar-track { display: block; }
 
 /* The currency of the tables of people, services and companies of the Debt tab */
 .currency-heading { margin: 1rem 0 .5rem; color: var(--muted); }
+
+/* The dialogs of pledger itself, like the Save & Quit one: a panel over a dimmed page */
+.dialog {
+  width: min(420px, calc(100vw - 2rem)); padding: 0; margin: auto;
+  color: var(--text); background: var(--surface); border: 1px solid var(--border);
+  border-top: 3px solid var(--accent); border-radius: var(--radius);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, .22);
+}
+/* The padding is the form's: a click on the dialog itself is one on its backdrop (see base.html) */
+.dialog > form { padding: 1.25rem 1.5rem; }
+.dialog::backdrop { background: rgba(17, 20, 24, .45); backdrop-filter: blur(2px); }
+.dialog[open] { animation: dialog-in .16s ease-out; }
+.dialog-head { display: flex; align-items: center; gap: .75rem; margin-bottom: .5rem; }
+.dialog-head h2 { margin: 0; font-size: 1.15rem; }
+.dialog p { margin: 0 0 .75rem; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: 1rem; }
+.dialog-actions button { width: auto; padding: .45rem 1rem; border-radius: 6px; }
+.dialog-actions button.secondary {
+  background: var(--surface); color: var(--text); border: 1px solid var(--border); font-weight: normal;
+}
+.dialog-actions button.secondary:hover { background: var(--bg); }
+@keyframes dialog-in { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .dialog[open] { animation: none; } }
