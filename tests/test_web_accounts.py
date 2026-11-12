@@ -32,14 +32,20 @@ class TestEditAccounts:
         path = settings.accounts_path
         block = (
             "internal:\n  asset:\n    Fi:\n      description: Intermediary\n      initial_amount: 0\n"
-            "      checks:\n      - net_zero\n    Lo:\n      description: Loans\n  liability:\n    De:\n      description: Debts\n"
-            "  equity:\n    Eq:\n      description: Equity\n"
+            "      checks:\n      - net_zero\n  equity:\n    Eq:\n      description: Equity\n"
         )
         path.write_text(path.read_text().replace(INTERNAL_ACCOUNTS_YAML, block))
         LedgerStore(settings).edit_account("Fi", "Between movements", "0", False, "", ["net_zero"])
         assert "internal:\n  asset:\n    Fi:\n      description: Between movements\n" in path.read_text()
         fi = LedgerStore(settings).load().accounts["Fi"]
         assert fi.internal and fi.description == "Between movements"
+
+    def test_debt_accounts_are_edited_in_the_currencies_yaml(self, settings, client):
+        with pytest.raises(ValueError, match="'DeD' is the USD one of the currencies YAML: edit it there"):
+            LedgerStore(settings).edit_account("DeD", "Mine", "", False)
+        assert client.get("/accounts/edit", params={"name": "De"}).status_code == 422
+        rows = client.get("/accounts").text.split('<tr id="account-De">')[1].split("</tr>")[0]
+        assert "Edit account De" not in rows and "debt or loan account of its currency" in rows
 
     def test_edit_keeps_the_rest_of_the_file(self, settings, client):
         path = settings.accounts_path
@@ -109,7 +115,10 @@ class TestInternalAccounts:
             row.split("<strong>")[1].split("</strong>")[0]: badge in row.split("</td>")[0]
             for row in r.text.split('<tr id="account-')[1:]
         }
-        assert rows == {"Ca": False, "Bk": False, "Fi": True, "Lo": True, "Cc": False, "De": True, "Eq": True}
+        assert rows == {
+            "Ca": False, "Bk": False, "Fi": True, "Cc": False, "Eq": True,
+            "De": True, "Lo": True, "DeD": True, "LoD": True,  # the debt accounts of the currencies YAML
+        }
         # In the bars too
         bars = r.text.split('class="composition-pair"')[1].split("</section>")[0]
         assert 'Fi <span class="badge internal"' in bars and 'Ca <span class="badge internal"' not in bars

@@ -98,7 +98,11 @@ class AccountStore(MovementStore):
             raise ValueError(f"Unknown account: {name!r}")
         if account.acc_type not in {AccountType.ASSET, AccountType.LIABILITY}:
             raise ValueError(f"Only asset and liability accounts can be edited, not {name!r}")
-        fixed_amount = isinstance(account, (InvestmentAccount, DebtAccount))
+        if isinstance(account, DebtAccount):
+            raise ValueError(  # noqa: TRY004 (a bad pick)
+                f"The debt account {name!r} is the {account.currency.name} one of the currencies YAML: edit it there"
+            )
+        fixed_amount = isinstance(account, InvestmentAccount)
         fields = _account_fields(
             snapshot, description, 0 if fixed_amount else initial_amount, account.currency.name, is_liquid,
             initial_date, checks, interest_frequency,

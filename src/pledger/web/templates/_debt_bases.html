@@ -11,7 +11,8 @@
     {% endfor %}
   </div>
 </div>
-<div id="debt-account-fields">{% include "_account_fields.html" %}</div>
+{# The side of the debt account (see DEBT_BASES), for the currencies of the form (see base.html) #}
+<div id="debt-account-fields" data-debt-side="{{ debt_side }}">{% include "_account_fields.html" %}</div>
 <label>Who <span class="muted small">(of {{ account }})</span>
   <select name="who" required>
     <option value="">Choose…</option>

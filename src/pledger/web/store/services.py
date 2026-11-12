@@ -37,13 +37,17 @@ def services_of(snapshot: Snapshot) -> dict[str, Creditor]:
     return services
 
 
-def service_account(service: Creditor) -> str:
+def service_account(snapshot: Snapshot, service: Creditor) -> str:
     """
-    The debt account a service is owed its values of the services CSV in: the first one
-    it can be in (see Creditor.accounts), the debt account unless it is expected to be
-    a debtor (it charges in advance), then the loan account.
+    The debt account a service is owed its values of the services CSV in: that of the first
+    role it can be in (see Creditor.roles), in the base currency, the one of its values. The
+    debt account unless it is expected to be a debtor (it charges in advance), then the loan
+    account.
     """
-    return service.accounts[0]
+    account = snapshot.base_debt_account(service.roles[0])
+    if account is None:
+        raise ValueError(f"No {service.roles[0].value} account in {snapshot.base_currency.name} for the service {service.name!r}")
+    return account.name
 
 
 def service_bases(snapshot: Snapshot) -> dict[str, MovementBase]:
@@ -57,7 +61,7 @@ def service_bases(snapshot: Snapshot) -> dict[str, MovementBase]:
         if service.base_movement is None:
             continue
         base = snapshot.base_movements.get(service.base_movement)
-        account = service_account(service)
+        account = service_account(snapshot, service)
         if (
             base is None or base.internal or base.move_type != MovementType.LOSS
             or base.side(LedgerSide.CREDIT) not in {None, account}
@@ -161,7 +165,7 @@ def _service_rows(snapshot: Snapshot, start: int) -> DataFrame:
                     continue
                 new_rows.append({
                     "move_date": day, "base_movement": bases[service].name,
-                    "acc_debit": bases[service].acc_debit.name, "acc_credit": service_account(services[service]),
+                    "acc_debit": bases[service].acc_debit.name, "acc_credit": service_account(snapshot, services[service]),
                     "amount": f"{value:,.2f}", "comment": f"{service}: week {n}/{len(weeks)} of {month}",
                     ID_COLUMN: f"{SERVICE_ID}-{service}-{month}-{n}", SERVICE_COLUMN: service,
                 })

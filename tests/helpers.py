@@ -97,10 +97,10 @@ INVEST_TRANSFERS_YAML = (
 
 # The internal transfers of the Debt tab (see with_internal)
 DEBT_YAML = (
-    "    Debt - Incurred:\n      description: d\n      credit: De\n"
-    "    Debt - Paid:\n      description: d\n      debit: De\n"
-    "    Loan - Given:\n      description: d\n      debit: Lo\n"
-    "    Loan - Collected:\n      description: d\n      credit: Lo\n"
+    "    Debt - Incurred:\n      description: d\n      credit: DEBT ACCOUNT\n"
+    "    Debt - Paid:\n      description: d\n      debit: DEBT ACCOUNT\n"
+    "    Loan - Given:\n      description: d\n      debit: LOAN ACCOUNT\n"
+    "    Loan - Collected:\n      description: d\n      credit: LOAN ACCOUNT\n"
 )
 
 

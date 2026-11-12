@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from pledger.enums import LedgerSide, MovementType
-from pledger.models import DEBT_ACCOUNT, LOAN_ACCOUNT, PREVIOUS_MONTH
+from pledger.enums import DebtRole, LedgerSide, MovementType
+from pledger.models import DEBT_SIDE, LOAN_SIDE, PREVIOUS_MONTH
 
 BOM = "﻿"
 
@@ -136,8 +136,8 @@ CROSS_CONVERSION = f"{CONVERSION_SOLD} + {CONVERSION_BOUGHT}"
 
 
 # The internal transfers of the debt accounts, added from the Debt tab, with that side
-# fixed to one of them (DEBT_BASE_ACCOUNTS): we owe more or less (the debts, of the
-# DEBT_ACCOUNT), or are owed more or less (the loans, of the LOAN_ACCOUNT).
+# taking any debt account of one role (DEBT_BASE_SIDES), in any currency: we owe more or
+# less (the debts, of the DEBT_SIDE), or are owed more or less (the loans, of the LOAN_SIDE).
 DEBT_INCURRED, DEBT_PAID = "Debt - Incurred", "Debt - Paid"
 
 
@@ -150,8 +150,15 @@ DEBT_BASES = {
 }
 
 
-DEBT_BASE_ACCOUNTS = {
-    DEBT_INCURRED: DEBT_ACCOUNT, DEBT_PAID: DEBT_ACCOUNT, LOAN_GIVEN: LOAN_ACCOUNT, LOAN_COLLECTED: LOAN_ACCOUNT,
+DEBT_BASE_SIDES = {
+    DEBT_INCURRED: DEBT_SIDE, DEBT_PAID: DEBT_SIDE, LOAN_GIVEN: LOAN_SIDE, LOAN_COLLECTED: LOAN_SIDE,
+}
+
+
+# The role of the debt accounts of each one (see DebtAccount.role)
+DEBT_BASE_ROLES = {
+    DEBT_INCURRED: DebtRole.CREDITOR, DEBT_PAID: DebtRole.CREDITOR,
+    LOAN_GIVEN: DebtRole.DEBTOR, LOAN_COLLECTED: DebtRole.DEBTOR,
 }
 
 

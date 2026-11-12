@@ -58,7 +58,7 @@
       <li class="flow-step">
         <span class="flow-q">Is it money that <strong>someone owes you</strong> (a loan you gave)?</span>
         <span class="flow-yes"><em>Yes</em> → <strong>no new account</strong>: add them to <code>creditors.yaml</code>,
-          with a negative amount, and use the <a href="/debt">Debt</a> tab: loans are in <code>Lo</code>, the loan account.</span>
+          with a negative amount, and use the <a href="/debt">Debt</a> tab: loans are in the loan accounts, one per currency.</span>
       </li>
       <li class="flow-step">
         <span class="flow-q">Is it only a <strong>step between movements</strong> that always goes back to 0.00?</span>
@@ -84,7 +84,8 @@
         <span class="flow-q">Is it owed to a <strong>person</strong> or a <strong>service</strong> (a friend, the rent, a bill)?</span>
         <span class="flow-yes"><em>Yes</em> → <strong>no new account</strong>: add them to
           <code>creditors.yaml</code>, with a positive amount, and use the <a href="/debt">Debt</a> tab: debts are in
-          <code>De</code>, the debt account. Your employers are there already, from the Work tab, in <code>Lo</code>.</span>
+          the debt accounts, one per currency. Your employers are there already, from the Work tab, in the loan
+          account of the base currency.</span>
       </li>
       <li class="flow-step flow-end">
         <span class="flow-q">None of the above (a bank loan, a mortgage…)</span>
@@ -121,7 +122,8 @@
 
 <h3>🤝 Keep track of who owes you</h3>
 <p>Add lending, borrowing and paying back from the <a href="/debt">Debt</a> tab, picking
-  <strong>who</strong> it is about: debts go to <code>De</code> and loans to <code>Lo</code>. For other movements of a debt account, write the person's,
+  <strong>who</strong> it is about: debts go to a debt account and loans to a loan account, of the currency they are
+  in (each currency has both, in the currencies file). For other movements of a debt account, write the person's,
   service's or company's <strong>name in the comment</strong>, such as "Lunch with Dad". The
   Debt tab adds them to them, and warns you about movements that name no one.</p>
 

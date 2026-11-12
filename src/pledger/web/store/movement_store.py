@@ -10,8 +10,6 @@ from pledger.models import CreditCardAccount, is_foreign
 from pledger.web.store.base_store import StoreBase
 from pledger.web.store.common import _amount_of, _fit_row, _parse_amount, _with_row
 from pledger.web.store.constants import (
-    DEBT_BASE_ACCOUNTS,
-    DIFFERENCE_GAIN,
     INSTALLMENTS_COLUMN,
     INVESTMENT_COLUMN,
     OTHER_AMOUNT,
@@ -20,11 +18,9 @@ from pledger.web.store.investments import _check_invest, _check_known_investment
 from pledger.web.store.movements import (
     _check_not_cart,
     _check_tab,
-    _debt_comment,
     _installments_text,
     _movement_row,
 )
-from pledger.web.store.snapshot import Snapshot
 
 
 def foreign_card(snapshot, acc_debit: str, acc_credit: str) -> CreditCardAccount | None:
@@ -122,7 +118,7 @@ class MovementStore(StoreBase):
         comment: str = "",
         debt: bool = False,
         card_payment: bool = False,
-        amount_card: str = "",
+        amount_other: str | None = None,
         installments: str | int = "",
     ) -> None:
         """
@@ -130,7 +126,9 @@ class MovementStore(StoreBase):
         optionally checking it is the expected one, like delete: of the Ledger tab, else
         of the Debt tab with `debt` or of the Credit Cards tab with `card_payment` (see
         _check_tab). The row keeps its id and any other column. A card payment of a card in
-        another currency has its `amount_card` in that currency (see LinkedStore.edit_card_payment).
+        another currency, or a movement of a debt account in another one, has its
+        `amount_other` in that currency, its OTHER_AMOUNT (see LinkedStore.edit_card_payment
+        and LinkedStore.edit_debt_movement); None keeps the one it has.
         A movement of the Ledger tab gets its `installments` (see INSTALLMENTS_COLUMN), 1 if empty.
         """
         snapshot = self.load()
@@ -140,14 +138,22 @@ class MovementStore(StoreBase):
             move_date != current["move_date"] or _parse_amount(amount, "amount") != _amount_of(current["amount"])
         ):
             raise ValueError("Its date and amount came with its conversion: delete the movement and add it again")
+        if (
+            amount_other is None and str(current.get(OTHER_AMOUNT, "")).strip()
+            and _parse_amount(amount, "amount") != _amount_of(current["amount"])
+        ):
+            raise ValueError(
+                f"Its amount came with its amount in another currency ({current[OTHER_AMOUNT]}): "
+                "delete the movement and add it again"
+            )
         _check_invest(snapshot, current["base_movement"], False, "edited")
         _check_tab(snapshot, current["base_movement"], False, debt, card_payment, "edited")
         _, new_row = _movement_row(
             snapshot, move_date, base_movement, acc_debit, acc_credit, amount, comment,
             False, "", "", debt, card_payment,
         )
-        if amount_card:
-            new_row[OTHER_AMOUNT] = amount_card
+        if amount_other is not None:
+            new_row[OTHER_AMOUNT] = amount_other
         if not (debt or card_payment):
             new_row[INSTALLMENTS_COLUMN] = _installments_text(snapshot, installments, acc_credit)
             if new_row[INSTALLMENTS_COLUMN] and INSTALLMENTS_COLUMN not in snapshot.rows.columns:
@@ -156,82 +162,3 @@ class MovementStore(StoreBase):
         _fit_row(new_row, snapshot.rows.columns, "ledger")  # every value has a column
         replace(snapshot, rows=_with_row(snapshot.rows, index, new_row)).ledger().check_accounts()
         self._replace_line(snapshot, "rows", index, new_row)
-
-    def add_debt_movement(
-        self,
-        move_date: str,
-        base_movement: str,
-        acc_debit: str,
-        acc_credit: str,
-        amount: str | float,
-        who: str,
-        comment: str = "",
-        remaining_as_difference: bool = False,
-    ) -> tuple[str, float] | None:
-        """
-        Add a movement of a debt base movement to the ledger CSV, about `who`, someone of
-        its debt account but a company (their debt comes from the work history): its
-        comment names them first (prefixed if it doesn't), so the Debt tab adds it to them.
-
-        With `remaining_as_difference`, what would remain with them after it, in all the
-        ledger, in its debt account (see DEBT_BASE_ACCOUNTS), is settled there by a
-        DIFFERENCES movement of the same date and comment, against the equity account, added together with it (see Snapshot.difference_of). Returns
-        its base movement and amount, None if nothing remains or it wasn't asked for.
-        """
-        snapshot = self.load()
-        comment = _debt_comment(snapshot, acc_debit, acc_credit, who, comment)
-        field, new_row = _movement_row(
-            snapshot, move_date, base_movement, acc_debit, acc_credit, amount, comment,
-            False, "", "", True, False,
-        )
-        new_rows = [new_row]
-        difference = None
-        if remaining_as_difference:
-            _, remaining = snapshot.debt_remaining(base_movement, _amount_of(new_row["amount"]), who.strip())
-            difference = Snapshot.difference_of(remaining)
-        if difference:
-            account = DEBT_BASE_ACCOUNTS[base_movement]
-            new_rows.append(self._difference_row(snapshot, move_date, *difference, comment, account))
-        self._append_rows(snapshot, field, new_rows)
-        return difference
-
-    @staticmethod
-    def _difference_row(snapshot, move_date: str, base_name: str, amount: float, comment: str, account: str) -> dict:
-        """The row of a DIFFERENCES movement: out of or into this debt account, against the equity account."""
-        base = snapshot.difference_base_movements().get(base_name)
-        if base is None:
-            gain = base_name == DIFFERENCE_GAIN
-            raise ValueError(
-                f"Setting the remaining as a Difference needs {base_name!r}, an internal "
-                f"{'gain' if gain else 'loss'} of the base movements YAML"
-            )
-        debit, credit = (
-            (account, base.acc_credit.name) if base_name == DIFFERENCE_GAIN else (base.acc_debit.name, account)
-        )
-        return _movement_row(
-            snapshot, move_date, base_name, debit, credit, amount, comment,
-            False, "", "", False, False, difference=True,
-        )[1]
-
-    def delete_debt_movement(self, index: int, fingerprint: str | None = None) -> None:
-        """Delete a debt movement of the ledger CSV by position, or a difference added with one."""
-        snapshot = self.load()
-        rows = snapshot.rows
-        difference = 0 <= index < len(rows) and rows.iloc[index]["base_movement"] in snapshot.difference_base_movements()
-        self.delete(index, fingerprint, debt=not difference, difference=difference)
-
-    def edit_debt_movement(
-        self,
-        index: int,
-        fingerprint: str | None,
-        move_date: str,
-        base_movement: str,
-        acc_debit: str,
-        acc_credit: str,
-        amount: str | float,
-        who: str,
-        comment: str = "",
-    ) -> None:
-        """Replace a debt movement of the ledger CSV by position, about `who` like add_debt_movement."""
-        comment = _debt_comment(self.load(), acc_debit, acc_credit, who, comment)
-        self.edit(index, fingerprint, move_date, base_movement, acc_debit, acc_credit, amount, comment, debt=True)

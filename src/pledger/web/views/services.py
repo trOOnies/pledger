@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pledger.enums import CreditorKind
+from pledger.enums import CreditorKind, DebtRole
 from pledger.models import next_month
 from pledger.web.store import (
     SERVICE_COLUMN,
@@ -27,7 +27,7 @@ def build_services(snapshot: Snapshot, service: str = "") -> dict:
     months already ended with any (see store.service_estimates).
     """
     accounts = snapshot.debt_accounts()
-    services = {n: c for n, c in net_creditors(accounts)[0].items() if c.kind == CreditorKind.SERVICE}
+    services = {n: c for n, c in net_creditors(snapshot, accounts)[0].items() if c.kind == CreditorKind.SERVICE}
     bases, months = service_bases(snapshot), service_months(snapshot)
     month = snapshot.today.strftime("%Y-%m")
     now = dict(months).get(month, {})
@@ -42,7 +42,7 @@ def build_services(snapshot: Snapshot, service: str = "") -> dict:
             this_month[name] += value
     table = [
         {
-            "name": name, "account": service_account(c), "base": bases[name].name if name in bases else None,
+            "name": name, "account": service_account(snapshot, c), "base": bases[name].name if name in bases else None,
             "owed": c.amount,
             "value": now.get(name, 0.0), "estimated": name in estimates.get(month, []),
             "this_month": this_month[name], "charged": charged[name],
@@ -64,9 +64,12 @@ def build_services(snapshot: Snapshot, service: str = "") -> dict:
     movements = movement_rows(snapshot, generated, snapshot.ledger(generated))
     after = debt_after(snapshot, accounts)
     for m, name in zip(movements, list(picked[SERVICE_COLUMN])[::-1]):
-        m |= {"who": name, "debt": after.get(m["index"])}
+        m |= {"who": name, **after.get(m["index"], {"debt": None})}
     return {
         "has_debt": bool(accounts),
+        # The accounts the services are owed in: those of the base currency (see store.service_account)
+        "debt_name": (de.name if (de := snapshot.base_debt_account(DebtRole.CREDITOR)) else ""),
+        "loan_name": (lo.name if (lo := snapshot.base_debt_account(DebtRole.DEBTOR)) else ""),
         "services": table,
         "columns": names,
         "values": values,

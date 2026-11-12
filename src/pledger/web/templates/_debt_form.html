@@ -1,6 +1,9 @@
 {% from "_edit.html" import form_head %}
 {# The debt movement form: a new one, or with `editing` one of the ledger CSV. #}
-<form id="debt-form" class="stack" hx-post="{{ '/debt/movements/%d/edit' % editing.index if editing else '/debt/movements' }}" hx-swap="outerHTML">
+{# data-debt-currencies: see base.html. The amount is in the currency of the other account (as in the
+   ledger, when editing), and the one in the currency of the debt account is asked when they differ. #}
+<form id="debt-form" class="stack" hx-post="{{ '/debt/movements/%d/edit' % editing.index if editing else '/debt/movements' }}" hx-swap="outerHTML"
+  data-debt-currencies='{{ {"accounts": account_currencies, "symbol": currency, "base": base_currency, "editing": true if editing else false} | tojson }}'>
   {{ form_head("debt movement", editing, "/form/debt-movement", "debt-form") }}
   {% if error %}<p class="msg error">{{ error }}</p>{% endif %}
   {% if success %}<p class="msg success">{{ success }}</p>{% endif %}
@@ -23,12 +26,19 @@
     </div>
   </div>
   <div id="debt-bases" class="stack">{% include "_debt_bases.html" %}</div>
-  <label>Amount
+  <label>Amount{% if foreign_debts %} <em class="optional">({{ "as in the ledger" if editing else "in the currency of the other account" }})</em>{% endif %}
     <span class="money-input">
-      <span class="prefix">{{ currency }}</span>
-      <input id="debt-amount" name="amount" inputmode="decimal" min="0" value="{{ values.amount }}" placeholder="0.00" required autocomplete="off" data-money>
+      <span class="prefix" data-amount-prefix="{{ currency }}">{{ currency }}</span>
+      <input id="debt-amount" name="amount" inputmode="decimal" min="0" value="{{ values.amount }}" placeholder="0.00" required autocomplete="off" data-money="4">
     </span>
   </label>
+  {% if foreign_debts %}
+  {% set asked = values.amount_debt is defined and values.amount_debt %}
+  <label data-debt-own {% if not asked %}hidden{% endif %}><span>Amount in <span data-debt-own-currency>the debt account's currency</span></span>
+    <input id="debt-amount-own" name="amount_debt" inputmode="decimal" min="0" value="{{ values.amount_debt or '' }}" placeholder="0.00" autocomplete="off" data-money="4" {% if not asked %}disabled{% endif %}>
+  </label>
+  <span class="hint" data-debt-own {% if not asked %}hidden{% endif %}>{% if editing %}What is owed in the currency of the debt account: it follows it exactly.{% else %}The two accounts are in different currencies: the movement was converted when it was made, so the debt account follows this amount exactly, and the other one the amount above. Any difference with the value of the currencies then is revalued later, in the <a href="/currencies">Currencies</a> tab.{% endif %}</span>
+  {% endif %}
   <label><span>Comment <em class="optional">(optional)</em></span>
     <input name="comment" value="{{ values.comment }}" autocomplete="off">
   </label>
@@ -42,12 +52,13 @@
   </label>
   {# Refreshed with the form, and when the kind of movement swaps its base movements #}
   <div id="debt-difference" class="stack" aria-live="polite" hx-get="/form/debt-difference" hx-include="#debt-form" hx-swap="innerHTML"
-    hx-trigger="{{ 'load, ' if values.remaining_as_difference }}change from:#debt-form, input changed delay:300ms from:#debt-amount, htmx:afterSettle from:#debt-bases"></div>
+    hx-trigger="{{ 'load, ' if values.remaining_as_difference }}change from:#debt-form, input changed delay:300ms from:#debt-amount, input changed delay:300ms from:#debt-amount-own, htmx:afterSettle from:#debt-bases"></div>
   {% endif %}
   {% endif %}
-  <p class="muted small">The comment names who it is about first, so their debt adds it. Debts go to <code>De</code>
-    and loans to <code>Lo</code>: whoever is expected to be a creditor only has debts, and whoever is expected to be a
-    debtor only loans. The debt with companies comes from the salaries of the <a href="/work">Work</a> tab.</p>
+  <p class="muted small">The comment names who it is about first, so their debt adds it. Debts go to a debt account
+    and loans to a loan account, one of each per currency: whoever is expected to be a creditor only has debts, and
+    whoever is expected to be a debtor only loans. The debt with companies comes from the salaries of the
+    <a href="/work">Work</a> tab.</p>
   <button type="submit">{{ "Save changes" if editing else "Add debt movement" }}</button>
   {% endif %}
   {% if missing %}

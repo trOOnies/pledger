@@ -20,15 +20,15 @@
           {{ id_cell(m.id, ledger_link(m.id, m.date, m.initial) if m.id) }}
           <td class="nowrap">{{ m.date }}</td>
           <td><span class="badge {{ m.type }}">{{ m.type[0] | upper }}</span> {{ m.base }}</td>
-          {% if who %}{% if m.initial %}<td class="muted" title="The initial amounts of everyone in the account">Initial amounts</td>{% elif m.who %}<td class="nowrap"><strong>{{ m.who }}</strong></td>{% else %}<td class="muted" title="The comment names no one: unassigned debt">-</td>{% endif %}{% endif %}
+          {% if who %}{% if m.initial %}<td class="muted" title="The initial amounts of everyone in the account">Initial amounts</td>{% elif m.revaluation %}<td class="muted" title="The change in value of the account in another currency: it owes no one more or less">Revaluation</td>{% elif m.who %}<td class="nowrap"><strong>{{ m.who }}</strong></td>{% else %}<td class="muted" title="The comment names no one: unassigned debt">-</td>{% endif %}{% endif %}
           {% if account %}<td>{{ m.account }}</td>{% endif %}
           <td>{{ m.debit }}</td>
-          <td class="num money" data-sort="{{ m.amount }}">{{ m.amount | money }}</td>
+          <td class="num money" data-sort="{{ m.amount }}">{{ m.amount | money }}{% if m.own_currency %}<br><small class="muted" title="In the currency of its debt account">{{ m.own_amount | money_in(m.own_currency) }}</small>{% endif %}</td>
           <td>{{ m.credit }}</td>
           {% if running %}
           {% set value = m[running[2]] %}
           {% if value is none %}<td class="num muted balance">-</td>{% else %}
-          <td class="num money balance {{ 'gain' if value < -0.005 }}" data-sort="{{ value }}">{{ value | money }}</td>{% endif %}
+          <td class="num money balance {{ 'gain' if value < -0.005 }}" data-sort="{{ value }}">{{ value | money_in(m[running[2] ~ "_currency"]) }}</td>{% endif %}
           {% endif %}
           <td class="muted money">{{ m.comment }}</td>
           {% if edit %}

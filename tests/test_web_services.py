@@ -159,7 +159,7 @@ class TestServices:
         assert {r[4] for r in owed if r[0].startswith("S-Rent")} == {"Lo"}
         assert {r[4] for r in owed if not r[0].startswith("S-Rent")} == {"De"}
         snapshot = LedgerStore(settings).load()
-        de, lo = snapshot.debt_accounts()
+        de, lo, *_ = snapshot.debt_accounts()
         assert "Rent" not in de.creditors and lo.creditors["Rent"].amount == 80
         r = TestClient(create_app(settings)).get("/services")
         table = r.text.split('data-sortable="services"')[1].split("</table>")[0]

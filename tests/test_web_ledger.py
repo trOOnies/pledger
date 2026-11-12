@@ -206,7 +206,10 @@ class TestGroupedSelects:
         filters = client.get("/").text.split('id="filters"')[1].split("</form>")[0]
         accounts = filters.split('name="account"')[1].split("</select>")[0]
         groups = [g.split('"')[0] for g in accounts.split('<optgroup label="')[1:]]
-        assert groups == ["General assets", "Foreign currency assets (USD)", "General liabilities", "Debts &amp; loans", "Equity"]
+        assert groups == [
+            "General assets", "Foreign currency assets (USD)", "General liabilities", "Debts &amp; loans",
+            "Debts &amp; loans (USD)", "Equity",  # the debt accounts in other currencies by currency too
+        ]
         bases = filters.split('name="base"')[1].split("</select>")[0]
         groups = [g.split('"')[0] for g in bases.split('<optgroup label="')[1:]]
         assert groups == ["Operative", "Gifts", "Initial", "Transfers"]

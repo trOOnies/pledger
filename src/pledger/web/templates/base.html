@@ -269,6 +269,29 @@
     document.addEventListener("htmx:afterSettle", showAmountCurrencies);
     showAmountCurrencies();
 
+    // In the debt form (data-debt-currencies), the amount is in the currency of the other
+    // account (in the base one when editing, as in the ledger), and the amount in the currency
+    // of the debt account (on the side of data-debt-side) is asked when they differ.
+    function showDebtCurrencies(form) {
+      const info = JSON.parse(form.dataset.debtCurrencies);
+      const side = form.querySelector("[data-debt-side]")?.dataset.debtSide;
+      const input = form.elements.amount_debt;
+      if (!side || !input) return;
+      const currencyOf = (name) => (name ? info.accounts[name] || "" : null);  // "" for the base currency
+      const debt = currencyOf(form.elements[side]?.value);
+      const other = currencyOf(form.elements[side === "acc_debit" ? "acc_credit" : "acc_debit"]?.value);
+      const prefix = form.querySelector("[data-amount-prefix]");
+      prefix.textContent = (!info.editing && other) || info.symbol;
+      const ask = info.editing ? Boolean(debt) : debt !== null && other !== null && debt !== other;
+      form.querySelectorAll("[data-debt-own]").forEach((el) => { el.hidden = !ask; });
+      input.disabled = !ask;
+      form.querySelectorAll("[data-debt-own-currency]").forEach((el) => { el.textContent = debt || info.base; });
+    }
+    const showAllDebtCurrencies = () => document.querySelectorAll("form[data-debt-currencies]").forEach(showDebtCurrencies);
+    document.addEventListener("change", showAllDebtCurrencies);
+    document.addEventListener("htmx:afterSettle", showAllDebtCurrencies);
+    showAllDebtCurrencies();
+
     // In a form with data-credit-cards, the installments field is only shown, and sent, while
     // the credit account (picked or fixed by the base movement) is one of them.
     function showInstallments(form) {

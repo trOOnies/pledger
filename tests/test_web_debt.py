@@ -1,5 +1,6 @@
 """Tests for the Debt tab and the debt account."""
 
+import datetime as dt
 import re
 from dataclasses import replace
 
@@ -13,6 +14,7 @@ from helpers import (
     card_labels,
     movement_ids,
     rows,
+    with_conversion_bases,
     with_internal,
     with_salaries,
 )
@@ -165,7 +167,7 @@ class TestRemainingAsDifference:
         assert "Pick who and the amount" in preview(**on, amount="90", who="")
         text = re.sub(r"<[^>]+>", "", preview(**on, amount="1,090.00"))
         assert "we owe them $100.00 now" in text and "they owe us $990.00" in text
-        assert "It also adds Difference (L) of $990.00, leaving their balance at 0.00" in text
+        assert "It also adds Difference (L) of $990.00, leaving their balance there at 0.00" in text
         text = re.sub(r"<[^>]+>", "", preview(**on, amount="90"))
         assert "we owe them $10.00" in text and "Difference (G) of $10.00" in text
         assert 'class="money"' in preview(**on, amount="90")  # hidden with the other amounts
@@ -232,7 +234,7 @@ class TestDebtSides:
 
     def test_add_movement(self, settings):
         store = LedgerStore(settings)
-        with pytest.raises(ValueError, match=re.escape("Credit account must match: Cc != De")):
+        with pytest.raises(ValueError, match=re.escape("Credit account must be a debt account: Cc is not")):
             store.add("2026-02-01", "Debt - Incurred", "Ca", "Cc", "1", debt=True)
         store.add("2026-02-01", "Debt - Incurred", "Ca", "De", "1", debt=True)
         assert rows(settings).iloc[-1]["acc_credit"] == "De"
@@ -258,7 +260,7 @@ class TestDebtSides:
             store.add_debt_movement("2026-02-01", "Debt - Incurred", "Ca", "De", "1", "Mum")
         with pytest.raises(ValueError, match="Pick who"):
             store.add_debt_movement("2026-02-01", "Debt - Incurred", "Ca", "De", "1", " ")
-        de, lo = store.load().debt_accounts()
+        de, lo, *_ = store.load().debt_accounts()
         assert {c.name: c.amount for c in de.creditors.values()} == {"Dad": pytest.approx(16)}
         assert {c.name: c.amount for c in lo.creditors.values()} == {"Dad": 0}
 
@@ -374,7 +376,7 @@ class TestDebtSides:
 
     def test_debt_tab_form_without_debt_base_movements(self, settings, client):
         path = settings.base_movements_path
-        path.write_text(path.read_text().replace("    Loan - Collected:\n      description: d\n      credit: Lo\n", ""))
+        path.write_text(path.read_text().replace("    Loan - Collected:\n      description: d\n      credit: LOAN ACCOUNT\n", ""))
         form = client.get("/debt").text.split('id="debt-form"')[1].split("</form>")[0]
         assert "The Debt tab needs these base movements" in form and "&#39;Loan - Collected&#39;" in form
         assert form.count('name="base_movement"') == 2  # those of Debt, picked first
@@ -392,13 +394,15 @@ class TestDebtSides:
     def test_form_offers_only_debt_accounts(self, client):
         r = client.get("/form/accounts", params={"base_movement": "Debt - Incurred"})
         debit, credit = r.text.split("<span>Credit")
-        assert '<input value="De" readonly' in credit  # always De
+        # Any debt account, of any currency, grouped by it: never a loan account
+        assert "<option >De</option>" in credit and '<optgroup label="Debts &amp; loans (USD)">' in credit
+        assert "<option >DeD</option>" in credit and "<option >Lo</option>" not in credit
         assert "<option >Cc</option>" not in credit and "<option >Cc</option>" in debit
 
     def test_add_base_movement(self, settings, client):
         LedgerStore(settings).add_base_movement("Repay", "transfer", "d", debit="De")
         bases = {b["name"]: b for b in client.get("/api/base-movements").json()}
-        assert (bases["Debt - Incurred"]["debit"], bases["Debt - Incurred"]["credit"]) == (None, "De")
+        assert (bases["Debt - Incurred"]["debit"], bases["Debt - Incurred"]["credit"]) == (None, "DEBT ACCOUNT")
         assert (bases["Repay"]["debit"], bases["Repay"]["credit"]) == ("De", None)
         r = client.get("/form/base-sides", params={"move_type": "transfer"})
         assert 'value="DEBT"' not in r.text and "Any debt account" not in r.text
@@ -417,7 +421,7 @@ class TestDebtSides:
             for row in re.split(r'<tr id="account-[^"]+">', r.text.split("<tbody>", 1)[1])[1:]
             if "<strong>" in row
         }
-        assert specials == {"Ca": "-", "Bk": "-", "Br": "Investment", "Cc": "-", "Fi": "-", "Lo": "Debt", "De": "Debt", "Eq": "-"}
+        assert specials == {"Ca": "-", "Bk": "-", "Br": "Investment", "Cc": "-", "Fi": "-", "Lo": "Debt", "De": "Debt", "DeD": "Debt", "LoD": "Debt", "Eq": "-"}
 
 
 class TestDebtAccounts:
@@ -483,7 +487,7 @@ class TestDebtPage:
         r = client.get("/debt", params={"month": ""})
         movements = r.text.split('data-sortable="debt-movements"')[1].split("</table>")[0]
         # With their ids, the same as in the Ledger tab
-        assert movement_ids(movements) == ["L-6", "L-5", "A-De", "A-Lo"]
+        assert movement_ids(movements) == ["L-6", "L-5", "A-Lo", "A-De"]
         assert set(movement_ids(movements)) <= set(movement_ids(client.get("/", params={"initial": True}).text))
         # The initial movements too, with the initial amounts of everyone: what we owe in De, what we are owed in Lo
         assert "<h2>Movements <small>4, all time</small></h2>" in r.text
@@ -495,9 +499,9 @@ class TestDebtPage:
         assert "<h2>Movements <small>1, in 2026-02</small></h2>" in r.text
 
     def test_initial_amounts_count_from_the_initial_date(self, settings):
-        text = settings.accounts_path.read_text(encoding="utf-8")
-        settings.accounts_path.write_text(
-            text.replace("{description: Debts}", "{description: Debts, initial_date: 2026-01-02}"),
+        text = settings.currencies_path.read_text(encoding="utf-8")
+        settings.currencies_path.write_text(
+            text.replace("{name: De, description: Debts}", "{name: De, description: Debts, initial_date: 2026-01-02}"),
             encoding="utf-8",
         )
         snapshot = LedgerStore(settings).load()
@@ -528,7 +532,7 @@ class TestDebtPage:
         settings.ledger_path.write_text(
             settings.ledger_path.read_text().replace("2026-01-04;Gift;Ca;10;", "2026-01-04;Gift;Ca;2000;")
         )
-        cc, lo = LedgerStore(settings).load().debt_accounts()
+        cc, lo, *_ = LedgerStore(settings).load().debt_accounts()
         # The initial amounts are only counted once, from the creditors YAML: Ana owes us, in Lo
         assert {n: c.amount for n, c in cc.creditors.items()} == {"Dad": 120, "Ana": 0, "Leo": 0, "Bank": -990}
         assert {n: c.amount for n, c in lo.creditors.items()} == {"Dad": 0, "Ana": -30, "Leo": 0}
@@ -622,20 +626,20 @@ class TestDebtsAndLoans:
         snapshot = LedgerStore(settings).load()
         assert debt_form_fields(snapshot, "Debt - Paid")["who"] == {"People": ["Ann", "Dad"]}
         assert debt_form_fields(snapshot, "Loan - Given")["who"] == {"People": ["Bob", "Dad"]}
-        assert debt_form_fields(snapshot, "Loan - Given")["account"] == "Lo"
+        assert debt_form_fields(snapshot, "Loan - Given")["account"] == "the loan accounts"
         # Swapping the kind keeps who was picked, if they can be in its account
         loan = client.get("/form/debt-bases", params={"debt_kind": "Loan", "who": "Dad"}).text
-        assert "<option selected>Dad</option>" in loan and "Ann" not in loan and "(of Lo)" in loan
+        assert "<option selected>Dad</option>" in loan and "Ann" not in loan and "(of the loan accounts)" in loan
         loan = client.get("/form/debt-bases", params={"debt_kind": "Loan", "who": "Ann"}).text
         assert "<option selected>" not in loan
 
     def test_expected_roles_only_move_their_account(self, settings):
         store = LedgerStore(settings)
-        with pytest.raises(ValueError, match="'Ann' is expected to be a creditor: their movements are in De, not Lo"):
+        with pytest.raises(ValueError, match="'Ann' is expected to be a creditor: their movements are in the debt accounts, not in Lo"):
             store.add_debt_movement("2026-02-01", "Loan - Given", "Lo", "Ca", "10", "Ann")
-        with pytest.raises(ValueError, match="'Bob' is expected to be a debtor: their movements are in Lo, not De"):
+        with pytest.raises(ValueError, match="'Bob' is expected to be a debtor: their movements are in the loan accounts, not in De"):
             store.add_debt_movement("2026-02-01", "Debt - Incurred", "Ca", "De", "10", "Bob")
-        with pytest.raises(ValueError, match="Debit account must match: De != Lo"):
+        with pytest.raises(ValueError, match="Debit account must be a loan account: De is not"):
             store.add_debt_movement("2026-02-01", "Loan - Given", "De", "Ca", "10", "Dad")
 
     def test_who_has_no_expected_role_moves_both(self, settings, client):
@@ -647,7 +651,7 @@ class TestDebtsAndLoans:
         assert (balances["De"], balances["Lo"]) == (100, 35)  # a liability and an asset
         r = client.get("/debt")
         people = r.text.split("<h2>👥 People")[1].split("</table>")[0]
-        assert "<th class=\"num\" title=\"What we owe them in De (Debts)\">De</th>" in people
+        assert "<th class=\"num\" title=\"What we owe them in De (Debts), in ARS\">De</th>" in people
         dad = people.split("<strong>Dad</strong>")[1].split("</tr>")[0]
         # What we owe Dad in De, what he owes us in Lo, and what we owe him in all
         assert 'data-sort="100.0">$100.00' in dad and 'data-sort="-30.0">-$30.00' in dad and "<strong>$70.00</strong>" in dad
@@ -670,3 +674,200 @@ class TestDebtsAndLoans:
         misplaced = next(a for a in alerts if "isn't in its debt account" in a).split("</details>")[0]
         assert "1 movement names" in misplaced and "names <strong>Bob</strong>" in misplaced and "of <code>Lo</code>" in misplaced
         assert "Dad" not in misplaced
+
+
+class TestInOtherCurrencies:
+    """
+    Every currency has its debt and loan accounts (De and Lo in ARS, DeD and LoD in USD), and a
+    movement between two currencies was converted when it was made.
+    """
+
+    @pytest.fixture
+    def settings(self, revalued, tmp_path, monkeypatch):
+        monkeypatch.setattr("pledger.web.store.common.today", lambda: dt.date(2026, 2, 10))
+        path = tmp_path / "creditors.yaml"
+        path.write_text("people:\n  Dad: 0\n", encoding="utf-8")
+        with_internal(revalued.base_movements_path, DIFFERENCE_YAML.replace("after: Gifts", "after: Expo"), DEBT_YAML)
+        with_conversion_bases(revalued)
+        (revalued.currencies_path.parent / "currencies.csv").write_text(
+            "date;USD\n2026-01-01;1000\n2026-02-02;1200\n2026-02-09;1200\n", encoding="utf-8"
+        )
+        return replace(
+            revalued, creditors_path=path, conversions_path=tmp_path / "conversion.csv",
+            investment_movements_path=tmp_path / "investment.csv",
+        )
+
+    @pytest.fixture
+    def store(self, settings):
+        return LedgerStore(settings)
+
+    @staticmethod
+    def dad(store, name):
+        return next(a for a in store.load().debt_accounts() if a.name == name).creditors["Dad"].amount
+
+    @staticmethod
+    def last(store, n=1):
+        return [
+            (r.move_date, r.base_movement, r.acc_debit, r.amount, r.acc_credit, getattr(r, "amount_other_currency", ""))
+            for r in store.load().rows.iloc[-n:].itertuples()
+        ]
+
+    def test_the_same_currency_goes_through_fi(self, store):
+        # Dad lends us 100 USD, into Bk: the debt row through Fi, and Bk gets them from a conversion
+        store.add_debt_movement("2026-01-10", "Debt - Incurred", "Bk", "DeD", "100", "Dad")
+        assert self.last(store) == [("2026-01-10", "Debt - Incurred", "Fi", "100,000.00", "DeD", "100.0000")]
+        (conversion,) = store.load().conversions.to_dict("records")
+        assert (conversion["base_movement"], conversion["acc_debit"], conversion["acc_credit"]) == (
+            "Foreign currency - Bought", "Bk", "Fi",
+        )
+        assert conversion["amount_other_currency"] == "100.0000" and conversion["linked"] == "L-5"
+        assert self.dad(store, "DeD") == 100 and self.dad(store, "De") == 0  # in USD, in its account
+        snapshot = store.load()
+        assert snapshot.other_balances["DeD"] == 100
+        # Revalued like any account in another currency: a liability worth more is a loss
+        assert [(r.move_date, r.base_movement, r.acc_debit, r.amount, r.acc_credit) for r in snapshot.result_rows.itertuples() if "DeD" in (r.acc_debit, r.acc_credit)] == [
+            ("2026-02-02", "Foreign currency (L)", "Eq", "20000.00", "DeD"),
+        ]
+        assert snapshot.ledger().balances()["DeD"] == pytest.approx(120000)
+        assert self.dad(store, "DeD") == 100  # what is owed doesn't change with it
+
+    def test_paying_in_another_currency_converts_it(self, store):
+        store.add_debt_movement("2026-01-10", "Debt - Incurred", "Bk", "DeD", "100", "Dad")
+        # Paid with pesos, at an exchange rate of its own: a single row with both amounts
+        with pytest.raises(ValueError, match="DeD is in USD: tell how much is owed in USD"):
+            store.add_debt_movement("2026-02-05", "Debt - Paid", "DeD", "Ca", "130000", "Dad")
+        store.add_debt_movement("2026-02-05", "Debt - Paid", "DeD", "Ca", "130000", "Dad", amount_debt="100")
+        assert self.last(store) == [("2026-02-05", "Debt - Paid", "DeD", "130,000.00", "Ca", "100.0000")]
+        assert self.dad(store, "DeD") == 0
+        snapshot = store.load()
+        assert snapshot.other_balances["DeD"] == 0
+        # It paid 130,000 for what was worth 120,000: a loss on the next value of the currency
+        results = [(r.move_date, r.base_movement, r.amount) for r in snapshot.result_rows.itertuples() if "DeD" in (r.acc_debit, r.acc_credit)]
+        assert results == [("2026-02-02", "Foreign currency (L)", "20000.00"), ("2026-02-09", "Foreign currency (L)", "10000.00")]
+        assert snapshot.ledger().balances()["DeD"] == pytest.approx(0)
+
+    def test_a_debt_in_the_base_currency_paid_in_another_one(self, store):
+        store.add_debt_movement("2026-01-10", "Debt - Incurred", "Ca", "De", "50000", "Dad")
+        with pytest.raises(ValueError, match="De is in ARS: tell how much is owed in ARS"):
+            store.add_debt_movement("2026-01-15", "Debt - Paid", "De", "Bk", "45", "Dad")
+        # 45 USD settle the 50,000 pesos: De follows the pesos, Bk the dollars, through Fi
+        store.add_debt_movement("2026-01-15", "Debt - Paid", "De", "Bk", "45", "Dad", amount_debt="50000")
+        assert self.last(store) == [("2026-01-15", "Debt - Paid", "De", "50,000.00", "Fi", "")]
+        conversion = store.load().conversions.iloc[-1]
+        assert (conversion.base_movement, conversion.acc_credit, conversion.amount_base_currency, conversion.amount_other_currency) == (
+            "Foreign currency - Sold", "Bk", "50,000.00", "45.0000",
+        )
+        assert self.dad(store, "De") == 0
+
+    def test_amounts_of_the_same_currency_must_match(self, store):
+        with pytest.raises(ValueError, match="Bk and DeD are both in USD: the amounts must match"):
+            store.add_debt_movement("2026-01-10", "Debt - Incurred", "Bk", "DeD", "100", "Dad", amount_debt="90")
+        with pytest.raises(ValueError, match="Both accounts are in ARS: the amounts must match"):
+            store.add_debt_movement("2026-01-10", "Debt - Incurred", "Ca", "De", "100", "Dad", amount_debt="90")
+        store.add_debt_movement("2026-01-10", "Debt - Incurred", "Ca", "De", "100", "Dad", amount_debt="100")
+        assert self.last(store) == [("2026-01-10", "Debt - Incurred", "Ca", "100.00", "De", "")]
+
+    def test_loans_too(self, store):
+        store.add_debt_movement("2026-01-10", "Loan - Given", "LoD", "Ca", "95000", "Dad", amount_debt="100")
+        assert self.last(store) == [("2026-01-10", "Loan - Given", "LoD", "95,000.00", "Ca", "100.0000")]
+        assert self.dad(store, "LoD") == -100  # he owes us 100 USD
+        with pytest.raises(ValueError, match="Debit account must be a loan account: DeD is not"):
+            store.add_debt_movement("2026-01-10", "Loan - Given", "DeD", "Ca", "1", "Dad", amount_debt="1")
+
+    def test_remaining_as_difference_is_in_its_currency(self, store):
+        store.add_debt_movement("2026-01-10", "Debt - Incurred", "Bk", "DeD", "100", "Dad")
+        difference = store.add_debt_movement(
+            "2026-01-20", "Debt - Paid", "DeD", "Bk", "90", "Dad", remaining_as_difference=True,
+        )
+        assert difference == ("Difference (G)", 10.0)
+        assert self.last(store, 2) == [
+            ("2026-01-20", "Debt - Paid", "DeD", "90,000.00", "Fi", "90.0000"),
+            ("2026-01-20", "Difference (G)", "DeD", "10,000.00", "Eq", "10.0000"),
+        ]
+        assert self.dad(store, "DeD") == 0
+        # The conversion only goes with the debt movement: deleting it leaves the Difference
+        snapshot = store.load()
+        assert snapshot.conversions.iloc[-1]["linked"] == "L-6"
+        index = len(snapshot.rows) - 2
+        store.delete_debt_movement(index, row_fingerprint(snapshot.rows.iloc[index]))
+        assert self.last(store) == [("2026-01-20", "Difference (G)", "DeD", "10,000.00", "Eq", "10.0000")]
+        assert len(store.load().conversions) == 1
+
+    def test_editing_needs_the_amount_in_its_currency(self, store):
+        store.add_debt_movement("2026-02-05", "Debt - Incurred", "Ca", "DeD", "130000", "Dad", amount_debt="100")
+        snapshot = store.load()
+        index = len(snapshot.rows) - 1
+        args = (index, row_fingerprint(snapshot.rows.iloc[index]), "2026-02-05", "Debt - Incurred", "Ca", "DeD", "130000", "Dad")
+        with pytest.raises(ValueError, match="tell how much is owed in USD"):
+            store.edit_debt_movement(*args)
+        store.edit_debt_movement(*args, amount_debt="110")
+        assert self.last(store) == [("2026-02-05", "Debt - Incurred", "Ca", "130,000.00", "DeD", "110.0000")]
+        assert self.dad(store, "DeD") == 110
+        # Moved to the account in the base currency, it loses its amount in another one
+        snapshot = store.load()
+        store.edit_debt_movement(index, row_fingerprint(snapshot.rows.iloc[index]), "2026-02-05", "Debt - Incurred", "Ca", "De", "130000", "Dad")
+        assert self.last(store) == [("2026-02-05", "Debt - Incurred", "Ca", "130,000.00", "De", "")]
+
+    def test_the_ledger_tab_follows_its_amount(self, store):
+        # A loss paid by Dad in dollars: in USD, a single row, with no conversion
+        store.add_ledger_movement("2026-01-12", "Food", "Eq", "DeD", "20", "Dad: lunch")
+        assert self.last(store) == [("2026-01-12", "Food", "Eq", "20,000.00", "DeD", "20.0000")]
+        assert len(store.load().conversions) == 0 and self.dad(store, "DeD") == 20
+        snapshot = store.load()
+        index = len(snapshot.rows) - 1
+        with pytest.raises(ValueError, match="Its amount came with its amount in another currency"):
+            store.edit(index, row_fingerprint(snapshot.rows.iloc[index]), "2026-01-12", "Food", "Eq", "DeD", "1", "Dad")
+
+    def test_conversions_dont_move_debt_accounts(self, store):
+        with pytest.raises(ValueError, match="Conversions don't move debt accounts like DeD"):
+            store.add_conversion("2026-01-10", "Foreign currency - Bought", "DeD", "Ca", "1000", "1")
+
+    def test_the_debt_tab(self, settings, store):
+        client = TestClient(create_app(settings))
+        page = client.get("/debt").text
+        assert ">DeD</th>" not in page and ", in USD</small>" not in page  # unused yet: no USD tables
+        r = client.post("/debt/movements", data={
+            "move_date": "2026-02-05", "base_movement": "Debt - Incurred", "acc_debit": "Ca", "acc_credit": "DeD",
+            "who": "Dad", "amount": "130000", "amount_debt": "100",
+        })
+        assert "Added Debt - Incurred (Dad): $130,000.00 for USD 100.00" in r.text
+        page = client.get("/debt").text
+        # A table per currency: everyone in ARS, and in USD only who used it
+        titles = re.findall(r"<h2>(\S+ \w+) <small>(\d+), in (\w+)</small></h2>", page)
+        assert titles == [("👥 People", "1", "ARS"), ("👥 People", "1", "USD")]
+        usd = page.split("<small>1, in USD</small></h2>")[1].split("</table>")[0]
+        assert 'data-sortable="debts-people-USD"' in usd and ">DeD</th>" in usd and ">LoD</th>" in usd
+        dad = usd.split("<strong>Dad</strong>")[1].split("</tr>")[0]
+        assert "USD 100.00" in dad and "<strong>USD 100.00</strong>" in dad and ">De</th>" not in usd
+        ars = page.split("<small>1, in ARS</small></h2>")[1].split("</table>")[0]
+        assert ">DeD</th>" not in ars and "<strong>$0.00</strong>" in ars
+        # In ARS in all, at today's value of the dollar
+        cards = page.split('<div class="cards">')[1].split("</div>\n  </div>")[0]
+        assert "$120,000.00" in cards
+        accounts = page.split("<h2>Debt accounts</h2>")[1].split("</table>")[0]
+        assert "<td>USD</td>" in accounts and "USD 100.00" in accounts and ">In ARS</th>" in accounts
+        movements = page.split('data-sortable="debt-movements"')[1].split("</table>")[0]
+        assert "USD 100.00</small>" in movements and ">Revaluation</td>" in movements
+        # The form asks for the amount in the currency of the debt account
+        form = client.get("/form/debt-movement").text
+        assert 'name="amount_debt"' in form and '"DeD": "USD"' in form and 'data-debt-side="acc_credit"' in form
+        text = client.get("/form/debt-difference", params={
+            "base_movement": "Debt - Paid", "who": "Dad", "acc_debit": "DeD", "acc_credit": "Ca",
+            "amount": "100000", "amount_debt": "90", "remaining_as_difference": "true",
+        }).text
+        text = re.sub(r"<[^>]+>", "", text)
+        assert "Dad in DeD: we owe them USD 100.00 now; after this movement, we owe them USD 10.00" in text
+        assert "Difference (G) of USD 10.00" in text
+        # Followed in the Currencies tab too, once used
+        assert "DeD" in client.get("/currencies").text
+
+    def test_the_api(self, settings):
+        client = TestClient(create_app(settings))
+        movement = {
+            "move_date": "2026-02-05", "base_movement": "Debt - Incurred", "acc_debit": "Ca", "acc_credit": "DeD",
+            "amount": 130000, "who": "Dad",
+        }
+        assert client.post("/api/debt/movements", json=movement).status_code == 422
+        assert client.post("/api/debt/movements", json={**movement, "amount_debt": 100}).status_code == 201
+        assert self.dad(LedgerStore(settings), "DeD") == 100
+

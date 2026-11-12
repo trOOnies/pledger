@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from conftest import INTERNAL_ACCOUNTS_YAML
+from conftest import INTERNAL_ACCOUNTS_YAML, other_currency_yaml
 
 from pledger.enums import (
     AccountCheck,
@@ -125,10 +125,14 @@ class TestAccount:
 
     def test_load_yaml(self, accounts_yaml, currencies_yaml):
         accounts = Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml))
-        assert set(accounts) == {"Ca", "Bk", "Cc", "Fi", "Lo", "De", "Eq"}
-        assert [n for n, a in accounts.items() if a.internal] == ["Fi", "Lo", "De", "Eq"]
+        assert set(accounts) == {"Ca", "Bk", "Cc", "Fi", "Eq", "De", "Lo", "DeD", "LoD"}
+        # The debt accounts of each currency, of currencies.yaml, after the internal ones of accounts.yaml
+        assert [n for n, a in accounts.items() if a.internal] == ["Fi", "Eq", "De", "Lo", "DeD", "LoD"]
         assert isinstance(accounts["De"], DebtAccount) and accounts["Fi"].checks == (AccountCheck.NET_ZERO,)
         assert isinstance(accounts["Lo"], DebtAccount) and accounts["Lo"].acc_type is AccountType.ASSET
+        assert accounts["DeD"].currency.name == "USD" and accounts["DeD"].role is DebtRole.CREDITOR
+        assert accounts["LoD"].acc_type is AccountType.ASSET and accounts["LoD"].role is DebtRole.DEBTOR
+        assert accounts["DeD"].description == "Debts in USD"
         assert accounts["Cc"].acc_type is AccountType.LIABILITY
         assert accounts["Bk"].description == "Bank account"
 
@@ -197,14 +201,18 @@ class TestAccount:
     @pytest.mark.parametrize(
         ("text", "message"),
         [
-            ("", r"must have exactly the assets Fi and Lo, the liability De and the equity Eq: it has none"),
-            (INTERNAL_ACCOUNTS_YAML.replace("{Fi:", "{Fx:"), r"it has \{'Fx': 'asset', 'Lo': 'asset', 'De': 'liability', 'Eq': 'equity'\}"),
-            (INTERNAL_ACCOUNTS_YAML.replace("  liability: {De: {description: Debts}}\n", "").replace("Loans}}", "Loans}, De: {description: Debts}}"), "must have exactly"),
+            ("", r"must have exactly the asset Fi and the equity Eq: it has none"),
+            (INTERNAL_ACCOUNTS_YAML.replace("{Fi:", "{Fx:"), r"it has \{'Fx': 'asset', 'Eq': 'equity'\}"),
+            # The debt accounts left there are of the currencies YAML now
+            (INTERNAL_ACCOUNTS_YAML.replace("[net_zero]}}", "[net_zero]}, Lo: {description: Loans}}"),
+             r"must have exactly .* debt_account and loan_account of each currency"),
             (INTERNAL_ACCOUNTS_YAML + "equity:\n  Eq2:\n    description: d\n", r"The only equity account is the internal Eq: \['Eq2'\]"),
             (INTERNAL_ACCOUNTS_YAML + "asset:\n  Ca:\n    description: d\n    initial_amount: 0\n  Fi:\n    description: d\n",
              r"The accounts \['Fi'\] are internal"),
-            (INTERNAL_ACCOUNTS_YAML.replace("{description: Debts}", "{description: Debts, currency: USD}"),
-             "The internal account 'De' must be in the base currency"),
+            (INTERNAL_ACCOUNTS_YAML.replace("initial_amount: 0,", "initial_amount: 0, currency: USD,"),
+             "The internal account 'Fi' must be in the base currency"),
+            (INTERNAL_ACCOUNTS_YAML + "asset:\n  DeD:\n    description: d\n    initial_amount: 0\n",
+             "Duplicated account name: 'DeD'"),
         ],
     )
     def test_load_yaml_internal_accounts(self, tmp_path, currencies_yaml, text, message):
@@ -592,10 +600,11 @@ class TestDailyCpi:
 
 
 class TestCurrency:
-    YAML = (
+    BASE = (
         "base_currency:\n  name: ARS\n  description: Pesos\n"
-        "other_currencies:\n  - name: USD\n    description: Dollar\n"
+        "  debt_account: {name: De, description: Debts}\n  loan_account: {name: Lo, description: Loans}\n"
     )
+    YAML = BASE + "other_currencies:\n" + other_currency_yaml("USD", "Dollar")
     INFLATION = "month;monthly_inflation\n2025-12;10%\n2026-01; 2.5 %\n"
 
     @pytest.fixture
@@ -618,7 +627,7 @@ class TestCurrency:
         assert usd.base_currency_mapping.index[0] == pd.Timestamp("2025-12-29")
 
     def test_load_yaml_without_other_currencies(self, tmp_path, path):
-        path.write_text("base_currency:\n  name: ARS\n  description: Pesos\nother_currencies:\n")
+        path.write_text(self.BASE + "other_currencies:\n")
         base, others = Currency.load_yaml(str(path))  # no currencies.csv needed
         assert base.name == "ARS" and others == {} and len(base.customer_price_index) == 63
 
@@ -829,7 +838,13 @@ class TestDebtAccount:
         assert list(de.get_kind(CreditorKind.SERVICE)) == ["Work"]
         # Each one's own balance: what we owe in De, what we are owed in Lo
         assert (de.initial_amount, lo.initial_amount) == (100.0, 150.5)
-        assert not any(isinstance(a, DebtAccount) for n, a in accounts.items() if n not in ("De", "Lo"))
+        debts = [n for n, a in accounts.items() if isinstance(a, DebtAccount)]
+        assert debts == ["De", "Lo", "DeD", "LoD"]
+        # Those of another currency share the creditors, but the initial amounts are in the base one
+        ded, lod = accounts["DeD"], accounts["LoD"]
+        assert list(ded.creditors) == list(de.creditors) and list(lod.creditors) == list(lo.creditors)
+        assert all(c.amount == 0 for c in [*ded.creditors.values(), *lod.creditors.values()])
+        assert (ded.initial_amount, lod.initial_amount) == (0, 0)
 
     def test_expected_roles_have_one_account(self, paths):
         Path(paths[2]).write_text(
@@ -846,7 +861,7 @@ class TestDebtAccount:
 
     def test_load_yaml_rejects_the_old_layout(self, paths):
         Path(paths[2]).write_text("De:\n  people:\n    Dad: 0\n", encoding="utf-8")
-        with pytest.raises(ValueError, match=r"has no accounts \(\['De'\]\): its people and services are at the top level"):
+        with pytest.raises(ValueError, match=r"unknown sections \['De'\].*shared by all the debt accounts"):
             self.load(paths)
 
     @pytest.mark.parametrize(
@@ -873,11 +888,41 @@ class TestDebtAccount:
         with pytest.raises(ValueError, match=message):
             self.load(paths)
 
-    def test_load_yaml_rejects_initial_amount(self, paths):
-        text = Path(paths[0]).read_text(encoding="utf-8")
-        Path(paths[0]).write_text(text.replace("{description: Debts}", "{description: Debts, initial_amount: 0}"), encoding="utf-8")
-        with pytest.raises(ValueError, match="Debt account 'De' must not have an initial_amount"):
+    @pytest.mark.parametrize(
+        ("old", "new", "message"),
+        [
+            ("{name: De, description: Debts}", "{name: De, description: Debts, initial_amount: 0}",
+             r"debt_account of the currency 'ARS' has unknown keys \['initial_amount'\]"),
+            ("{name: DeD, description: Debts in USD}", "{name: DeD, description: d, currency: ARS}",
+             r"debt_account of the currency 'USD' has unknown keys \['currency'\]"),
+            ("    loan_account: {name: LoD, description: Loans in USD}\n", "",
+             "The loan_account of the currency 'USD' is mandatory"),
+            ("  debt_account: {name: De, description: Debts}\n", "",
+             "The debt_account of the currency 'ARS' is mandatory"),
+            ("{name: LoD, description: Loans in USD}", "{name: Lo, description: Loans in USD}",
+             r"repeat the names \['Lo'\]"),
+            ("{name: LoD, description: Loans in USD}", "{description: Loans in USD}", "needs a name"),
+            ("{name: LoD, description: Loans in USD}", "{name: LoD}", "needs a description"),
+        ],
+    )
+    def test_currencies_yaml_declares_them(self, paths, old, new, message):
+        text = Path(paths[1]).read_text(encoding="utf-8")
+        assert old in text
+        Path(paths[1]).write_text(text.replace(old, new, 1), encoding="utf-8")
+        with pytest.raises(ValueError, match=message):
             self.load(paths)
+
+    def test_they_take_the_optional_keys_of_the_accounts(self, paths):
+        text = Path(paths[1]).read_text(encoding="utf-8")
+        Path(paths[1]).write_text(
+            text.replace("{name: DeD, description: Debts in USD}", "{name: DeD, long_name: Debts (L), description: d, is_liquid: true}"),
+            encoding="utf-8",
+        )
+        assert self.load(paths)["DeD"].is_liquid
+
+    def test_role_and_type_must_match(self, currencies):
+        with pytest.raises(ValueError, match="Debt account 'Lo' of debtors must be an asset account"):
+            DebtAccount("Lo", "Loans", AccountType.LIABILITY, currencies["ARS"], 0.0, role=DebtRole.DEBTOR)
 
     def test_expected_roles(self, paths):
         creditors_yaml = paths[2]

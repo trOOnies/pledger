@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 from pledger.enums import AccountType, LedgerSide, MovementType
-from pledger.models import SPECIAL_LABELS, MovementBase
+from pledger.models import (
+    DEBT_SIDE,
+    LOAN_SIDE,
+    SPECIAL_LABELS,
+    MovementBase,
+    is_foreign,
+)
 from pledger.web.store import Snapshot
 from pledger.web.views.common import ACCOUNT_GROUPS, account_group
 
@@ -12,7 +18,8 @@ def by_group(snapshot: Snapshot, names: list[str]) -> dict[str, list[str]]:
     """
     These accounts grouped by their type, labelled (see ACCOUNT_GROUPS: general assets,
     credit cards…), in that order, each sorted alphabetically. Those in another currency
-    are by currency too, in the order of the currencies, e.g. "Foreign currency assets (USD)".
+    are by currency too, in the order of the currencies, e.g. "Foreign currency assets (USD)"
+    or "Debts & loans (USD)".
     """
     def key(name: str) -> tuple[str, str]:
         account = snapshot.accounts[name]
@@ -20,7 +27,7 @@ def by_group(snapshot: Snapshot, names: list[str]) -> dict[str, list[str]]:
         if group is None:
             return AccountType.EQUITY.value, "Equity"
         label = ACCOUNT_GROUPS[group][1]
-        if group.startswith("foreign_"):
+        if group.startswith("foreign_") or (group == "debt" and is_foreign(account)):
             label = f"{label} ({account.currency.name})"
         return group, label
 
@@ -137,7 +144,9 @@ def base_sides(snapshot: Snapshot, move_type: str) -> dict:
         "debit_fixed": equity if move_type == MovementType.LOSS.value else None,
         "credit_fixed": equity if move_type == MovementType.GAIN.value else None,
         "free": [a.name for a in snapshot.free_accounts()],
-        "specials": SPECIAL_LABELS,
+        # The special sides a new base movement can take: not those of the debt base movements, of the Debt tab
+        "specials": {k: v for k, v in SPECIAL_LABELS.items() if k not in (DEBT_SIDE, LOAN_SIDE)},
+        "labels": SPECIAL_LABELS,
         # Gains and losses are filed under a (non-internal) result type; transfers have none.
         "result_types": (
             []

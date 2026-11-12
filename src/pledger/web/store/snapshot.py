@@ -9,11 +9,10 @@ from typing import TYPE_CHECKING
 
 from pandas import DataFrame
 
-from pledger.enums import AccountType, LedgerSide, MovementType
+from pledger.enums import AccountType, DebtRole, LedgerSide, MovementType
 from pledger.ledger import Ledger
 from pledger.models import (
     CREDIT_CARD,
-    DEBT_ACCOUNTS,
     INVESTMENT,
     SPECIAL_SIDES,
     Account,
@@ -38,7 +37,8 @@ from pledger.web.store.constants import (
     CORRECTION_GAIN,
     CORRECTION_LOSS,
     CORRECTIONS,
-    DEBT_BASE_ACCOUNTS,
+    DEBT_BASE_ROLES,
+    DEBT_BASE_SIDES,
     DEBT_BASES,
     DIFFERENCE_GAIN,
     DIFFERENCE_LOSS,
@@ -228,18 +228,32 @@ class Snapshot:
         gain = (difference > 0) == (account.acc_type == AccountType.ASSET)
         return CORRECTION_GAIN if gain else CORRECTION_LOSS, amount
 
-    def debt_remaining(self, base_movement: str, amount: float, who: str) -> tuple[float, float]:
+    def debt_remaining(self, account: str, base_movement: str, amount: float, who: str) -> tuple[float, float]:
         """
-        What we owe `who` in all the ledger in the debt account of this one of DEBT_BASES
-        (negative: what they owe us), and what would remain there after a movement of it
-        of this amount.
+        What we owe `who` in all the ledger in this debt account (negative: what they owe
+        us), in its currency, and what would remain there after a movement of this one of
+        DEBT_BASES of this amount, in that currency too.
         """
-        account = DEBT_BASE_ACCOUNTS[base_movement]
         balance = next(
             (a.creditors[who].amount for a in self.debt_accounts() if a.name == account and who in a.creditors), 0.0
         )
         sign = 1 if DEBT_BASES[base_movement] == LedgerSide.CREDIT else -1
         return balance, round(balance + sign * amount, 2)
+
+    def role_accounts(self, role: DebtRole) -> list[DebtAccount]:
+        """The debt accounts of this role (see DebtAccount.role), in the order of the currencies."""
+        return [a for a in self.accounts.values() if isinstance(a, DebtAccount) and a.role == role]
+
+    def base_debt_account(self, role: DebtRole) -> DebtAccount | None:
+        """The debt account of this role in the base currency, if any: that of the services and companies."""
+        return next((a for a in self.role_accounts(role) if a.currency.is_base_currency), None)
+
+    def debt_account_of(self, base_movement: str, acc_debit: str, acc_credit: str) -> DebtAccount | None:
+        """The debt account of the role of a debt base movement on the side it takes (see DEBT_BASE_SIDES), if any."""
+        role = DEBT_BASE_ROLES.get(base_movement)
+        side = acc_credit if DEBT_BASES.get(base_movement) == LedgerSide.CREDIT else acc_debit
+        account = self.accounts.get(side)
+        return account if isinstance(account, DebtAccount) and account.role == role else None
 
     @staticmethod
     def difference_of(remaining: float) -> tuple[str, float] | None:
@@ -314,8 +328,9 @@ class Snapshot:
 
     def debt_accounts(self, month: str = "") -> list[DebtAccount]:
         """
-        Copies of the debt accounts as of the end of `month` (all the ledger by default), De first:
-        their initial amounts, once they start, plus the booked movements up to then.
+        Copies of the debt accounts as of the end of `month` (all the ledger by default), in
+        their order (see Account.load_yaml): their initial amounts, once they start, plus
+        the booked movements up to then, each in the currency of its account (see _apply_debts).
         """
         debts = {}
         for a in self.accounts.values():
@@ -325,8 +340,8 @@ class Snapshot:
                 debts[a.name] = replace(a, creditors=creditors)
         rows = self.booked_rows
         rows = rows[rows.move_date.str[:7] <= month] if month else rows
-        _apply_debts({**self.accounts, **debts}, rows)
-        return sorted(debts.values(), key=lambda a: DEBT_ACCOUNTS.index(a.name) if a.name in DEBT_ACCOUNTS else len(DEBT_ACCOUNTS))
+        _apply_debts(self, {**self.accounts, **debts}, rows)
+        return list(debts.values())
 
     def investment_accounts(
         self, unattributed: list[dict] | None = None, month: str = ""
@@ -378,7 +393,7 @@ class Snapshot:
 
     def debt_base_movements(self) -> dict[str, MovementBase]:
         """The base movements of DEBT_BASES, added from the Debt tab, that are as expected (see tab_base_movements)."""
-        return self.tab_base_movements(DEBT_BASES, DEBT_BASE_ACCOUNTS)[0]
+        return self.tab_base_movements(DEBT_BASES, DEBT_BASE_SIDES)[0]
 
     def card_payment_base_movements(self) -> dict[str, MovementBase]:
         """The base movements of CARD_PAYMENT_BASES, added from the Credit Cards tab, that are as expected (see tab_base_movements)."""

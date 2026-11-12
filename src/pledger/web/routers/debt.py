@@ -15,9 +15,14 @@ router = APIRouter(prefix="/api/debt", tags=["debt"])
 
 @router.post("/movements", status_code=201)
 def create_debt_movement(store: StoreDep, movement: DebtMovementIn):
-    """Added to the ledger CSV like the others."""
+    """
+    Added to the ledger CSV like the others, `amount` in the currency of the other account and
+    `amount_debt` in that of the debt account, when they are different.
+    """
+    fields = movement.model_dump()
+    fields["amount_debt"] = "" if movement.amount_debt is None else movement.amount_debt
     try:
-        difference = store.add_debt_movement(**movement.model_dump())
+        difference = store.add_debt_movement(**fields)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from None
     return {"ok": True, "difference": dict(zip(("base_movement", "amount"), difference)) if difference else None}

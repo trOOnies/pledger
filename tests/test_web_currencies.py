@@ -5,7 +5,7 @@ import re
 from dataclasses import replace
 
 import pytest
-from conftest import RESULT_YAML
+from conftest import RESULT_YAML, other_currency_yaml
 from fastapi.testclient import TestClient
 from helpers import HTMX, movement_ids, with_conversion_bases
 
@@ -175,7 +175,8 @@ class TestConversions:
             (-3, "2026-01-10", "Foreign currency (G)", "Bk", "280.20", "Eq", "1.9010 USD at 1,200.0000"),
         ]
         assert snapshot.ledger().balances()["Bk"] == pytest.approx(2281.2)
-        assert snapshot.other_balances == {"Bk": pytest.approx(1.901)}
+        # The debt accounts in USD are followed in it too, with nothing yet
+        assert snapshot.other_balances == {"Bk": pytest.approx(1.901), "DeD": 0, "LoD": 0}
 
     def test_the_initial_movements_are_left_out_by_default(self, conv):
         snapshot = LedgerStore(conv).load()
@@ -392,7 +393,7 @@ class TestConversions:
     @pytest.fixture
     def cross(self, conv) -> Settings:
         """With EUR and an Eu account in it."""
-        conv.currencies_path.write_text(conv.currencies_path.read_text() + "  - name: EUR\n    description: Euro\n")
+        conv.currencies_path.write_text(conv.currencies_path.read_text() + other_currency_yaml("EUR", "Euro"))
         (conv.currencies_path.parent / "currencies.csv").write_text(
             "date;USD;EUR\n2026-01-01;1000;1100\n2026-01-10;1200;1300\n"
         )

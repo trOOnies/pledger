@@ -17,10 +17,23 @@ CURRENCIES_YAML = """\
 base_currency:
   name: ARS
   description: Pesos
+  debt_account: {name: De, description: Debts}
+  loan_account: {name: Lo, description: Loans}
 other_currencies:
   - name: USD
     description: Dollar
+    debt_account: {name: DeD, description: Debts in USD}
+    loan_account: {name: LoD, description: Loans in USD}
 """
+
+def other_currency_yaml(name: str, description: str) -> str:
+    """An entry of the other_currencies of a currencies YAML, with its debt accounts, De<name> and Lo<name>."""
+    return (
+        f"  - name: {name}\n    description: {description}\n"
+        f"    debt_account: {{name: De{name}, description: Debts in {name}}}\n"
+        f"    loan_account: {{name: Lo{name}, description: Loans in {name}}}\n"
+    )
+
 
 CURRENCIES_CSV = """\
 date;USD
@@ -34,11 +47,11 @@ month;monthly_inflation
 """
 
 # The mandatory internal accounts, first in every accounts YAML of the tests: in flow
-# style, so that replacing the lines of the other sections leaves them alone
+# style, so that replacing the lines of the other sections leaves them alone. The debt
+# accounts are those of the currencies (see CURRENCIES_YAML).
 INTERNAL_ACCOUNTS_YAML = """\
 internal:
-  asset: {Fi: {description: Intermediary, initial_amount: 0, checks: [net_zero]}, Lo: {description: Loans}}
-  liability: {De: {description: Debts}}
+  asset: {Fi: {description: Intermediary, initial_amount: 0, checks: [net_zero]}}
   equity: {Eq: {description: Equity}}
 """
 

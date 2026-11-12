@@ -344,7 +344,7 @@ class TestSalaries:
         snapshot = LedgerStore(settings).load()
         # The net salary: 1,600 of salary minus 320 of tax
         assert snapshot.ledger().balances()["Lo"] == 1280  # an asset: what Globex owes us
-        de, cc = snapshot.debt_accounts()
+        de, cc, *_ = snapshot.debt_accounts()
         assert (cc.creditors["Globex"].amount, cc.creditors["Acme"].amount, cc.unassigned) == (-1280, 0, 0)
         assert "Globex" not in de.creditors  # a company, expected to be a debtor: only in Lo
         assert snapshot.debt_accounts("2026-01")[1].creditors["Globex"].amount == -1280

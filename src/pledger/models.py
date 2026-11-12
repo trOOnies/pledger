@@ -38,26 +38,33 @@ def _load_yaml(path: str) -> dict:
 
 
 # A base movement side set to one of these (reserved names) takes any investment, credit
-# card or foreign currency account instead of a fixed one. See SPECIAL_SIDES.
+# card, foreign currency, debt or loan account instead of a fixed one. See SPECIAL_SIDES.
 INVESTMENT = "INVESTMENT"
 CREDIT_CARD = "CREDIT CARD"
 FOREIGN_CURRENCY = "FOREIGN CURRENCY"
-RESERVED = {INVESTMENT, CREDIT_CARD, FOREIGN_CURRENCY}
+DEBT_SIDE = "DEBT ACCOUNT"
+LOAN_SIDE = "LOAN ACCOUNT"
+RESERVED = {INVESTMENT, CREDIT_CARD, FOREIGN_CURRENCY, DEBT_SIDE, LOAN_SIDE}
 
 # The internal accounts, mandatory, under the top-level `internal` key of the accounts
 # YAML: the intermediary between movements (in the base currency, e.g. of the
-# conversions between two other currencies), the debts with other people (what we owe
-# them) and the loans to them (what they owe us), the only two debt accounts (see
-# DebtAccount), and the equity (the only equity account).
-INTERMEDIARY, DEBT_ACCOUNT, LOAN_ACCOUNT, EQUITY_ACCOUNT = "Fi", "De", "Lo", "Eq"
-INTERNAL_ACCOUNTS = {
-    INTERMEDIARY: AccountType.ASSET, DEBT_ACCOUNT: AccountType.LIABILITY, LOAN_ACCOUNT: AccountType.ASSET,
-    EQUITY_ACCOUNT: AccountType.EQUITY,
-}
-DEBT_ACCOUNTS = (DEBT_ACCOUNT, LOAN_ACCOUNT)
-# The only debt account of someone expected in a role (see Creditor.accounts): the ones we
-# owe are in the debt account, and the ones that owe us in the loan account.
-ROLE_ACCOUNTS = {DebtRole.CREDITOR: DEBT_ACCOUNT, DebtRole.DEBTOR: LOAN_ACCOUNT}
+# conversions between two other currencies) and the equity (the only equity account).
+INTERMEDIARY, EQUITY_ACCOUNT = "Fi", "Eq"
+INTERNAL_ACCOUNTS = {INTERMEDIARY: AccountType.ASSET, EQUITY_ACCOUNT: AccountType.EQUITY}
+# The keys of each currency of the currencies YAML with its two debt accounts (see
+# DebtAccount), internal too, both mandatory: the debts with other people (what we owe
+# them, a liability) and the loans to them (what they owe us, an asset). Each one is the
+# account of the role of the people in it (see Creditor.roles): creditors in the debt
+# account, debtors in the loan one.
+DEBT_ACCOUNT_KEY, LOAN_ACCOUNT_KEY = "debt_account", "loan_account"
+ROLE_KEYS = {DebtRole.CREDITOR: DEBT_ACCOUNT_KEY, DebtRole.DEBTOR: LOAN_ACCOUNT_KEY}
+ROLE_TYPES = {DebtRole.CREDITOR: AccountType.LIABILITY, DebtRole.DEBTOR: AccountType.ASSET}
+# The special side taking any debt account of each role, of any currency
+ROLE_SIDES = {DebtRole.CREDITOR: DEBT_SIDE, DebtRole.DEBTOR: LOAN_SIDE}
+# The keys of a debt account entry of the currencies YAML: its `name` and `description` are
+# required, and the others are those of the accounts YAML, but its currency (that of the
+# entry) and its initial amount (that of its creditors, see Account.load_yaml).
+DEBT_ACCOUNT_KEYS = {"name", "long_name", "description", "is_liquid", "initial_date", "checks", "interest_frequency"}
 INTERNAL = "internal"
 # The `after` of a result type in the base movements YAML: the name of the one right
 # before it, or one of these keywords, each used by exactly one result type: the first
@@ -238,6 +245,9 @@ class Currency:
     monthly_inflation: pd.Series | None = None
     # What of the above pledger estimated (see ESTIMATED): months for the base currency, else dates
     estimated: tuple = ()
+    # The entries of its debt accounts in the currencies YAML, by the role of the people in
+    # them (see ROLE_KEYS), with their `name`: empty for a currency without them
+    debt_accounts: dict[DebtRole, dict] = field(default_factory=dict)
 
     def __post_init__(self):
         self.is_base_currency = self.base_currency_mapping is None
@@ -245,6 +255,29 @@ class Currency:
         self.customer_price_index = (
             None if self.monthly_inflation is None else daily_cpi(self.monthly_inflation)
         )
+
+    @staticmethod
+    def _debt_entries(curr: dict) -> dict[DebtRole, dict]:
+        """The entries of the debt accounts of a currency of the currencies YAML: both are mandatory (see ROLE_KEYS)."""
+        entries = {}
+        for role, key in ROLE_KEYS.items():
+            entry = curr.get(key)
+            what = f"The {key} of the currency {curr['name']!r}"
+            if not isinstance(entry, dict):
+                raise ValueError(  # noqa: TRY004 (a bad config value)
+                    f"{what} is mandatory: a mapping with its account's name and description"
+                )
+            unknown = sorted(str(k) for k in set(entry) - DEBT_ACCOUNT_KEYS)
+            if unknown:
+                raise ValueError(
+                    f"{what} has unknown keys {unknown}: its currency is {curr['name']}, and its "
+                    "initial amount that of the creditors YAML"
+                )
+            for required in ("name", "description"):
+                if not isinstance(entry.get(required), str) or not entry[required].strip():
+                    raise ValueError(f"{what} needs a {required}")
+            entries[role] = {**entry, "name": entry["name"].strip()}
+        return entries
 
     @classmethod
     def load_yaml(cls, path: str) -> tuple[Currency, dict[str, Currency]]:
@@ -263,6 +296,9 @@ class Currency:
         `currencies.csv` a `date` column and one column per other currency, with its
         value in the base currency (empty cells are dates without a value). Both take
         ESTIMATED instead of a value: see _load_inflation and _with_estimates.
+
+        Every currency, the base one too, has its `debt_account` and its `loan_account`
+        (see _debt_entries), with names of their own.
         """
         data = _load_yaml(path)
 
@@ -276,6 +312,11 @@ class Currency:
             raise ValueError(
                 f"Currency {data['base_currency']['name']!r} is both the base and another currency"
             )
+        debts = {curr["name"]: cls._debt_entries(curr) for curr in [data["base_currency"], *currencies]}
+        debt_names = [e["name"] for entries in debts.values() for e in entries.values()]
+        repeated = sorted({n for n in debt_names if debt_names.count(n) > 1})
+        if repeated:
+            raise ValueError(f"The debt and loan accounts of the currencies repeat the names {repeated}")
 
         folder = os.path.dirname(path)
         inflation, estimated_months = cls._load_inflation(os.path.join(folder, "base_currency.csv"))
@@ -286,6 +327,7 @@ class Currency:
             base_currency_mapping=None,
             monthly_inflation=inflation,
             estimated=estimated_months,
+            debt_accounts=debts[data["base_currency"]["name"]],
         )
         other_currencies = {
             curr["name"]: cls(
@@ -293,6 +335,7 @@ class Currency:
                 description=curr["description"],
                 base_currency_mapping=values[curr["name"]].dropna(),
                 estimated=tuple(values.index[estimated[curr["name"]]]),
+                debt_accounts=debts[curr["name"]],
             )
             for curr in currencies
         }
@@ -453,16 +496,18 @@ class Account:
         if any: on its Monday. One with it must start after that week.
 
         The top-level `internal` key has the same sections, with exactly the
-        INTERNAL_ACCOUNTS, which no other section has: the assets Fi and Lo and the
-        liability De, in the base currency, and the equity Eq, the only equity account.
+        INTERNAL_ACCOUNTS, which no other section has: the asset Fi, in the base
+        currency, and the equity Eq, the only equity account.
 
         Investment accounts are the asset accounts listed in the investments YAML
-        (if given, see InvestmentAccount.config_from_dict), and De and Lo are the debt
-        accounts (see DEBT_ACCOUNTS), sharing the creditors of the creditors YAML (if
-        given, see DebtAccount.creditors_from_dict and split_creditors). They must not
-        set an `initial_amount` either: theirs comes from the initial amounts of their
+        (if given, see InvestmentAccount.config_from_dict). The debt accounts are those of
+        the currencies (see Currency.debt_accounts), internal too, after the internal ones,
+        in the order of the currencies, the debts before the loans of each one, sharing the
+        creditors of the creditors YAML (if given, see DebtAccount.creditors_from_dict and
+        creditors_of). Neither sets an `initial_amount`: theirs comes from the initial amounts of their
         investments (their initial quantity at their initial price, of `initial_prices`:
-        account name to investment name to price) or creditors. The `companies` (of the
+        account name to investment name to price) or creditors, in the base currency, so
+        only the debt accounts in the base currency have one. The `companies` (of the
         work history) are creditors too, with no initial debt.
 
         Credit card accounts are the ones in the credit cards YAML (if given), set
@@ -484,9 +529,9 @@ class Account:
         expected = {n: t.value for n, t in INTERNAL_ACCOUNTS.items()}
         if found != expected:
             raise ValueError(
-                f"The accounts YAML {INTERNAL!r} key must have exactly the assets {INTERMEDIARY} and "
-                f"{LOAN_ACCOUNT}, the liability {DEBT_ACCOUNT} and the equity {EQUITY_ACCOUNT}: it has "
-                f"{found or 'none'}"
+                f"The accounts YAML {INTERNAL!r} key must have exactly the asset {INTERMEDIARY} and "
+                f"the equity {EQUITY_ACCOUNT}: it has {found or 'none'}. The debt and loan accounts are the "
+                f"{DEBT_ACCOUNT_KEY} and {LOAN_ACCOUNT_KEY} of each currency of the currencies YAML"
             )
         for t, at_accounts in data.items():
             if AccountType(t) == AccountType.EQUITY and at_accounts:
@@ -496,11 +541,17 @@ class Account:
                 raise ValueError(f"The accounts {internal_names} are internal: under the {INTERNAL!r} key only")
         investments_data = (_load_yaml(investments_path) if investments_path else None) or {}
         creditors_data = (_load_yaml(creditors_path) if creditors_path else None) or {}
-        creditors = split_creditors(DebtAccount.creditors_from_dict(creditors_data, companies))
-        both = sorted(set(investments_data) & set(INTERNAL_ACCOUNTS))
+        creditors = DebtAccount.creditors_from_dict(creditors_data, companies)
+        currencies = {base_currency.name: base_currency, **(other_currencies or {})}
+        # The debt accounts of each currency, as entries of their own section, with their currency
+        debt_sections = [
+            (ROLE_TYPES[role], {entry["name"]: {**entry, "currency": c.name}}, DebtAccount, role)
+            for c in currencies.values() for role, entry in c.debt_accounts.items()
+        ]
+        debt_names = {n for _, section, _, _ in debt_sections for n in section}
+        both = sorted(set(investments_data) & (set(INTERNAL_ACCOUNTS) | debt_names))
         if both:
             raise ValueError(f"The internal accounts cannot be investment accounts: {both}")
-        currencies = {base_currency.name: base_currency, **(other_currencies or {})}
 
         def currency_of(name: str, acc_d: dict) -> Currency:
             curr = acc_d.get("currency") or base_currency.name
@@ -521,10 +572,8 @@ class Account:
                 if "initial_amount" in acc_d:
                     raise ValueError(f"Investment account {name!r} must not have an initial_amount")
                 return 0.0  # set from its investments
-            if name in DEBT_ACCOUNTS:
-                if "initial_amount" in acc_d:
-                    raise ValueError(f"Debt account {name!r} must not have an initial_amount")
-                return 0.0  # set from its creditors
+            if name in debt_names:
+                return 0.0  # set from its creditors (its entry can't have one, see Currency._debt_entries)
             if acc_type == AccountType.EQUITY:
                 if "initial_amount" in acc_d:
                     raise ValueError(f"Equity account {name!r} must not have an initial_amount")
@@ -573,7 +622,7 @@ class Account:
                 raise ValueError(f"Account {name!r} has an unknown {INTEREST_FREQUENCY}: {value!r} (valid: {valid})") from None
 
         credit_cards_data = (_load_yaml(credit_cards_path) if credit_cards_path else None) or {}
-        special = sorted(set(credit_cards_data) & (set(investments_data) | set(INTERNAL_ACCOUNTS)))
+        special = sorted(set(credit_cards_data) & (set(investments_data) | set(INTERNAL_ACCOUNTS) | debt_names))
         if special:
             raise ValueError(f"Credit card accounts cannot be investment or internal accounts: {special}")
         for name, acc_d in credit_cards_data.items():
@@ -582,11 +631,12 @@ class Account:
 
         accounts = {}
         sections = [
-            *((AccountType(t), at_accounts, Account) for t, at_accounts in data.items()),
-            *((AccountType(t), at_accounts, Account) for t, at_accounts in internal_data.items()),
-            (AccountType.LIABILITY, credit_cards_data, CreditCardAccount),
+            *((AccountType(t), at_accounts, Account, None) for t, at_accounts in data.items()),
+            *((AccountType(t), at_accounts, Account, None) for t, at_accounts in internal_data.items()),
+            *debt_sections,
+            (AccountType.LIABILITY, credit_cards_data, CreditCardAccount, None),
         ]
-        for acc_type, at_accounts, acc_cls in sections:
+        for acc_type, at_accounts, acc_cls, role in sections:
             for name, acc_d in (at_accounts or {}).items():
                 if name in accounts:
                     raise ValueError(f"Duplicated account name: {name!r}")
@@ -602,11 +652,11 @@ class Account:
                     "initial_date": initial_date_of(name, acc_d),
                     "checks": checks_of(name, acc_d),
                     "interest_frequency": interest_frequency_of(name, acc_d),
-                    "internal": name in INTERNAL_ACCOUNTS,
+                    "internal": name in INTERNAL_ACCOUNTS or acc_cls is DebtAccount,
                 }
                 if acc_cls is CreditCardAccount:
                     fields[CLOSING_DATES] = acc_d.get(CLOSING_DATES)
-                if name in (INTERMEDIARY, *DEBT_ACCOUNTS) and not fields["currency"].is_base_currency:
+                if name == INTERMEDIARY and not fields["currency"].is_base_currency:
                     raise ValueError(f"The internal account {name!r} must be in the base currency")
                 if name in investments_data:
                     investments, balance_accounts = InvestmentAccount.config_from_dict(
@@ -616,11 +666,10 @@ class Account:
                     accounts[name] = InvestmentAccount(
                         **fields, investments=investments, balance_accounts=balance_accounts
                     )
-                elif name in DEBT_ACCOUNTS:
-                    accounts[name] = DebtAccount(**fields, creditors=creditors[name])
-                    accounts[name].initial_amount = accounts[name].balance_of(
-                        sum(c.amount for c in creditors[name].values())
-                    )
+                elif acc_cls is DebtAccount:
+                    own = creditors_of(creditors, role, with_amounts=fields["currency"].is_base_currency)
+                    accounts[name] = DebtAccount(**fields, role=role, creditors=own)
+                    accounts[name].initial_amount = accounts[name].balance_of(sum(c.amount for c in own.values()))
                 else:
                     accounts[name] = acc_cls(**fields)
 
@@ -1007,12 +1056,17 @@ class Creditor:
         return self.amount < 0 and not rounds_to_zero(self.amount)
 
     @property
-    def accounts(self) -> tuple[str, ...]:
+    def roles(self) -> tuple[DebtRole, ...]:
         """
-        The debt accounts they can be in (see DEBT_ACCOUNTS): only that of their expected
-        role, if any (see ROLE_ACCOUNTS), else both.
+        The roles of the debt accounts they can be in (see DebtAccount.role), in every
+        currency: only their expected role, if any, else both, the debts first.
         """
-        return (ROLE_ACCOUNTS[self.expected],) if self.expected else DEBT_ACCOUNTS
+        return (self.expected,) if self.expected else (DebtRole.CREDITOR, DebtRole.DEBTOR)
+
+    @property
+    def initial_role(self) -> DebtRole:
+        """The role of the debt account of their initial amount: their only one, else creditor if we owe them."""
+        return self.roles[0] if len(self.roles) == 1 or self.amount >= 0 else DebtRole.DEBTOR
 
     @property
     def meets_expected(self) -> bool:
@@ -1034,37 +1088,43 @@ DEFAULT_EXPECTED = {
 }
 
 
-def split_creditors(creditors: dict[str, Creditor]) -> dict[str, dict[str, Creditor]]:
+def creditors_of(creditors: dict[str, Creditor], role: DebtRole, with_amounts: bool) -> dict[str, Creditor]:
     """
-    The creditors of each debt account (see DEBT_ACCOUNTS), each in the ones they can be
-    in (see Creditor.accounts), with their initial amount in only one of them: the only
-    one, or the debt account if we owe them, else the loan account.
+    The creditors of a debt account of this role: those who can be in it (see
+    Creditor.roles), with their initial amount only `with_amounts` (in the base currency,
+    the one of the initial amounts) and if it is the role of it (see Creditor.initial_role).
     """
-    split: dict[str, dict[str, Creditor]] = {name: {} for name in DEBT_ACCOUNTS}
-    for name, c in creditors.items():
-        first = c.accounts[0] if len(c.accounts) == 1 or c.amount >= 0 else LOAN_ACCOUNT
-        for account in c.accounts:
-            split[account][name] = replace(c, amount=c.amount if account == first else 0.0)
-    return split
+    return {
+        name: replace(c, amount=c.amount if with_amounts and c.initial_role == role else 0.0)
+        for name, c in creditors.items() if role in c.roles
+    }
 
 
 @dataclass
 class DebtAccount(Account):
     """
     Account that tracks debts with other people, as a dict of each Creditor's name to
-    the Creditor, always as what we owe them (negative: what they owe us). A liability
-    (what we owe, De) or an asset (what we are owed, Lo); either total can have the
-    other sign.
+    the Creditor, always as what we owe them (negative: what they owe us), in the
+    currency of the account. Of the role of the people in it: a liability of creditors
+    (what we owe, a debt account) or an asset of debtors (what we are owed, a loan
+    account); either total can have the other sign.
     """
 
+    role: DebtRole = DebtRole.CREDITOR
     creditors: dict[str, Creditor] = field(default_factory=dict)
 
     def __post_init__(self):
         super().__post_init__()
+        if self.acc_type != ROLE_TYPES[self.role]:
+            kind = ROLE_TYPES[self.role].value
+            raise ValueError(
+                f"Debt account {self.name!r} of {self.role.value}s must be {'an' if kind[0] in 'aeiou' else 'a'} {kind} account"
+            )
         self._check_positivity = lambda _: True
         self._check_positivity_vect = np.vectorize(self._check_positivity)
         self.unassigned = 0.0  # added debt whose comment names no one
         self.unassigned_comments: dict[str, float] = {}  # that debt by comment
+        self.named: set[str] = set()  # who the added debt named: who used the account
 
     def creditor_in(self, comment: str) -> str | None:
         """
@@ -1088,6 +1148,7 @@ class DebtAccount(Account):
             self.unassigned_comments[comment] = self.unassigned_comments.get(comment, 0.0) + amount
         else:
             self.creditors[name].amount += amount
+            self.named.add(name)
 
     def balance_of(self, owed: float) -> float:
         """The balance of the account of this much owed by us: its opposite for an asset."""
@@ -1121,8 +1182,8 @@ class DebtAccount(Account):
     @staticmethod
     def creditors_from_dict(data: dict, companies: list[str] | None = None) -> dict[str, Creditor]:
         """
-        The creditors of the debt accounts from the creditors YAML dict, shared by both
-        (see split_creditors): a section per kind (`people`, `services`) of name:
+        The creditors of the debt accounts from the creditors YAML dict, shared by all of
+        them (see creditors_of): a section per kind (`people`, `services`) of name:
         initial debt (positive: we owe them), or name: a dict of `amount` and `expected`
         (`creditor`, `debtor` or null for none; the kind's default if missing), and for a
         service the `base_movement` of its values of the services CSV. The `companies` of
@@ -1130,15 +1191,13 @@ class DebtAccount(Account):
         """
         if not isinstance(data, dict):
             raise ValueError("The creditors YAML must be a mapping")  # noqa: TRY004 (a bad config value)
-        if set(data) & set(DEBT_ACCOUNTS):
-            raise ValueError(
-                f"The creditors YAML has no accounts ({sorted(set(data) & set(DEBT_ACCOUNTS))}): its people and "
-                f"services are at the top level, shared by {' and '.join(DEBT_ACCOUNTS)}"
-            )
         sections = [k.value for k in CREDITOR_SECTIONS]
         unknown = sorted(str(k) for k in set(data) - set(sections))
         if unknown:
-            raise ValueError(f"The creditors YAML has unknown sections {unknown} (must be {sections})")
+            raise ValueError(
+                f"The creditors YAML has unknown sections {unknown} (must be {sections}): its people and "
+                "services are at the top level, shared by all the debt accounts"
+            )
         creditors = {}
         for kind in CREDITOR_SECTIONS:
             section = data.get(kind.value) or {}
@@ -1194,13 +1253,29 @@ def is_foreign(account: Account) -> bool:
     )
 
 
+def is_role_account(account: Account, role: DebtRole) -> bool:
+    """A debt account of this role (see DebtAccount.role), of any currency."""
+    return isinstance(account, DebtAccount) and account.role == role
+
+
+def foreign_debt(accounts: dict[str, Account], names) -> DebtAccount | None:
+    """The debt account in another currency among these account names, if any."""
+    found = (accounts.get(n) for n in names)
+    return next((a for a in found if isinstance(a, DebtAccount) and is_foreign(a)), None)
+
+
 # Whether an account is of the kind each special side takes, with its display name.
 SPECIAL_SIDES: dict[str, Callable[[Account], bool]] = {
     INVESTMENT: lambda a: isinstance(a, InvestmentAccount),
     CREDIT_CARD: lambda a: isinstance(a, CreditCardAccount),
     FOREIGN_CURRENCY: is_foreign,
+    DEBT_SIDE: lambda a: is_role_account(a, DebtRole.CREDITOR),
+    LOAN_SIDE: lambda a: is_role_account(a, DebtRole.DEBTOR),
 }
-SPECIAL_LABELS = {INVESTMENT: "Investment", CREDIT_CARD: "Credit card", FOREIGN_CURRENCY: "Foreign currency"}
+SPECIAL_LABELS = {
+    INVESTMENT: "Investment", CREDIT_CARD: "Credit card", FOREIGN_CURRENCY: "Foreign currency",
+    DEBT_SIDE: "Debt", LOAN_SIDE: "Loan",
+}
 
 
 def special_of(account: Account) -> str | None:

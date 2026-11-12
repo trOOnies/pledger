@@ -91,8 +91,10 @@ def build_accounts(snapshot: Snapshot, month: str = "", values: dict | None = No
                 "checks": [CHECK_LABELS[c] for c in a.checks],
                 "balance": balances.get(a.name, 0.0),
                 "own": own_balance(snapshot, a, month),
-                "editable": a.acc_type in EDITABLE_ACCOUNT_TYPES,
+                # The debt accounts are set in the currencies YAML, with their currency
+                "editable": a.acc_type in EDITABLE_ACCOUNT_TYPES and not isinstance(a, DebtAccount),
                 "internal": a.internal,
+                "debt": isinstance(a, DebtAccount),
             }
             for a in snapshot.accounts.values()
             if a.acc_type == t

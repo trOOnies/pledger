@@ -173,10 +173,20 @@ def copy_values(snapshot: Snapshot, index: int, own: str | None) -> dict:
         side = "acc_debit" if values["acc_debit"] == INTERMEDIARY else "acc_credit"
         return {**values, side: account, "amount": conversion[OTHER_AMOUNT]}
     account = foreign_result_account(snapshot, row["base_movement"], row["acc_debit"], row["acc_credit"])
-    if account is not None:
+    if account is not None and str(row.get(OTHER_AMOUNT, "")).strip():
+        values["amount"] = row[OTHER_AMOUNT]  # a debt account in another currency follows it exactly
+    elif account is not None:
         rate = _value_on(account.currency, row["move_date"], "to copy the movement")
         values["amount"] = f"{_amount_of(row['amount']) / rate:,.2f}"
     return values
+
+
+def amount_text(account, amount: str | float, symbol: str) -> str:
+    """An amount in the currency of an account: with the symbol in the base one, else with its code."""
+    value = float(str(amount).replace(",", ""))
+    if account is None or account.currency.is_base_currency:
+        return money(value, symbol)
+    return money(value, account.currency.name)
 
 
 def ledger_values(row) -> dict:
@@ -528,26 +538,33 @@ def create_debt_movement(
     acc_credit: Annotated[str, Form()] = "",
     comment: Annotated[str, Form()] = "",
     remaining_as_difference: Annotated[bool, Form()] = False,
+    amount_debt: Annotated[str, Form()] = "",
 ):
     values = {
         "move_date": move_date, "base_movement": base_movement, "acc_debit": acc_debit,
         "acc_credit": acc_credit, "amount": amount, "who": who, "comment": comment,
-        "remaining_as_difference": remaining_as_difference,
+        "remaining_as_difference": remaining_as_difference, "amount_debt": amount_debt,
     }
     try:
         difference = store.add_debt_movement(
             move_date, base_movement, acc_debit, acc_credit, amount, who, comment, remaining_as_difference,
+            amount_debt,
         )
     except ValueError as e:
         return render_debt_form(request, store.load(), values, error=str(e))
     # Keep date and base movement to speed up entering similar movements.
+    snapshot = store.load()
     keep = {"move_date": move_date, "base_movement": base_movement}
-    response = render_debt_form(
-        request, store.load(), keep,
-        success=f"Added {base_movement} ({who.strip()}): {money(float(amount.replace(',', '')), store.settings.currency)}"
-        + (f" and {difference[0]}: {money(difference[1], store.settings.currency)}" if difference else "")
-        + (" (dated in the future)" if move_date > dt.date.today().isoformat() else ""),
-    )
+    debt = snapshot.debt_account_of(base_movement, acc_debit, acc_credit)
+    other = snapshot.accounts.get(acc_credit if debt is not None and debt.name == acc_debit else acc_debit)
+    symbol = store.settings.currency
+    what = amount_text(other, amount, symbol)
+    if debt is not None and other is not None and debt.currency.name != other.currency.name and amount_debt.strip():
+        what += f" for {amount_text(debt, amount_debt, symbol)}"  # converted when it was made
+    if difference:
+        what += f" and {difference[0]}: {amount_text(debt, difference[1], symbol)}"
+    future = " (dated in the future)" if move_date > dt.date.today().isoformat() else ""
+    response = render_debt_form(request, snapshot, keep, success=f"Added {base_movement} ({who.strip()}): {what}{future}")
     response.headers["HX-Trigger"] = "debt-changed"
     return response
 
@@ -693,6 +710,8 @@ def editable_account(store: LedgerStore, name: str):
     account = store.load().accounts.get(name)
     if account is None or account.acc_type not in EDITABLE_ACCOUNT_TYPES:
         raise HTTPException(status_code=404, detail=f"No asset or liability account {name!r}")
+    if isinstance(account, DebtAccount):
+        raise HTTPException(status_code=422, detail=f"The debt account {name!r} is edited in the currencies YAML")
     return account
 
 
@@ -1044,10 +1063,13 @@ def form_debt_bases(request: Request, store: StoreDep, debt_kind: str = "", who:
 @router.get("/form/debt-difference")
 def form_debt_difference(
     request: Request, store: StoreDep, base_movement: str = "", who: str = "", amount: str = "",
-    remaining_as_difference: bool = False,
+    remaining_as_difference: bool = False, acc_debit: str = "", acc_credit: str = "", amount_debt: str = "",
 ):
     """What the debt movement form would leave with someone, and the Difference settling it."""
-    context = debt_difference(store.load(), base_movement, who, amount) if remaining_as_difference else {}
+    context = (
+        debt_difference(store.load(), base_movement, who, amount, acc_debit, acc_credit, amount_debt)
+        if remaining_as_difference else {}
+    )
     return templates.TemplateResponse(request, "_debt_difference.html", {"asked": remaining_as_difference, **context})
 
 
@@ -1067,6 +1089,7 @@ def edit_debt_movement_form(request: Request, store: StoreDep, index: int, finge
     values = ledger_values(snapshot.rows.iloc[index])
     debts = [a for n in (values["acc_debit"], values["acc_credit"]) if isinstance(a := snapshot.accounts.get(n), DebtAccount)]
     who = debts[0].creditor_in(values["comment"]) if debts else None
+    values["amount_debt"] = snapshot.rows.iloc[index].get(OTHER_AMOUNT, "")
     if who:
         comment = values["comment"]
         rest = comment[len(who):].lstrip(":").strip() if comment.lower().startswith(who.lower()) else comment
@@ -1087,14 +1110,17 @@ def edit_debt_movement(
     acc_debit: Annotated[str, Form()] = "",
     acc_credit: Annotated[str, Form()] = "",
     comment: Annotated[str, Form()] = "",
+    amount_debt: Annotated[str, Form()] = "",
 ):
     values = {
         "move_date": move_date, "base_movement": base_movement, "acc_debit": acc_debit,
-        "acc_credit": acc_credit, "amount": amount, "who": who, "comment": comment,
+        "acc_credit": acc_credit, "amount": amount, "who": who, "comment": comment, "amount_debt": amount_debt,
     }
     editing, _ = editing_of(store, "rows", index, fingerprint)
     try:
-        store.edit_debt_movement(index, fingerprint, move_date, base_movement, acc_debit, acc_credit, amount, who, comment)
+        store.edit_debt_movement(
+            index, fingerprint, move_date, base_movement, acc_debit, acc_credit, amount, who, comment, amount_debt,
+        )
     except StaleRowError as e:
         raise HTTPException(status_code=409, detail=str(e)) from None
     except ValueError as e:

@@ -8,7 +8,7 @@ import math
 from pandas import Period, Series, Timedelta, Timestamp
 
 from pledger.enums import AccountType, MovementType
-from pledger.models import INTERMEDIARY, Currency, InvestmentAccount
+from pledger.models import INTERMEDIARY, Currency, DebtAccount, InvestmentAccount
 from pledger.web.store import (
     BASE_AMOUNT,
     CONVERSION_BOUGHT,
@@ -122,13 +122,15 @@ def conversion_filter(snapshot: Snapshot, currency: str = "", account: str = "",
     """
     The conversions of the currency and the account picked in the filter (all without
     them), with the currencies to pick from and the accounts in another currency (of
-    the currency picked, if any). An account not of the currency picked is dropped.
+    the currency picked, if any), but the debt ones, which never take conversions. An
+    account not of the currency picked is dropped.
     """
     others = [c for c in snapshot.currencies if c != snapshot.base_currency.name]
     currency = currency if currency in others else ""
     accounts = [
         a.name for a in snapshot.accounts.values()
-        if a.currency.name in others and a.acc_type != AccountType.EQUITY and (not currency or a.currency.name == currency)
+        if a.currency.name in others and a.acc_type != AccountType.EQUITY and not isinstance(a, DebtAccount)
+        and (not currency or a.currency.name == currency)
     ]
     account = account if account in accounts else ""
     return {
@@ -183,10 +185,11 @@ def conversion_fields(snapshot: Snapshot, sold: str = "", bought: str = "", chan
     move_base = snapshot.base_movements.get(base_movement)
 
     def options(currency: str) -> list[str]:
-        """The asset accounts in that currency, but the investment ones."""
+        """The asset accounts in that currency, but the investment and debt ones."""
         return [
             a.name for a in snapshot.accounts.values()
-            if a.acc_type == AccountType.ASSET and a.currency.name == currency and not isinstance(a, InvestmentAccount)
+            if a.acc_type == AccountType.ASSET and a.currency.name == currency
+            and not isinstance(a, (InvestmentAccount, DebtAccount))
         ]
 
     return {
@@ -299,9 +302,11 @@ def build_currencies(snapshot: Snapshot, today: dt.date | None = None) -> dict:
         results[name] = results.get(name, 0.0) + (move.amount if gain else -move.amount)
 
     def totals(name: str) -> dict:
+        # The debt and loan accounts of the currency count once they have movements
         accs = [
             a for a in snapshot.accounts.values()
             if a.currency.name == name and a.acc_type != AccountType.EQUITY
+            and (not isinstance(a, DebtAccount) or a.currency.is_base_currency or snapshot.currency_moves.get(a.name))
         ]
         own = [a for a in accs if a.name in snapshot.other_balances]
         return {

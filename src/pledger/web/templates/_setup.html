@@ -80,7 +80,7 @@
         <td class="nowrap"><strong>{{ b.name }}</strong></td>
         <td data-sort="{{ b.move_type.value }}"><span class="badge {{ b.move_type.value }}">{{ b.move_type.value[0] | upper }}</span> {{ b.move_type.value | capitalize }}</td>
         {% for acc, special in ((b.acc_debit, b.debit_special), (b.acc_credit, b.credit_special)) %}
-        {% set special_label = sides.specials[special] if special %}
+        {% set special_label = sides.labels[special] if special %}
         <td>{% if acc %}{{ acc.name }}{% elif special %}<span class="muted" title="Any {{ special_label | lower }} account">{{ special_label }}</span>{% else %}<span class="muted" title="Any account">-</span>{% endif %}</td>
         {% endfor %}
         <td class="muted">{{ b.description }}</td>

@@ -61,6 +61,8 @@ class PriceIn(BaseModel):
 class DebtMovementIn(MovementIn):
     who: str  # someone of its debt account, named first in its comment
     remaining_as_difference: bool = False  # settle what remains with them with a Difference
+    # In the currency of its debt account, when the other account is in another one (see add_debt_movement)
+    amount_debt: float | None = None
 
 
 class ConversionIn(BaseModel):

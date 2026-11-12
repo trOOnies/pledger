@@ -9,7 +9,6 @@ from pandas import DataFrame, Period
 from pledger.enums import AccountType, MovementType
 from pledger.ledger import Ledger
 from pledger.models import (
-    DEBT_ACCOUNTS,
     Account,
     CreditCardAccount,
     DebtAccount,
@@ -152,7 +151,7 @@ def movement_rows(snapshot: Snapshot, rows: DataFrame, ledger: Ledger) -> list[d
             return "credit-cards"
         if move.move_base.name in corrections:
             return "corrections"
-        if move.move_base.name in differences and {move.acc_debit.name, move.acc_credit.name} & set(DEBT_ACCOUNTS):
+        if move.move_base.name in differences and any(isinstance(a, DebtAccount) for a in (move.acc_debit, move.acc_credit)):
             return "differences"
         return None
 

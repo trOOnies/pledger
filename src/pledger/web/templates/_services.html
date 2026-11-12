@@ -14,7 +14,7 @@
     <h2>Services <small>{{ services | length }}</small></h2>
     <div class="table-scroll">
     <table data-sortable="services">
-      <thead><tr><th>Service</th><th title="The debt account it is owed in: Lo if it is expected to be a debtor (it charges in advance), else De">Account</th><th>Base movement</th><th class="num" title="Its value in {{ month }}">Value this month</th><th class="num" title="Owed in {{ month }}, up to today">Owed this month</th><th class="num" title="Owed in all">All time</th><th class="num" title="What we owe the service now, after the payments (negative and green: what it owes us)">We owe</th></tr></thead>
+      <thead><tr><th>Service</th><th title="The debt account it is owed in: {{ loan_name }} if it is expected to be a debtor (it charges in advance), else {{ debt_name }}">Account</th><th>Base movement</th><th class="num" title="Its value in {{ month }}">Value this month</th><th class="num" title="Owed in {{ month }}, up to today">Owed this month</th><th class="num" title="Owed in all">All time</th><th class="num" title="What we owe the service now, after the payments (negative and green: what it owes us)">We owe</th></tr></thead>
       <tbody>
       {% for s in services %}
       <tr>
@@ -31,9 +31,9 @@
     </table>
     </div>
     <p class="muted small">The services of the creditors file, each with its column of the services file. Their values
-      are owed in <code>De</code>, or in <code>Lo</code> for the ones expected to be debtors (they charge in advance).
+      are owed in <code>{{ debt_name }}</code>, or in <code>{{ loan_name }}</code> for the ones expected to be debtors (they charge in advance).
       What we owe them is in the <a href="/debt">Debt</a> tab too, where their payments are added, naming the service
-      in the comment: <em>Debt - Paid</em> in <code>De</code>, <em>Loan - Given</em> in <code>Lo</code>.</p>
+      in the comment: <em>Debt - Paid</em> in <code>{{ debt_name }}</code>, <em>Loan - Given</em> in <code>{{ loan_name }}</code>.</p>
   </div>
 
   <div class="panel">
@@ -61,7 +61,7 @@
       </table>
     </div>
     <p class="muted small">Each value is owed up to today, never before the ledger starts, split equally between the weeks
-      of the month, on their Mondays, as movements of its service's base movement crediting <code>De</code>. A week belongs to
+      of the month, on their Mondays, as movements of its service's base movement crediting <code>{{ debt_name }}</code>. A week belongs to
       the month of its Thursday. <span class="estimated">In italics</span>, the estimated values: the last known one grown by
       the inflation since then.</p>
   </div>

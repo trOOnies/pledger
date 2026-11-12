@@ -10,6 +10,7 @@ from pledger.enums import AccountType, LedgerSide, MovementType
 from pledger.models import (
     INTERMEDIARY,
     Account,
+    DebtAccount,
     InvestmentAccount,
     check_interact,
     is_foreign,
@@ -28,6 +29,7 @@ from pledger.web.store.constants import (
     CONVERSION_COLUMNS,
     CONVERSION_ID,
     CONVERSION_SOLD,
+    DIFFERENCE_GAIN,
     FEE_BASES,
     INTEREST,
     INVESTMENT_COLUMN,
@@ -38,7 +40,7 @@ from pledger.web.store.constants import (
 from pledger.web.store.conversions import _conversion_row, linked_ids
 from pledger.web.store.investments import _check_known_investment
 from pledger.web.store.movement_store import MovementStore, foreign_card
-from pledger.web.store.movements import _installments_text, _movement_row
+from pledger.web.store.movements import _debt_comment, _installments_text, _movement_row
 from pledger.web.store.snapshot import Snapshot
 
 NEGATIVE = "The amount cannot be negative; pick the opposite base movement or swap the accounts"
@@ -81,6 +83,30 @@ def foreign_result_account(snapshot: Snapshot, base_movement: str, acc_debit: st
     return account if is_foreign(account) else None
 
 
+def _check_installments(snapshot: Snapshot, installments: str | int, acc_credit: str, account: Account) -> None:
+    """A movement of an account in another currency through the Ledger tab can't be in installments."""
+    if _installments_text(snapshot, installments, acc_credit):
+        raise ValueError(f"A charge to a card in another currency ({account.name}) can't be in installments")
+
+
+def _own_amount(own: Account, other: Account, value: float, amount_own: str | float, what: str) -> float:
+    """
+    The amount of a movement in the currency of `own`, a credit card or debt account,
+    paid with `value` in that of the `other` account, which may already say it.
+    """
+    same = other.currency.name == own.currency.name
+    if not str(amount_own).strip():
+        if not same:
+            raise ValueError(f"{own.name} is in {own.currency.name}: tell how much {what} in {own.currency.name}")
+        return value
+    paid = _parse_amount(amount_own, f"amount in {own.currency.name}")
+    if same and abs(paid - value) > 1e-9:
+        raise ValueError(f"{other.name} and {own.name} are both in {own.currency.name}: the amounts must match")
+    if paid == 0:
+        raise ValueError(f"The amount in {own.currency.name} must be positive")
+    return paid
+
+
 class LinkedStore(MovementStore):
     """Adds the movements that take several rows, through the INTERMEDIARY account if they change currency."""
 
@@ -107,12 +133,19 @@ class LinkedStore(MovementStore):
         base = snapshot.base_movements[base_movement]
         rate = _value_on(account.currency, move_date, f"to convert from {account.currency.name}")
         base_value = round(value * rate, 2)
+        if isinstance(account, DebtAccount):
+            # Converted on its date: a single row, the debt account following its own amount
+            _check_installments(snapshot, installments, acc_credit, account)
+            field, row = _movement_row(
+                snapshot, move_date, base_movement, acc_debit, acc_credit, base_value, comment, False, "", "", False, False,
+            )
+            self._add_linked(snapshot, [(field, row | {OTHER_AMOUNT: f"{value:,.4f}"})], None)
+            return
         inflow = account.name == acc_debit
         if base.side(LedgerSide.DEBIT if inflow else LedgerSide.CREDIT) is not None:
             self.add(move_date, base_movement, acc_debit, acc_credit, f"{base_value:.2f}", comment, installments=installments)
             return
-        if _installments_text(snapshot, installments, acc_credit):
-            raise ValueError(f"A charge to a card in another currency ({account.name}) can't be in installments")
+        _check_installments(snapshot, installments, acc_credit, account)
         debit, credit = (INTERMEDIARY, acc_credit) if inflow else (acc_debit, INTERMEDIARY)
         row = _movement_row(snapshot, move_date, base_movement, debit, credit, base_value, comment, False, "", "", False, False)
         self._add_linked(snapshot, [row], _fi_leg(snapshot, move_date, account, inflow, base_value, value, comment))
@@ -158,7 +191,7 @@ class LinkedStore(MovementStore):
         money = snapshot.accounts[acc_debit if side == "debit" else acc_credit] if side else None
         routed = (
             money is not None and is_foreign(money) and name != snapshot.base_currency.name
-            and base_movement not in INTEREST
+            and base_movement not in INTEREST and not isinstance(money, DebtAccount)
         )
         debit, credit = acc_debit, acc_credit
         if routed:
@@ -197,10 +230,13 @@ class LinkedStore(MovementStore):
             _check_known_investment(snapshot, acc_debit, acc_credit, rows[0][1][INVESTMENT_COLUMN])
         self._add_linked(snapshot, rows, conversion)
 
-    def _add_linked(self, snapshot: Snapshot, rows: list[tuple[str, dict]], conversion: dict | None) -> None:
+    def _add_linked(
+        self, snapshot: Snapshot, rows: list[tuple[str, dict]], conversion: dict | None, linked: int | None = None,
+    ) -> None:
         """
         Append these rows ((Snapshot field, row)) to their CSVs, and this conversion with
-        their ids in its LINKED_COLUMN, once they hold together.
+        their ids in its LINKED_COLUMN (only those of the first `linked` ones, if given),
+        once they hold together.
         """
         new_rows: dict[str, list[dict]] = {}
         for field, row in rows:
@@ -229,7 +265,7 @@ class LinkedStore(MovementStore):
         if conversion is not None:
             path = self._movement_file("conversions")[0]
             self._add_column(path, len(snapshot.conversions), LINKED_COLUMN)
-            row = conversion | {LINKED_COLUMN: " ".join(ids)}
+            row = conversion | {LINKED_COLUMN: " ".join(ids[:linked])}
             self._write_file(self._appended(path, CONVERSION_ID, row, [*CONVERSION_COLUMNS, LINKED_COLUMN]))
 
     def add_card_payment(
@@ -261,8 +297,13 @@ class LinkedStore(MovementStore):
         other = snapshot.accounts.get(acc_credit if card.name == acc_debit else acc_debit)
         if other is None:
             raise ValueError(f"Unknown account: {acc_credit if card.name == acc_debit else acc_debit!r}")
+        if isinstance(other, DebtAccount) and is_foreign(other):
+            raise ValueError(
+                f"A card in another currency can't be paid with the debt account {other.name}, in another "
+                "currency too: pay it from an account, then add the debt in the Debt tab"
+            )
         value = _parse_amount(amount, "amount", NEGATIVE)
-        paid = self._card_amount(card, other, value, amount_card)
+        paid = _own_amount(card, other, value, amount_card, "debt was paid")
         rate = _value_on(other.currency, move_date, f"to convert from {other.currency.name}")
         base_value = round(value * rate, 2)
         through = INTERMEDIARY if is_foreign(other) else other.name
@@ -275,23 +316,6 @@ class LinkedStore(MovementStore):
         if is_foreign(other):
             conversion = _fi_leg(snapshot, move_date, other, card.name == acc_credit, base_value, value, comment)
         self._add_linked(snapshot, [(field, row)], conversion)
-
-    @staticmethod
-    def _card_amount(card: Account, other: Account, value: float, amount_card: str | float) -> float:
-        """What was paid in the currency of a card, which the other account's may already say."""
-        same = other.currency.name == card.currency.name
-        if not str(amount_card).strip():
-            if not same:
-                raise ValueError(
-                    f"{card.name} is in {card.currency.name}: tell how much debt was paid in {card.currency.name}"
-                )
-            return value
-        paid = _parse_amount(amount_card, f"amount in {card.currency.name}")
-        if same and abs(paid - value) > 1e-9:
-            raise ValueError(f"{other.name} and {card.name} are both in {card.currency.name}: the amounts must match")
-        if paid == 0:
-            raise ValueError(f"The amount in {card.currency.name} must be positive")
-        return paid
 
     def edit_card_payment(
         self,
@@ -327,5 +351,165 @@ class LinkedStore(MovementStore):
         self._add_column(self.settings.ledger_path, len(snapshot.rows), OTHER_AMOUNT)
         self.edit(
             index, fingerprint, move_date, base_movement, acc_debit, acc_credit, amount, comment,
-            card_payment=True, amount_card=f"{paid:,.4f}",
+            card_payment=True, amount_other=f"{paid:,.4f}",
+        )
+
+    def add_debt_movement(
+        self,
+        move_date: str,
+        base_movement: str,
+        acc_debit: str,
+        acc_credit: str,
+        amount: str | float,
+        who: str,
+        comment: str = "",
+        remaining_as_difference: bool = False,
+        amount_debt: str | float = "",
+    ) -> tuple[str, float] | None:
+        """
+        Add a movement of a debt base movement to the ledger CSV, about `who`, someone of
+        its debt account but a company (their debt comes from the work history): its
+        comment names them first (prefixed if it doesn't), so the Debt tab adds it to them.
+
+        Its debt account, of any currency, follows `amount_debt`, in its currency, and the
+        other account `amount`, in its own: only optional if they are the same (see
+        _own_amount). So a movement between two currencies was converted when it was made:
+        - With both accounts in the base currency, it is a single row, as usual.
+        - With a debt account in another currency and the other account in the base one, it
+          is a single row of `amount`, with `amount_debt` in its OTHER_AMOUNT.
+        - With the other account in another currency, it goes through the INTERMEDIARY
+          account, with a conversion linked to it for `amount`: the row is of `amount_debt`
+          for a debt account in the base currency, else of `amount` at the value of its
+          currency on that date, with `amount_debt` in its OTHER_AMOUNT.
+        What it was worth over or under the value of the currencies then is a result of
+        the next revaluation of each account in another currency (see _result_rows).
+
+        With `remaining_as_difference`, what would remain with them after it, in all the
+        ledger, in its debt account and currency, is settled there by a DIFFERENCES movement
+        of the same date and comment, against the equity account, at the value of its
+        currency on that date, added together with it (see Snapshot.difference_of). Returns
+        its base movement and amount in that currency, None if nothing remains or it wasn't
+        asked for.
+        """
+        snapshot = self.load()
+        comment = _debt_comment(snapshot, acc_debit, acc_credit, who, comment)
+        debt = snapshot.debt_account_of(base_movement, acc_debit, acc_credit)
+        other = snapshot.accounts.get(acc_credit if debt is not None and debt.name == acc_debit else acc_debit)
+        if debt is None or other is None or (debt.currency.is_base_currency and other.currency.is_base_currency):
+            # One amount, in the base currency (an unknown account or base movement fails below)
+            if str(amount_debt).strip() and abs(
+                _parse_amount(amount_debt, "amount in the debt account's currency") - _parse_amount(amount, "amount")
+            ) > 1e-9:
+                raise ValueError(f"Both accounts are in {snapshot.base_currency.name}: the amounts must match")
+            field, row = _movement_row(
+                snapshot, move_date, base_movement, acc_debit, acc_credit, amount, comment, False, "", "", True, False,
+            )
+            rows, conversion, paid = [(field, row)], None, _amount_of(row["amount"])
+        else:
+            if _parse_date(move_date, "date") is None:
+                raise ValueError("The date is required")
+            routed = not other.currency.is_base_currency
+            if routed and (not is_foreign(other) or isinstance(other, DebtAccount)):
+                raise ValueError(
+                    f"A debt movement between two currencies can't be against {other.name}: pick an account in "
+                    f"{snapshot.base_currency.name}, or another one in another currency that isn't a debt or "
+                    "investment account"
+                )
+            value = _parse_amount(amount, "amount", NEGATIVE)
+            paid = _own_amount(debt, other, value, amount_debt, "is owed")
+            if debt.currency.is_base_currency:
+                base_value = paid
+            elif not routed:
+                base_value = value
+            else:
+                base_value = round(value * _value_on(other.currency, move_date, f"to convert from {other.currency.name}"), 2)
+            through = INTERMEDIARY if routed else other.name
+            debit, credit = (debt.name, through) if debt.name == acc_debit else (through, debt.name)
+            field, row = _movement_row(
+                snapshot, move_date, base_movement, debit, credit, base_value, comment, False, "", "", True, False,
+            )
+            if not debt.currency.is_base_currency:
+                row[OTHER_AMOUNT] = f"{paid:,.4f}"
+            rows = [(field, row)]
+            conversion = (
+                _fi_leg(snapshot, move_date, other, other.name == acc_debit, base_value, value, comment) if routed else None
+            )
+        difference = None
+        if remaining_as_difference:
+            _, remaining = snapshot.debt_remaining(debt.name if debt else "", base_movement, paid, who.strip())
+            difference = Snapshot.difference_of(remaining)
+        if difference:
+            rows.append(("rows", self._difference_row(snapshot, move_date, *difference, comment, debt)))
+        self._add_linked(snapshot, rows, conversion, linked=1)
+        return difference
+
+    @staticmethod
+    def _difference_row(snapshot, move_date: str, base_name: str, amount: float, comment: str, account: DebtAccount) -> dict:
+        """
+        The row of a DIFFERENCES movement of this amount in the currency of this debt account:
+        out of or into it, against the equity account, at the value of the currency on that
+        date, with the amount in its OTHER_AMOUNT if it is in another currency.
+        """
+        base = snapshot.difference_base_movements().get(base_name)
+        if base is None:
+            gain = base_name == DIFFERENCE_GAIN
+            raise ValueError(
+                f"Setting the remaining as a Difference needs {base_name!r}, an internal "
+                f"{'gain' if gain else 'loss'} of the base movements YAML"
+            )
+        debit, credit = (
+            (account.name, base.acc_credit.name) if base_name == DIFFERENCE_GAIN else (base.acc_debit.name, account.name)
+        )
+        rate = _value_on(account.currency, move_date, f"to convert from {account.currency.name}")
+        row = _movement_row(
+            snapshot, move_date, base_name, debit, credit, round(amount * rate, 2), comment,
+            False, "", "", False, False, difference=True,
+        )[1]
+        return row | ({} if account.currency.is_base_currency else {OTHER_AMOUNT: f"{amount:,.4f}"})
+
+    def delete_debt_movement(self, index: int, fingerprint: str | None = None) -> None:
+        """Delete a debt movement of the ledger CSV by position, or a difference added with one."""
+        snapshot = self.load()
+        rows = snapshot.rows
+        difference = 0 <= index < len(rows) and rows.iloc[index]["base_movement"] in snapshot.difference_base_movements()
+        self.delete(index, fingerprint, debt=not difference, difference=difference)
+
+    def edit_debt_movement(
+        self,
+        index: int,
+        fingerprint: str | None,
+        move_date: str,
+        base_movement: str,
+        acc_debit: str,
+        acc_credit: str,
+        amount: str | float,
+        who: str,
+        comment: str = "",
+        amount_debt: str | float = "",
+    ) -> None:
+        """
+        Replace a debt movement of the ledger CSV by position, about `who` like
+        add_debt_movement, with its `amount` in the base currency, as it is in the CSV,
+        and for a debt account in another currency its `amount_debt`, required there. One
+        added with a conversion keeps its date and amount (see edit).
+        """
+        snapshot = self.load()
+        comment = _debt_comment(snapshot, acc_debit, acc_credit, who, comment)
+        debt = snapshot.debt_account_of(base_movement, acc_debit, acc_credit)
+        amount_other = None
+        if debt is not None and is_foreign(debt):
+            if not str(amount_debt).strip():
+                raise ValueError(f"{debt.name} is in {debt.currency.name}: tell how much is owed in {debt.currency.name}")
+            paid = _parse_amount(amount_debt, f"amount in {debt.currency.name}", NEGATIVE)
+            if paid == 0:
+                raise ValueError(f"The amount in {debt.currency.name} must be positive")
+            self._add_column(self.settings.ledger_path, len(snapshot.rows), OTHER_AMOUNT)
+            amount_other = f"{paid:,.4f}"
+        elif str(amount_debt).strip():
+            raise ValueError("Only a debt account in another currency has an amount in its own currency")
+        elif OTHER_AMOUNT in snapshot.rows.columns:
+            amount_other = ""  # no longer of a debt account in another currency
+        self.edit(
+            index, fingerprint, move_date, base_movement, acc_debit, acc_credit, amount, comment,
+            debt=True, amount_other=amount_other,
         )

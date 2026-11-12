@@ -6,6 +6,7 @@ import re
 from dataclasses import replace
 
 import pytest
+from conftest import other_currency_yaml
 from fastapi.testclient import TestClient
 from helpers import (
     CARD_PAYMENT_YAML,
@@ -44,7 +45,7 @@ def settings(revalued, tmp_path, monkeypatch):
     folder = settings.currencies_path.parent
     (folder / "currencies.csv").write_text("date;USD;EUR\n2026-01-01;1000;1200\n", encoding="utf-8")
     yaml = settings.currencies_path
-    yaml.write_text(yaml.read_text(encoding="utf-8") + "  - name: EUR\n    description: Euro\n", encoding="utf-8")
+    yaml.write_text(yaml.read_text(encoding="utf-8") + other_currency_yaml("EUR", "Euro"), encoding="utf-8")
     investments = tmp_path / "investment.yaml"
     investments.write_text("Br:\n  investments:\n    T: stock\n", encoding="utf-8")
     cards = tmp_path / "credit_cards.yaml"
@@ -223,7 +224,7 @@ class TestCardsInOtherCurrencies:
         lines[0] += ";amount_other_currency"
         lines[1] += ";5"
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        with pytest.raises(Exception, match="Only the card payments of a credit card in another currency"):
+        with pytest.raises(Exception, match="debt account in another currency and the card payments of a credit card in another currency"):
             store.load()
 
     def test_deleting_takes_its_conversion(self, store):
@@ -365,7 +366,8 @@ class TestAccountsByType:
             # In the order of ACCOUNT_GROUPS, those in other currencies by currency
             assert groups == sorted(groups, key=lambda g: [
                 "General assets", "Foreign currency assets (USD)", "Foreign currency assets (EUR)",
-                "Investment accounts", "General liabilities", "Debts &amp; loans", "Credit cards",
+                "Investment accounts", "General liabilities", "Debts &amp; loans", "Debts &amp; loans (USD)",
+                "Debts &amp; loans (EUR)", "Credit cards",
             ].index(g))
             assert "Foreign currency assets (USD)" in groups and "Credit cards" in groups
             for group in groups:

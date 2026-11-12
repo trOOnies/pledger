@@ -14,7 +14,9 @@ from pledger.models import (
     INTERMEDIARY,
     Account,
     CreditCardAccount,
+    DebtAccount,
     InvestmentAccount,
+    foreign_debt,
     is_foreign,
 )
 from pledger.web.store.common import (
@@ -171,9 +173,13 @@ def linked_conversion(snapshot: Snapshot, own: str | None) -> dict | None:
 
 def _other_amount(snapshot: Snapshot, row) -> float | None:
     """
-    The amount in the currency of a credit card of a ledger row with one in its OTHER_AMOUNT
-    column, else None: a card payment or surplus of a card in another currency, against
-    an account in the base currency (the INTERMEDIARY for any other, see LinkedStore).
+    The amount in the currency of its account in another currency of a ledger row with one
+    in its OTHER_AMOUNT column, else None: that account follows it exactly. Of a movement
+    of a debt account in another currency (see foreign_debt), or of a card payment or
+    surplus of a credit card in another currency, against an account in the base currency
+    (the INTERMEDIARY for any other, see LinkedStore), so the movement was converted when
+    it was made: what it was worth over or under the value of the currency then is a result
+    of the next revaluation (see _result_rows).
     """
     text = str(row.get(OTHER_AMOUNT, "")).strip()
     if not text:
@@ -182,16 +188,21 @@ def _other_amount(snapshot: Snapshot, row) -> float | None:
     names = (row["acc_debit"], row["acc_credit"])
     card = next((snapshot.accounts[n] for n in names if isinstance(snapshot.accounts.get(n), CreditCardAccount)), None)
     if row["base_movement"] not in CARD_PAYMENT_BASES or card is None or not is_foreign(card):
+        card = None
+    own = foreign_debt(snapshot.accounts, names) or card
+    if own is None:
         raise ValueError(
-            f"Only the card payments of a credit card in another currency have an {OTHER_AMOUNT} ({date})"
+            f"Only the movements of a debt account in another currency and the card payments of a credit card "
+            f"in another currency have an {OTHER_AMOUNT} ({date})"
         )
-    other = next(snapshot.accounts[n] for n in names if n != card.name)
+    other = next(snapshot.accounts[n] for n in names if n != own.name)
+    what = "card payment" if own is card else "movement of a debt account"
     if not other.currency.is_base_currency:
         raise ValueError(
-            f"A card payment with an {OTHER_AMOUNT} must be against an account in "
+            f"A {what} with an {OTHER_AMOUNT} must be against an account in "
             f"{snapshot.base_currency.name}, not {other.name} ({date})"
         )
-    return _parse_amount(text, f"{OTHER_AMOUNT} of a card payment ({date})")
+    return _parse_amount(text, f"{OTHER_AMOUNT} of a {what} ({date})")
 
 
 def conversion_pairs(snapshot: Snapshot) -> dict[int, int]:
@@ -278,6 +289,12 @@ def _check_conversion(snapshot: Snapshot, row) -> tuple[Account, float, float]:
     unknown = [n for n in names if n not in snapshot.accounts]
     if unknown:
         raise ValueError(f"Unknown account of a conversion: {unknown[0]!r} ({date})")
+    debts = [n for n in names if isinstance(snapshot.accounts[n], DebtAccount)]
+    if debts:
+        raise ValueError(
+            f"Conversions don't move debt accounts like {debts[0]}: a movement of one in another currency "
+            f"has its amount in that currency in the {OTHER_AMOUNT} of its row ({date})"
+        )
     others = [snapshot.accounts[n] for n in names if not snapshot.accounts[n].currency.is_base_currency]
     if len(others) != 1:
         raise ValueError(

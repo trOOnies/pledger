@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from pandas import DataFrame
 
-from pledger.enums import AccountType, CreditorKind, MovementType
+from pledger.enums import AccountType, CreditorKind, DebtRole, MovementType
 from pledger.models import (
     Account,
     CreditCardAccount,
@@ -36,6 +36,7 @@ from pledger.web.store.constants import (
     INTEREST_ACCOUNT,
     INVESTMENT_COLUMN,
     MAX_INSTALLMENTS,
+    OTHER_AMOUNT,
     QUANTITY_COLUMN,
 )
 from pledger.web.store.investments import _check_invest, _investment_details
@@ -107,9 +108,10 @@ def _debt_comment(snapshot: Snapshot, acc_debit: str, acc_credit: str, who: str,
         raise ValueError(f"{who!r} is a company: its debt comes from the salaries of the Work tab")
     if debts and not any(who in a.creditors for a in debts):
         if found:
+            expected = found[0].creditors[who].expected
             raise ValueError(
-                f"{who!r} is expected to be a {found[0].creditors[who].expected.value}: their movements are in "
-                f"{found[0].name}, not {debts[0].name}"
+                f"{who!r} is expected to be a {expected.value}: their movements are in the "
+                f"{'debt' if expected == DebtRole.CREDITOR else 'loan'} accounts, not in {debts[0].name}"
             )
         raise ValueError(f"{who!r} is not someone of the debt account {debts[0].name}")
     if not debts or debts[0].creditor_in(comment) != who:
@@ -277,16 +279,32 @@ def _initial_rows(snapshot: Snapshot, first_date: str) -> DataFrame:
     return _generated_rows(new_rows, columns, -1)
 
 
-def _apply_debts(accounts: dict[str, Account], rows: DataFrame) -> None:
+def debt_amount(snapshot: Snapshot, account: Account, row) -> float:
     """
-    Add the CSV movements of the debt accounts to whoever is named in their comments:
-    a credit is more that we owe them, a debit less. The initial movements are left
-    out, as the initial amounts already come from the creditors YAML.
+    The amount of a movement in the currency of the debt account on a side: its OTHER_AMOUNT
+    if it is in another currency and has one (see _other_amount), else its amount, at the
+    value of the currency on its date for one in another currency (the last one up to then).
     """
-    comments = rows["comment"] if "comment" in rows.columns else [""] * len(rows)
-    for debit, credit, amount, comment in zip(rows["acc_debit"], rows["acc_credit"], rows["amount"], comments):
-        for name, sign in ((debit, -1), (credit, 1)):
+    amount = float(str(row["amount"]).replace(",", "").replace(" ", "") or 0)
+    if account.currency.is_base_currency:
+        return amount
+    other = str(row.get(OTHER_AMOUNT, "") or "").strip()
+    if other:
+        return float(other.replace(",", "").replace(" ", ""))
+    return amount / _value_on(account.currency, row["move_date"], f"to follow {account.name!r} in its currency")
+
+
+def _apply_debts(snapshot: Snapshot, accounts: dict[str, Account], rows: DataFrame) -> None:
+    """
+    Add the CSV movements of the debt accounts to whoever is named in their comments, in
+    the currency of the account (see debt_amount): a credit is more that we owe them, a
+    debit less. The initial movements are left out, as the initial amounts already come
+    from the creditors YAML, and so are the revaluations of the accounts in other
+    currencies, which change their value in the base currency, not what is owed in theirs.
+    """
+    for row in rows.to_dict("records"):
+        for name, sign in ((row["acc_debit"], -1), (row["acc_credit"], 1)):
             acc = accounts[name]
             if isinstance(acc, DebtAccount):
-                value = float(amount.replace(",", "").replace(" ", "") or 0)
-                acc.add_debt(acc.creditor_in(comment), sign * value, comment)
+                comment = row.get("comment", "") or ""
+                acc.add_debt(acc.creditor_in(comment), sign * debt_amount(snapshot, acc, row), comment)

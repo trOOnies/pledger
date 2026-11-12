@@ -43,8 +43,15 @@ def money_filter(context, value: float) -> str:
     return money(value, context["request"].app.state.store.settings.currency)
 
 
+@pass_context
+def money_in_filter(context, value: float, currency: str | None = None) -> str:
+    """An amount in this currency, e.g. USD 1,234.50: in the base one (see money_filter) without one."""
+    return money(value, currency) if currency else money_filter(context, value)
+
+
 templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.filters["money"] = money_filter
+templates.env.filters["money_in"] = money_in_filter
 
 
 def quantity(value: float) -> str:

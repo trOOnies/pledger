@@ -224,10 +224,10 @@ class TestSetupStore:
 
         lines = before.splitlines()
         assert path.read_text().splitlines() == (
-            lines[:13] + [
+            lines[:12] + [
                 "  Sv:", "    description: 'Savings: 10%'", "    currency: ARS",
                 "    is_liquid: false", "    initial_amount: 0.0",
-            ] + lines[13:]
+            ] + lines[12:]
         )
         sv = LedgerStore(settings).load().accounts["Sv"]
         assert sv.description == "Savings: 10%"
@@ -505,7 +505,7 @@ class TestInternalResultTypes:
         settings = replace(settings, creditors_path=path)
         # What Bob owes us is an asset of Lo, a gain; what we owe Ann a liability of De, a loss
         assert self.initial_rows(settings)[1:] == [
-            (-2, "2026-01-01", "Initial (G)", "Lo", "80.0", "Eq"), (-3, "2026-01-01", "Initial (L)", "Eq", "50.0", "De"),
+            (-2, "2026-01-01", "Initial (L)", "Eq", "50.0", "De"), (-3, "2026-01-01", "Initial (G)", "Lo", "80.0", "Eq"),
         ]
 
     def test_a_negative_debt_is_a_gain(self, settings, tmp_path):

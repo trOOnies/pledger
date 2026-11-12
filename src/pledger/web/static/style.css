@@ -594,3 +594,6 @@ td.budget-bar .bar-track { display: block; }
 #prices-form .table-wrap { max-height: none; }
 #prices-form .prices-date { max-width: 12rem; }
 #prices-form .money-input { min-width: 9rem; }
+
+/* The currency of the tables of people, services and companies of the Debt tab */
+.currency-heading { margin: 1rem 0 .5rem; color: var(--muted); }
