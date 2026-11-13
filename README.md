@@ -927,7 +927,12 @@ comment naming the service first, so it adds to what we owe the service in the D
 can be filled in ahead), never before the first date of the ledger or in the previous month, and
 can't be edited by hand: the Ledger tab shows them with a 🟡 linking to the Services tab. Pay a
 service with a `Debt - Paid` movement naming it, from the Debt tab (one in `Lo`, in advance, with a
-`Loan - Given`).
+`Loan - Given`), or with the *New service payment* form of the Services tab: pick the service and
+month, and the account it was paid from. A known value of the month fills in the amount; paying
+another amount leaves the value as it is, so the difference stays with the service, to balance
+later. A month whose value isn't known (estimated or empty) asks for the amount paid, and *Make this
+amount the value of the month* saves it as its value, no longer estimated. The payment's comment
+names the service and the month (`Rent: payment of 2026-02`).
 
 The Services tab lists the services, with each one's account, base movement, value this month, what was owed
 this month and in all, and what we owe each service now, and shows the monthly

@@ -10,8 +10,9 @@
 </div>
 {% else %}
 <div class="layout">
-  <aside class="panel">
-    {{ service_form | safe }}
+  <aside class="column">
+    <div class="panel">{{ service_payment_form | safe }}</div>
+    <div class="panel">{{ service_form | safe }}</div>
   </aside>
   <section id="services-view" hx-get="/services" hx-include="#service-filter" hx-trigger="services-changed from:body">
     {% include "_services.html" %}

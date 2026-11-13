@@ -373,6 +373,9 @@ input, select, button {
   display: flex; align-items: center; gap: .4rem; align-self: end;
   padding-bottom: .45rem; font-size: 14px; color: var(--text); cursor: pointer;
 }
+/* A check that can't be used, greyed out (e.g. the service payment of a known value) */
+.stack label.check:has(input:disabled), .pair label.check:has(input:disabled) { color: var(--muted); cursor: not-allowed; }
+.stack label.check input:disabled, .pair label.check input:disabled { cursor: not-allowed; }
 input[type="checkbox"], input[type="radio"] { width: auto; margin: 0; accent-color: var(--accent); }
 input.fixed { background: var(--bg); color: var(--muted); }
 

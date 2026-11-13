@@ -32,6 +32,7 @@ from pledger.web.templating import (
     render_new_investment_form,
     render_prices_form,
     render_service_form,
+    render_service_payment_form,
     templates,
 )
 from pledger.web.views import (
@@ -377,6 +378,43 @@ async def save_service_month(request: Request, store: StoreDep, month: Annotated
     except ValueError as e:
         return render_service_form(request, store.load(), month.strip(), values, error=str(e))
     response = render_service_form(request, store.load(), month, success=f"Saved {month}")
+    response.headers["HX-Trigger"] = "services-changed"
+    return response
+
+
+@router.get("/services/payment-form")
+def service_payment_form(
+    request: Request, store: StoreDep, service: str = "", month: str = "", move_date: str = "", acc_credit: str = "",
+):
+    """The service payment form, with the known value of the service and month picked as the amount."""
+    values = {k: v for k, v in {"move_date": move_date, "acc_credit": acc_credit}.items() if v}
+    return render_service_payment_form(request, store.load(), service.strip(), month.strip(), values)
+
+
+@router.post("/services/payments")
+def create_service_payment(
+    request: Request,
+    store: StoreDep,
+    service: Annotated[str, Form()],
+    month: Annotated[str, Form()],
+    move_date: Annotated[str, Form()],
+    amount: Annotated[str, Form()],
+    acc_credit: Annotated[str, Form()] = "",
+    set_value: Annotated[bool, Form()] = False,
+):
+    values = {"move_date": move_date, "acc_credit": acc_credit, "amount": amount, "set_value": set_value}
+    try:
+        base = store.add_service_payment(service, month, move_date, acc_credit, amount, set_value)
+    except ValueError as e:
+        return render_service_payment_form(request, store.load(), service, month, values, error=str(e))
+    snapshot = store.load()
+    what = f"Added {base} ({service.strip()}): {amount_text(snapshot.accounts.get(acc_credit), amount, store.settings.currency)} for {month}"
+    if set_value:
+        what += ", now its value"
+    future = " (dated in the future)" if move_date > dt.date.today().isoformat() else ""
+    response = render_service_payment_form(
+        request, snapshot, service, month, {"move_date": move_date, "acc_credit": acc_credit}, success=what + future,
+    )
     response.headers["HX-Trigger"] = "services-changed"
     return response
 

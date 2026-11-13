@@ -116,6 +116,7 @@ from pledger.web.store.services import (
     service_cells,
     service_estimates,
     service_months,
+    service_payment_base,
     services_of,
 )
 from pledger.web.store.settings import (
@@ -242,6 +243,7 @@ __all__ = [
     "service_cells",
     "service_estimates",
     "service_months",
+    "service_payment_base",
     "services_of",
     "stored_ids",
     "today",

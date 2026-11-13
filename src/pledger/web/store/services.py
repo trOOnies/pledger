@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from pandas import DataFrame, Period, Timestamp
 
-from pledger.enums import CreditorKind, LedgerSide, MovementType
+from pledger.enums import CreditorKind, DebtRole, LedgerSide, MovementType
 from pledger.models import (
     ESTIMATED,
     Creditor,
@@ -16,7 +16,9 @@ from pledger.models import (
 )
 from pledger.web.store.common import _generated_rows, _parse_amount
 from pledger.web.store.constants import (
+    DEBT_PAID,
     ID_COLUMN,
+    LOAN_GIVEN,
     SERVICE_COLUMN,
     SERVICE_ID,
     SERVICE_MONTH,
@@ -48,6 +50,17 @@ def service_account(snapshot: Snapshot, service: Creditor) -> str:
     if account is None:
         raise ValueError(f"No {service.roles[0].value} account in {snapshot.base_currency.name} for the service {service.name!r}")
     return account.name
+
+
+def service_payment_base(snapshot: Snapshot, service: str) -> tuple[str, str]:
+    """
+    The base movement paying a service (see service_account), and its debt account, the
+    debit of it: Debt - Paid in the debt account, else Loan - Given in the loan account,
+    for the ones expected to be debtors (they charge in advance).
+    """
+    account = service_account(snapshot, services_of(snapshot)[service])
+    role = snapshot.accounts[account].role
+    return (DEBT_PAID if role == DebtRole.CREDITOR else LOAN_GIVEN), account
 
 
 def service_bases(snapshot: Snapshot) -> dict[str, MovementBase]:

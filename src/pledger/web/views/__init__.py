@@ -122,6 +122,7 @@ from pledger.web.views.results import (
 from pledger.web.views.services import (
     build_services,
     service_form,
+    service_payment_form,
 )
 from pledger.web.views.trip import build_trips, ledger_weeks
 from pledger.web.views.work import (
@@ -232,6 +233,7 @@ __all__ = [
     "sampled",
     "search_terms",
     "service_form",
+    "service_payment_form",
     "setup_context",
     "signed_composition",
     "source_link",

@@ -20,6 +20,7 @@ from pledger.web.templating import (
     render_new_investment_form,
     render_prices_form,
     render_service_form,
+    render_service_payment_form,
     templates,
 )
 from pledger.web.views import (
@@ -78,6 +79,7 @@ def services(request: Request, store: StoreDep, service: str = ""):
     if is_partial(request):
         return templates.TemplateResponse(request, "_services.html", context)
     context["service_form"] = render_service_form(request, snapshot).body.decode()
+    context["service_payment_form"] = render_service_payment_form(request, snapshot).body.decode()
     return templates.TemplateResponse(request, "services.html", context)
 
 

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from pledger.enums import CreditorKind, DebtRole
-from pledger.models import next_month
+from pledger.enums import CreditorKind, DebtRole, LedgerSide
+from pledger.models import DebtAccount, next_month
 from pledger.web.store import (
     SERVICE_COLUMN,
     Snapshot,
@@ -12,9 +12,11 @@ from pledger.web.store import (
     service_cells,
     service_estimates,
     service_months,
+    service_payment_base,
 )
 from pledger.web.views.common import movement_rows
 from pledger.web.views.debt import debt_after, net_creditors
+from pledger.web.views.forms import by_group
 
 
 def build_services(snapshot: Snapshot, service: str = "") -> dict:
@@ -104,4 +106,45 @@ def service_form(snapshot: Snapshot, month: str = "", values: dict | None = None
             {"month": last, "fields": {f"service:{c}": v for c, v in months[last].items()}}
             if last else None
         ),
+    }
+
+
+def service_payment_form(snapshot: Snapshot, service: str = "", month: str = "", values: dict | None = None) -> dict:
+    """
+    The state of the service payment form: the service (the first one by default) and
+    month (this one by default) paid, its value then if known, to fill the amount in, else
+    its estimate, if any, and the accounts in the base currency it can be paid from, on the
+    credit of its base movement (see store.service_payment_base), but the debt accounts. Only the months whose
+    value isn't known can take the amount paid as it.
+    """
+    bases = service_bases(snapshot)
+    if service not in bases:
+        service = next(iter(bases), "")
+    month = month or snapshot.today.strftime("%Y-%m")
+    values = dict(values or {})
+    value = dict(service_months(snapshot)).get(month, {}).get(service)
+    estimated = service in service_estimates(snapshot).get(month, [])
+    known = value is not None and not estimated
+    base, debt, options = "", "", []
+    if service:
+        base, debt = service_payment_base(snapshot, service)
+        movement = snapshot.base_movements.get(base)
+        if movement is not None:
+            options = [
+                a.name for a in snapshot.side_accounts(movement, LedgerSide.CREDIT)
+                if a.currency.is_base_currency and not isinstance(a, DebtAccount)
+            ]
+    if "amount" not in values:
+        values["amount"] = f"{value:,.2f}" if known else ""
+    return {
+        "services": list(bases),
+        "service": service,
+        "month": month,
+        "known": value if known else None,
+        "estimate": value if estimated else None,
+        "payment_base": base,  # missing from the base movements YAML, if not in base_movements
+        "base_movement": base if base in snapshot.base_movements else "",
+        "debt_account": debt,
+        "groups": by_group(snapshot, options),
+        "values": values,
     }

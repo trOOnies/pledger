@@ -1,0 +1,62 @@
+{# The service payment form: a service and month, paid from an account (see views.service_payment_form). #}
+<form id="service-payment-form" class="stack" hx-post="/services/payments" hx-swap="outerHTML">
+  <h2>New service payment</h2>
+  {% if error %}<p class="msg error">{{ error }}</p>{% endif %}
+  {% if success %}<p class="msg success">{{ success }}</p>{% endif %}
+  {% if services %}
+  {# Picking another service or month fills in its value again #}
+  <div class="stack" hx-get="/services/payment-form" hx-trigger="change" hx-target="#service-payment-form" hx-swap="outerHTML"
+    hx-include="#service-payment-form [name='service'], #service-payment-form [name='month'], #service-payment-form [name='move_date'], #service-payment-form [name='acc_credit']">
+    <label>Service
+      <select name="service" required>
+        {% for s in services %}<option {% if s == service %}selected{% endif %}>{{ s }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Month
+      <input type="month" name="month" value="{{ month }}" placeholder="YYYY-MM" required>
+    </label>
+  </div>
+  {% if base_movement %}
+  <label>Date
+    <input type="date" name="move_date" value="{{ values.move_date }}" required data-future-warning>
+    <span class="hint warn" hidden>⚠️ This date is in the future.</span>
+  </label>
+  <label><span>Paid from <em class="optional">(credit of {{ base_movement }}, to {{ debt_account }})</em></span>
+    <select name="acc_credit" required>
+      <option value="">Choose…</option>
+      {% for group, names in groups.items() %}
+      <optgroup label="{{ group }}">
+        {% for acc in names %}<option {% if acc == values.acc_credit %}selected{% endif %}>{{ acc }}</option>{% endfor %}
+      </optgroup>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Amount
+    <span class="money-input">
+      <span class="prefix">{{ currency }}</span>
+      <input name="amount" inputmode="decimal" min="0" value="{{ values.amount }}" placeholder="0.00" required autocomplete="off" data-money>
+    </span>
+  </label>
+  {% if known is not none %}
+  <span class="hint">The value of {{ month }} is <span class="money">{{ known | money }}</span>. Paying another amount leaves it
+    as it is: the difference stays with {{ service }}, to balance later.</span>
+  {% elif estimate is not none %}
+  <span class="hint">The value of {{ month }} isn't known: it is <span class="estimated money">estimated</span> at
+    <span class="money">{{ estimate | money }}</span>. Fill in what was paid.</span>
+  {% else %}
+  <span class="hint">{{ service }} has no value in {{ month }}: fill in what was paid.</span>
+  {% endif %}
+  <label class="check" {% if known is not none %}aria-disabled="true" {% endif %}title="{{ 'Its value is known: only an estimated or empty value can take the amount paid' if known is not none else 'Save the amount paid as the value of ' ~ service ~ ' in ' ~ month ~ ', no longer estimated' }}">
+    <input type="checkbox" name="set_value" value="true" {% if known is not none %}disabled{% elif values.set_value %}checked{% endif %}>
+    <span>Make this amount the value of {{ month }}{% if known is not none %}
+      <em class="optional">(only for an estimated or empty value)</em>{% endif %}</span>
+  </label>
+  <button type="submit">Add payment</button>
+  {% else %}
+  <p class="msg warn small">Paying {{ service }} needs the base movement <em>{{ payment_base }}</em>, under <code>transfer</code> in the
+    <code>internal</code> section of the base movements YAML.</p>
+  {% endif %}
+  {% else %}
+  <p class="muted">No services with a <code>base_movement</code> yet: add it to them in the creditors file.</p>
+  {% endif %}
+</form>

@@ -12,11 +12,41 @@ from pledger.models import ESTIMATED, parse_month
 from pledger.web.store.base_store import StoreBase
 from pledger.web.store.common import _parse_amount
 from pledger.web.store.constants import SERVICE_MONTH
-from pledger.web.store.services import service_bases, service_cells
+from pledger.web.store.services import (
+    service_bases,
+    service_cells,
+    service_estimates,
+    service_months,
+    service_payment_base,
+)
 
 
 class ServiceStore(StoreBase):
-    """Sets the monthly values of the services CSV."""
+    """Sets the monthly values of the services CSV, and pays the services."""
+
+    def add_service_payment(
+        self, service: str, month: str, move_date: str, acc_credit: str, amount: str | float, set_value: bool = False,
+    ) -> str:
+        """
+        Pay a service its value of a month (see service_payment_base): a movement of the
+        Debt tab debiting its debt account and crediting `acc_credit`, about it, commented
+        with the month. A known value of the month is never changed, even if the payment
+        differs from it: what remains is balanced later. With `set_value`, only for a
+        month whose value isn't known (estimated or empty), the amount becomes its value.
+        Returns the base movement of the payment.
+        """
+        snapshot = self.load()
+        service, month = service.strip(), parse_month(month, "month")
+        if service not in service_bases(snapshot):
+            raise ValueError(f"{service!r} is not a service with a base movement in the creditors YAML")
+        known = service not in service_estimates(snapshot).get(month, []) and service in dict(service_months(snapshot)).get(month, {})
+        if set_value and known:
+            raise ValueError(f"The value of {service} in {month} is already known: it isn't replaced by a payment")
+        base, debt = service_payment_base(snapshot, service)
+        self.add_debt_movement(move_date, base, debt, acc_credit, amount, service, f"payment of {month}")
+        if set_value:
+            self.set_service_value(month, service, amount)
+        return base
 
     def set_service_value(self, month: str, service: str, amount: str | float = "") -> None:
         """Set the value of a service in a month of the services CSV, keeping the others (see save_service_month)."""
@@ -69,3 +99,4 @@ class ServiceStore(StoreBase):
             earlier = [i for i, m in zip(csv_file.row_lines, months) if m < month]
             lines.insert(max(earlier) + 1 if earlier else min(csv_file.row_lines, default=1), buf.getvalue())
         self._write_file(csv_file)
+

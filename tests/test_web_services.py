@@ -7,7 +7,7 @@ from dataclasses import replace
 
 import pytest
 from fastapi.testclient import TestClient
-from helpers import HTMX, SERVICES_HEADER, card_labels
+from helpers import DEBT_YAML, HTMX, SERVICES_HEADER, card_labels, with_internal
 
 from pledger.web.app import create_app
 from pledger.web.store import (
@@ -215,7 +215,61 @@ class TestServices:
             ("2026-03", [120.0, None, 4.0]), ("2026-02", [None, 30.0, None]),
         ]
 
+    def test_payment_form(self, settings, client):
+        assert "needs the base movement <em>Debt - Paid</em>" in client.get("/services/payment-form").text
+        with_internal(settings.base_movements_path, transfers=DEBT_YAML)
+        r = client.get("/services")
+        assert r.text.index('id="service-payment-form"') < r.text.index('id="service-form"')  # above New month
+        form = r.text.split('id="service-payment-form"')[1].split("</form>")[0]
+        assert "<h2>New service payment</h2>" in form and 'value="2026-02"' in form  # this month
+        assert "(credit of Debt - Paid, to De)" in form and "<option >Ca</option>" in form
+        assert "<option >Lo</option>" not in form  # no debt accounts
+        # A known value fills in the amount, and can't be replaced
+        r = client.get("/services/payment-form", params={"service": "Expenses", "month": "2026-02"})
+        assert 'name="amount" inputmode="decimal" min="0" value="30.00"' in r.text
+        assert re.search(r'name="set_value" value="true" disabled', r.text)
+        assert '<label class="check" aria-disabled="true"' in r.text and "(only for an estimated or empty value)" in r.text
+        # Not known: no amount, and it can be made the value
+        r = client.get("/services/payment-form", params={"service": "Rent", "month": "2026-02"})
+        assert 'name="amount" inputmode="decimal" min="0" value=""' in r.text and "has no value in 2026-02" in r.text
+        assert 'name="set_value" value="true" >' in r.text and "aria-disabled" not in r.text
+
+    def test_pay_a_known_value(self, settings, client):
+        with_internal(settings.base_movements_path, transfers=DEBT_YAML)
+        before = settings.services_path.read_text()
+        r = client.post("/services/payments", data={
+            "service": "Expenses", "month": "2026-02", "move_date": "2026-02-10", "acc_credit": "Ca", "amount": "25",
+        })
+        assert "Added Debt - Paid (Expenses): $25.00 for 2026-02" in r.text and r.headers["HX-Trigger"] == "services-changed"
+        assert settings.services_path.read_text() == before  # the value stays: 5.00 left to balance
+        snapshot = LedgerStore(settings).load()
+        row = snapshot.rows.iloc[-1]
+        assert (row.base_movement, row.acc_debit, row.acc_credit, row.amount, row.comment) == (
+            "Debt - Paid", "De", "Ca", "25.00", "Expenses: payment of 2026-02",
+        )
+        assert snapshot.debt_accounts()[0].creditors["Expenses"].amount == 39 - 25
+        r = client.post("/services/payments", data={
+            "service": "Expenses", "month": "2026-02", "move_date": "2026-02-10", "acc_credit": "Ca", "amount": "25",
+            "set_value": "true",
+        })
+        assert "is already known" in r.text
+
+    def test_pay_an_unknown_value(self, settings, client):
+        with_internal(settings.base_movements_path, transfers=DEBT_YAML)
+        settings.services_path.write_text(SERVICES_HEADER + "2025-12;100;;\n2026-01;100;30;50\n2026-02;estimated;30;\n")
+        r = client.get("/services/payment-form", params={"service": "Rent", "month": "2026-02"})
+        assert "estimated</span> at\n    <span class=\"money\">$103.00</span>" in r.text  # 100 with inflation
+        assert 'name="amount" inputmode="decimal" min="0" value=""' in r.text
+        r = client.post("/services/payments", data={
+            "service": "Rent", "month": "2026-02", "move_date": "2026-02-10", "acc_credit": "Ca", "amount": "110",
+            "set_value": "true",
+        })
+        assert "now its value" in r.text
+        assert "2026-02;110.00;30.00;" in settings.services_path.read_text()  # no longer estimated
+
     def test_no_services(self, settings, client):
         settings.creditors_path.write_text("people:\n  Dad: 0\n")
         settings.services_path.write_text("month\n")
         assert "No services yet" in client.get("/services").text
+
+

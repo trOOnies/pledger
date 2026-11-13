@@ -25,6 +25,7 @@ from pledger.web.views import (
     price_rows,
     row_anchor,
     service_form,
+    service_payment_form,
 )
 
 HERE = Path(__file__).parent
@@ -202,6 +203,23 @@ def render_service_form(
             "currency": settings.currency,
             "path": settings.services_path.name if settings.services_path else "services.csv",
             **service_form(snapshot, month, values),
+            **extra,
+        },
+    )
+
+
+def render_service_payment_form(
+    request: Request, snapshot: Snapshot, service: str = "", month: str = "", values: dict | None = None, **extra
+):
+    """The payment form of the Services tab, for a month of a service (see views.service_payment_form)."""
+    values = dict(values or {})
+    values.setdefault("move_date", dt.date.today().isoformat())
+    return templates.TemplateResponse(
+        request,
+        "_service_payment_form.html",
+        {
+            "currency": request.app.state.store.settings.currency,
+            **service_payment_form(snapshot, service, month, values),
             **extra,
         },
     )
