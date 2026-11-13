@@ -232,10 +232,11 @@ def price_growth(monthly_inflation: pd.Series | None, start: pd.Timestamp, end: 
     return float(cpi[max(end, first)] / cpi[max(start, first)])
 
 
-def _with_estimates(values: pd.Series, estimated: pd.Series, monthly_inflation: pd.Series | None) -> pd.Series:
+def _with_estimates(values: pd.Series, estimated: pd.Series) -> pd.Series:
     """
     A currency's values by date, with those of the `estimated` dates: the last known value
-    before them, grown by the inflation since then (see price_growth).
+    before them, unchanged. So, like no value at all, an estimated one revalues nothing (no
+    Foreign currency movements) until its real one is known.
     """
     filled = values.copy()
     known = values.dropna()
@@ -245,7 +246,7 @@ def _with_estimates(values: pd.Series, estimated: pd.Series, monthly_inflation: 
             raise ValueError(
                 f"The currencies CSV has {values.name} {ESTIMATED} on {date.date()}, with no known value before it"
             )
-        filled[date] = earlier.iloc[-1] * price_growth(monthly_inflation, earlier.index[-1], date)
+        filled[date] = earlier.iloc[-1]
     return filled
 
 
@@ -335,7 +336,7 @@ class Currency:
 
         folder = os.path.dirname(path)
         inflation, estimated_months = cls._load_inflation(os.path.join(folder, "base_currency.csv"))
-        values, estimated = cls._load_values(os.path.join(folder, "currencies.csv"), names, inflation)
+        values, estimated = cls._load_values(os.path.join(folder, "currencies.csv"), names)
         base_currency = cls(
             name=data["base_currency"]["name"],
             description=data["base_currency"]["description"],
@@ -390,9 +391,7 @@ class Currency:
         return inflation.ffill(), tuple(months[estimated])
 
     @staticmethod
-    def _load_values(
-        path: str, names: list[str], monthly_inflation: pd.Series | None = None
-    ) -> tuple[pd.DataFrame, pd.DataFrame]:
+    def _load_values(path: str, names: list[str]) -> tuple[pd.DataFrame, pd.DataFrame]:
         """
         The currencies CSV, indexed and sorted by date, with a column per currency, the
         ESTIMATED cells filled in (see _with_estimates), and the same frame telling which
@@ -423,7 +422,7 @@ class Currency:
         if (values <= 0).any().any():
             raise ValueError("The currencies CSV values must be positive")
         filled = pd.DataFrame(
-            {c: _with_estimates(values[c], estimated[c], monthly_inflation) for c in values.columns},
+            {c: _with_estimates(values[c], estimated[c]) for c in values.columns},
             index=values.index,
         )
         return filled, estimated

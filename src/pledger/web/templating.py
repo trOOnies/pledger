@@ -19,6 +19,7 @@ from pledger.web.views import (
     card_payment_fields,
     collection_form,
     conversion_fields,
+    currency_week_form,
     debt_form_fields,
     invest_fields,
     ledger_link,
@@ -204,6 +205,22 @@ def render_service_form(
             "currency": settings.currency,
             "path": settings.services_path.name if settings.services_path else "services.csv",
             **service_form(snapshot, month, values),
+            **extra,
+        },
+    )
+
+
+def render_currency_week_form(
+    request: Request, snapshot: Snapshot, date: str = "", values: dict | None = None, **extra
+):
+    """The weekly values form of the Currencies tab, for the currencies CSV (see views.currency_week_form)."""
+    return templates.TemplateResponse(
+        request,
+        "_currency_week_form.html",
+        {
+            "base": snapshot.base_currency.name,
+            "path": request.app.state.store.settings.currency_values_path.name,
+            **currency_week_form(snapshot, date, values),
             **extra,
         },
     )

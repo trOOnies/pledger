@@ -150,19 +150,21 @@ all it takes to correct it:
 | File | The estimate |
 | --- | --- |
 | `base_currency.csv` | Exactly the last known inflation. |
-| `currencies.csv` | The last known value of the currency, grown by the CPI since its date. |
+| `currencies.csv` | Exactly the last known value of the currency: no change, so no Foreign currency movements until the real one is known. |
 | `services.csv` | The last known value of the service, grown by the inflation of each month since then, to the cent. |
 
 There must be a known value before it: the ledger doesn't load otherwise. A date or month after the
-last one of `base_currency.csv` takes its last inflation, and an estimated value of a currency after
-today revalues nothing yet.
+last one of `base_currency.csv` takes its last inflation, and an estimated value of a currency
+revalues nothing.
 
 On startup, pledger adds the months and weeks missing from these three files, from their first row
 up to the current month or week, as `estimated` (a week on its Monday, see [Work](#work)). Those
 files are left as they are if they have no rows. In `currencies.csv`, only the currencies with an
 earlier value get it, and in `services.csv` only the services with a value in the month before, as
-an empty cell there means there is none. When a month or week ends and is still `estimated`, the
-Currencies and Services tabs warn about it in the section that shows it.
+an empty cell there means there is none. When a month ends and is still `estimated`, the
+Currencies and Services tabs warn about it in the section that shows it. When a week ends without a
+known value of a currency (still `estimated`, empty or without a row), the *Weekly values* of the
+Currencies tab warn about it, naming each currency and each of its past weeks without one.
 
 **The CSV stays the source of truth.** Adding a movement appends one line, deleting removes
 one line, and the rest of the file is left byte-for-byte as it was. New accounts and base
@@ -457,6 +459,13 @@ in the base currency.
 column each (no other columns). Values must be positive and dates can't repeat. An empty cell
 is a date without that value, and `estimated` one yet to be known (see
 [Your data files](#-your-data-files)). Without other currencies, the file is optional.
+
+The Currencies tab shows it as its **Weekly values**, newest first, and sets them with the *New
+week* form (✎ on a row edits it; the API has `GET` and `PUT /api/currencies`): saving replaces the
+row of that date, else the one of its week with no known value (the `estimated` row added on
+startup), else adds it in date order. The form starts on the first week without a known value of
+some currency, and *Fill in the last known values* fills it in. Turning an estimate into a known
+value is all it takes for pledger to make the Foreign currency movements of that date (see below).
 
 ```csv
 date;USD;USC

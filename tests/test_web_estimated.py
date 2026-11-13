@@ -13,7 +13,7 @@ from pledger.web.store import (
     service_cells,
     service_months,
 )
-from pledger.web.views import build_currencies
+from pledger.web.views import build_currencies, currency_weeks, missing_weeks
 
 
 class Base:
@@ -82,10 +82,11 @@ class TestEstimates(Base):
         rows = LedgerStore(settings).load().service_rows
         assert sum(float(a) for a in rows[rows.id.str.contains("2026-02")].amount) == pytest.approx(110.0)
 
-    def test_currencies_grow_by_the_cpi_since_the_last_known_value(self, revalued, settings):
+    def test_currencies_take_the_last_known_value(self, revalued, settings):
+        # Unchanged, not grown by the inflation: no Foreign currency movements until it is known
         self.write(settings, self.INFLATION, "2026-01-31;1000\n2026-02-28;estimated\n2026-03-31;estimated\n")
         usd = LedgerStore(settings).load().currencies["USD"]
-        assert list(usd.base_currency_mapping) == pytest.approx([1000.0, 1100.0, 1210.0])
+        assert list(usd.base_currency_mapping) == pytest.approx([1000.0, 1000.0, 1000.0])
         assert [d.date().isoformat() for d in usd.estimated] == ["2026-02-28", "2026-03-31"]
 
     def test_a_currency_needs_a_known_value_before(self, settings):
@@ -93,11 +94,14 @@ class TestEstimates(Base):
         with pytest.raises(LedgerDataError, match="USD estimated on 2026-02-02"):
             LedgerStore(settings).load()
 
-    def test_a_future_estimate_revalues_nothing(self, revalued, settings):
-        self.write(settings, self.INFLATION, "2026-01-05;1000\n2026-03-09;estimated\n2026-03-16;estimated\n")
+    def test_an_estimate_revalues_nothing(self, revalued, settings):
+        self.write(settings, self.INFLATION, "2026-01-05;1000\n2026-02-02;1100\n2026-03-02;estimated\n2026-03-09;estimated\n")
         days = set(LedgerStore(settings).load().result_rows.move_date)
-        assert "2026-03-09" in days
-        assert "2026-03-16" not in days
+        assert "2026-02-02" in days
+        assert not days & {"2026-03-02", "2026-03-09"}
+        # Once known, it does
+        LedgerStore(settings).save_currency_week("2026-03-02", {"USD": "1200"})
+        assert "2026-03-02" in set(LedgerStore(settings).load().result_rows.move_date)
 
     def test_editing_a_value_keeps_the_estimated_ones(self, settings):
         self.write(settings, self.INFLATION, services="2026-01;100.00;50.00\n2026-02;estimated;estimated\n")
@@ -131,6 +135,7 @@ class TestWarnings(Base):
         client = TestClient(create_app(settings))
         assert "still estimated" not in client.get("/services").text
         assert "still estimated" not in client.get("/currencies").text
+        assert "Missing values" not in client.get("/currencies").text
 
     def test_currencies_warn_about_past_months_and_weeks(self, revalued, settings):
         self.write(settings, "2026-01;1%\n2026-02;estimated\n2026-03;estimated\n",
@@ -138,9 +143,8 @@ class TestWarnings(Base):
         page = TestClient(create_app(settings)).get("/currencies").text
         assert "1 past month still estimated" in page
         assert "<li>2026-02</li>" in page
-        assert "1 past week still estimated" in page
-        assert "<li>2026-03-02</li>" in page
-        assert "<li>2026-03-09</li>" not in page  # the current week
+        assert "USD has\n    no value for 1 past week" in page
+        assert "<li><strong>USD</strong>: 2026-03-02</li>" in page  # not the current week, 2026-03-09
 
     def test_estimated_months_are_projected(self, settings):
         self.write(settings, "2026-01;1%\n2026-02;estimated\n2026-03;estimated\n")
@@ -205,3 +209,87 @@ class TestFill(Base):
         with TestClient(create_app(settings)):
             pass
         assert "Could not fill in the estimates" in caplog.text
+
+
+class TestWeeklyValues(Base):
+    """The weekly values of the other currencies, set from the Currencies tab."""
+
+    @pytest.fixture(autouse=True)
+    def _revalued(self, revalued):
+        """The base movements of the Foreign currency movements, that the values make."""
+
+    @staticmethod
+    def values_csv(settings):
+        return (settings.currencies_path.parent / "currencies.csv").read_text()
+
+    def test_a_week_replaces_its_estimated_row(self, settings):
+        self.write(settings, "2026-01;1%\n", "2026-02-23;1000\n2026-03-02;estimated\n2026-03-09;estimated\n")
+        assert LedgerStore(settings).save_currency_week("2026-03-04", {"USD": "1,050.5"}) == "2026-03-04"
+        assert self.values_csv(settings) == "date;USD\n2026-02-23;1000\n2026-03-04;1050.50\n2026-03-09;estimated\n"
+
+    def test_a_date_replaces_its_row_else_goes_in_date_order(self, settings):
+        self.write(settings, "2026-01;1%\n", "2026-02-16;1000\n2026-03-02;1100\n")
+        store = LedgerStore(settings)
+        store.save_currency_week("2026-02-23", {"USD": "1050.123456"})
+        store.save_currency_week("2026-03-02", {"USD": "estimated"})
+        assert self.values_csv(settings) == "date;USD\n2026-02-16;1000\n2026-02-23;1050.123456\n2026-03-02;estimated\n"
+
+    @pytest.mark.parametrize(("date", "value", "error"), [
+        ("2026-02-09", "estimated", "no known value before it"),
+        ("2026-03-02", "-5", "cannot be negative"),
+        ("2026-03-02", "0", "must be positive"),
+        ("03/02/2026", "1", "YYYY-MM-DD"),
+    ])
+    def test_wrong_values_change_nothing(self, settings, date, value, error):
+        self.write(settings, "2026-01;1%\n", "2026-02-16;1000\n")
+        with pytest.raises(ValueError, match=error):
+            LedgerStore(settings).save_currency_week(date, {"USD": value})
+        assert self.values_csv(settings) == "date;USD\n2026-02-16;1000\n"
+
+    def test_unknown_currencies_are_refused(self, settings):
+        self.write(settings, "2026-01;1%\n", "2026-02-16;1000\n")
+        with pytest.raises(ValueError, match="'EUR' is not another currency"):
+            LedgerStore(settings).save_currency_week("2026-03-02", {"EUR": "1"})
+
+    def test_missing_weeks_are_the_past_ones_without_a_known_value(self, settings):
+        # 2026-02-23 has no row, 2026-03-02 is estimated, 2026-03-09 is the current week
+        self.write(settings, "2026-01;1%\n", "2026-02-16;1000\n2026-03-02;estimated\n")
+        snapshot = LedgerStore(settings).load()
+        assert missing_weeks(snapshot) == [{"currency": "USD", "weeks": ["2026-02-23", "2026-03-02"]}]
+        weeks = currency_weeks(snapshot)["weeks"]
+        assert [(w["date"], w["cells"]) for w in weeks] == [
+            ("2026-03-02", [{"value": 1000.0, "estimated": True}]),
+            ("2026-02-16", [{"value": 1000.0, "estimated": False}]),
+        ]
+
+    def test_the_form_goes_through_the_missing_weeks(self, settings):
+        self.write(settings, "2026-01;1%\n", "2026-02-16;1000\n2026-03-02;estimated\n")
+        client = TestClient(create_app(settings))
+        page = client.get("/currencies").text
+        assert "<li><strong>USD</strong>: 2026-02-23, 2026-03-02</li>" in page
+        assert 'name="date" value="2026-02-23"' in page and "New week" in page
+        assert "Fill in the last known values" in page and "1000.00" in page
+        response = client.post("/currencies/weeks", data={"date": "2026-02-23", "currency:USD": "1010"})
+        assert "Saved 2026-02-23" in response.text and response.headers["HX-Trigger"] == "currencies-changed"
+        assert 'value="2026-03-02"' in response.text and "Edit 2026-03-02" in response.text  # the next one
+        client.post("/currencies/weeks", data={"date": "2026-03-02", "currency:USD": "1020"})
+        assert "Missing values" not in client.get("/currencies").text
+        assert self.values_csv(settings) == "date;USD\n2026-02-16;1000\n2026-02-23;1010.00\n2026-03-02;1020.00\n"
+        # Nothing missing: the current week
+        assert 'value="2026-03-09"' in client.get("/currencies/week-form").text
+
+    def test_the_form_shows_its_errors(self, settings):
+        self.write(settings, "2026-01;1%\n", "2026-02-16;1000\n")
+        response = TestClient(create_app(settings)).post("/currencies/weeks", data={"date": "2026-02-23", "currency:USD": "-1"})
+        assert "cannot be negative" in response.text and 'value="-1"' in response.text
+
+    def test_the_api(self, settings):
+        self.write(settings, "2026-01;1%\n", "2026-02-16;1000\n")
+        client = TestClient(create_app(settings))
+        assert client.put("/api/currencies", json={"date": "2026-02-23", "values": {"USD": 1005}}).json() == {
+            "ok": True, "date": "2026-02-23",
+        }
+        data = client.get("/api/currencies").json()
+        assert data["week_currencies"] == ["USD"]
+        assert data["missing_weeks"] == [{"currency": "USD", "weeks": ["2026-03-02"]}]
+        assert client.put("/api/currencies", json={"date": "2026-02-23", "values": {"USD": "x"}}).status_code == 422

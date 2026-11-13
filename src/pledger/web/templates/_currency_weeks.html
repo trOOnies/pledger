@@ -1,0 +1,43 @@
+{# The weekly values of the other currencies, with a warning about the past weeks without a known one. #}
+{% if missing_weeks %}
+{% set n_weeks = missing_weeks | sum(attribute="weeks", start=[]) | unique | list | length %}
+<details class="msg warn alert" role="alert">
+  <summary>⚠ Missing values: {{ missing_weeks | map(attribute="currency") | join(", ") }} {{ "has" if missing_weeks | length == 1 else "have" }}
+    no value for {{ n_weeks }} past {{ "week" if n_weeks == 1 else "weeks" }}.</summary>
+  <p class="small">Until then, each takes the last known value, so it has no Foreign currency movements. Fill them in with the
+    <em>New week</em> form, or replace <code>estimated</code> in <code>currencies.csv</code>.</p>
+  <ul class="small">
+    {% for m in missing_weeks %}<li><strong>{{ m.currency }}</strong>: {{ m.weeks | join(", ") }}</li>{% endfor %}
+  </ul>
+</details>
+{% endif %}
+<div class="panel">
+  <h2>Weekly values <small>of the other currencies in {{ base.name }}, {{ weeks | length }} dates</small></h2>
+  <div class="table-wrap">
+    <table data-sortable="currency-weeks">
+      <thead><tr><th>Date</th>{% for c in week_currencies %}<th class="num">{{ c }}</th>{% endfor %}<th></th></tr></thead>
+      <tbody>
+      {% for w in weeks %}
+      <tr>
+        <td class="nowrap">{{ w.date }}{% if w.future %} <span class="muted small" title="Its week hasn't started yet">(future)</span>{% elif not w.past %} <span class="muted small">(this week)</span>{% endif %}</td>
+        {% for cell in w.cells %}
+        {% if cell is none %}<td class="num muted">-</td>{% else %}<td class="num {{ 'estimated' if cell.estimated }}" data-sort="{{ cell.value }}"{% if cell.estimated %} title="Estimated: the last known value"{% endif %}>{{ cell.value | number }}</td>{% endif %}
+        {% endfor %}
+        <td class="nowrap">
+          <button class="icon edit" title="Edit" aria-label="Edit {{ w.date }}"
+            hx-get="/currencies/week-form?date={{ w.date }}" hx-target="#currency-week-form" hx-swap="outerHTML"
+            hx-on::after-request="document.getElementById('currency-week-form')?.scrollIntoView({block: 'nearest', behavior: 'smooth'})">&#9998;</button>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="{{ 2 + week_currencies | length }}" class="muted">No values yet: add a week with the form.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <p class="muted small">What one of each currency is worth in {{ base.name }}, a row a week. At the end of each date, the
+    accounts in that currency are revalued with a <strong>Foreign currency (G)</strong> or <strong>(L)</strong> movement, made
+    by pledger: change a value to change them. <span class="estimated">In italics</span>, the estimated values: the last
+    known one, unchanged, so they revalue nothing until their real one is known. A new week gets its estimated row when
+    pledger starts.</p>
+</div>

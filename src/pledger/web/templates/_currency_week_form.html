@@ -1,0 +1,31 @@
+{# The weekly values form: a new week, or with `editing` a date of the currencies CSV, a field per other currency. #}
+<form id="currency-week-form" class="stack" hx-post="/currencies/weeks" hx-swap="outerHTML">
+  {% if editing %}
+  <div class="form-head">
+    <h2>Edit {{ date }}</h2>
+    <button type="button" class="secondary" hx-get="/currencies/week-form" hx-target="#currency-week-form" hx-swap="outerHTML"
+      title="Back to the next week to fill in">Cancel</button>
+  </div>
+  {% else %}
+  <h2>New week</h2>
+  {% endif %}
+  {% if error %}<p class="msg error">{{ error }}</p>{% endif %}
+  {% if success %}<p class="msg success">{{ success }}</p>{% endif %}
+  {% if autofill %}
+  <button type="button" class="secondary" data-autofill='{{ autofill.fields | tojson }}'
+    title="Fill in the last known value of each currency before this date; the date is left as it is">Fill in the last known values</button>
+  {% endif %}
+  <label>Date
+    <input type="date" name="date" value="{{ date }}" required
+      hx-get="/currencies/week-form" hx-trigger="change" hx-target="#currency-week-form" hx-swap="outerHTML">
+  </label>
+  {% for c in currencies %}
+  <label>{{ c }} <small class="muted">in {{ base }}</small>
+    <input name="currency:{{ c }}" inputmode="decimal" value="{{ values.get(c, '') }}" placeholder="0.00" autocomplete="off" data-money="6">
+  </label>
+  {% endfor %}
+  <p class="muted small">Saved in <code>{{ path }}</code>, one row a week: it replaces the row of this date, or the estimated
+    one of its week. Leave a value empty for none, or write <code>estimated</code> if it isn't known yet.
+    {% if editing %}Saving replaces this date.{% endif %}</p>
+  <button type="submit">{% if editing %}Save {{ date }}{% else %}Add week{% endif %}</button>
+</form>

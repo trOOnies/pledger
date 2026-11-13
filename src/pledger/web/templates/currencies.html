@@ -5,6 +5,8 @@
 {% macro change_cell(value) %}<td class="num {{ 'muted' if value is none }}" data-sort="{{ value if value is not none else '' }}">{{ value | signed_percent }}</td>{% endmacro %}
 {% block content %}
 <div class="view">
+  {# Refreshed (with the weekly values and the charts) when the values or the conversions change #}
+  <div id="currency-overview" hx-get="/currencies" hx-trigger="currencies-changed from:body, conversions-changed from:body" hx-swap="outerHTML" hx-disinherit="*" hx-select="#currency-overview">
   <div class="cards">
     <div class="card" title="The inflation of {{ base.name }} in the last month ended">
       <span class="label">Inflation{% if last_month %} <small>in {{ last_month.month }}</small>{% endif %}</span>
@@ -98,10 +100,20 @@
       </table>
     </div>
     {% endfor %}
-    <p class="muted small">At the end of each date of <code>currencies.csv</code>, each account is revalued: a
+    <p class="muted small">At the end of each date of the weekly values, each account is revalued: a
       <strong>Foreign currency (G)</strong> or <strong>(L)</strong> gain or loss brings its balance in {{ base.name }} to its balance in its currency at
       that value. Investment accounts are left out, as their capital gains and losses already do that.</p>
   </section>
+  {% endif %}
+  </div>
+
+  {% if week_form %}
+  <div class="layout">
+    <aside class="panel">{{ week_form | safe }}</aside>
+    <section id="currency-weeks" hx-get="/currencies" hx-trigger="currencies-changed from:body, conversions-changed from:body" hx-swap="outerHTML" hx-disinherit="*" hx-select="#currency-weeks">
+      {% include "_currency_weeks.html" %}
+    </section>
+  </div>
   {% endif %}
 
   <div class="charts-grid">
@@ -167,11 +179,10 @@
   </div>
 
   {% if others %}
-  <div class="charts-grid">
+  <div id="currency-charts" class="charts-grid" hx-get="/currencies" hx-trigger="currencies-changed from:body, conversions-changed from:body" hx-swap="outerHTML" hx-disinherit="*" hx-select="#currency-charts">
     {% for c in others %}
     <section class="panel">
       <h2>{{ c.name }} in {{ base.name }} <small>nominal and real, at each date of the currencies CSV</small></h2>
-      {{ estimated_alert(c.overdue, "week", "currencies.csv") }}
       {% if c.chart %}
       <p class="equity-headline">
         <span class="num-lg">{{ c.last.value | number }}</span>
@@ -181,8 +192,8 @@
       {{ multi_line_chart(c.chart, c.name ~ " in " ~ base.name ~ ", nominal and real, from " ~ c.series[0].date ~ " to " ~ c.last.date ~ ", ending at " ~ (c.last.value | number), series=c.slot) }}
       <p class="muted small"><strong>Nominal</strong>: what one {{ c.name }} ({{ c.description }}) is worth in {{ base.name }}.
         <strong>Real</strong>: that value deflated by the CPI, in {{ base.name }} of {{ c.real_date }}. When the real
-        value goes down, {{ c.name }} grew less than prices. An estimated value is the last known one grown by the
-        inflation since then, so its real value stays the same.</p>
+        value goes down, {{ c.name }} grew less than prices. An estimated value is the last known one, unchanged
+        (see the weekly values).</p>
       <details class="chart-table">
         <summary>Show table</summary>
         <div class="table-wrap">

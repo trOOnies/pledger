@@ -17,6 +17,7 @@ from pledger.web.templating import (
     render_card_payment_form,
     render_collection_form,
     render_conversion_form,
+    render_currency_week_form,
     render_debt_form,
     render_form,
     render_invest_form,
@@ -158,6 +159,9 @@ def currencies(request: Request, store: StoreDep, currency: str = "", account: s
         **conversion_filter(snapshot, currency, account, initial),
         "conversion_form": (
             render_conversion_form(request, snapshot, {}).body.decode() if len(snapshot.currencies) > 1 else None
+        ),
+        "week_form": (
+            render_currency_week_form(request, snapshot).body.decode() if len(snapshot.currencies) > 1 else None
         ),
     }
     return templates.TemplateResponse(request, "currencies.html", context)

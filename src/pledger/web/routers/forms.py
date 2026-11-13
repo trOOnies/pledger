@@ -28,6 +28,7 @@ from pledger.web.templating import (
     render_card_payment_form,
     render_collection_form,
     render_conversion_form,
+    render_currency_week_form,
     render_debt_form,
     render_form,
     render_invest_form,
@@ -360,6 +361,28 @@ def create_investment(
         success=f"Added {name.strip()} to {account}",
     )
     response.headers["HX-Trigger"] = "investment-added"
+    return response
+
+
+@router.get("/currencies/week-form")
+def currency_week_form(request: Request, store: StoreDep, date: str = ""):
+    """The weekly values form of the Currencies tab, filled with a date's values to edit it."""
+    return render_currency_week_form(request, store.load(), date.strip())
+
+
+@router.post("/currencies/weeks")
+async def save_currency_week(request: Request, store: StoreDep, date: Annotated[str, Form()] = ""):
+    # One "currency:<currency>" field per other currency
+    values = {
+        k.removeprefix("currency:"): str(v) for k, v in (await request.form()).items() if k.startswith("currency:")
+    }
+    try:
+        saved = store.save_currency_week(date, values)
+    except ValueError as e:
+        return render_currency_week_form(request, store.load(), date.strip(), values, error=str(e))
+    # On to the next week to fill in
+    response = render_currency_week_form(request, store.load(), success=f"Saved {saved}")
+    response.headers["HX-Trigger"] = "currencies-changed"
     return response
 
 

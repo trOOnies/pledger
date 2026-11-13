@@ -100,6 +100,7 @@ from pledger.web.store.conversions import (
     is_cross,
     linked_conversion,
 )
+from pledger.web.store.currency_store import value_text
 from pledger.web.store.investments import (
     initial_prices,
     is_capital,
@@ -247,5 +248,6 @@ __all__ = [
     "services_of",
     "stored_ids",
     "today",
+    "value_text",
     "work_fingerprint",
 ]

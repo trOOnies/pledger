@@ -67,8 +67,11 @@ from pledger.web.views.currencies import (
     conversion_fields,
     conversion_filter,
     cpi_chart,
+    currency_week_form,
+    currency_weeks,
     growth,
     inflation_months,
+    missing_weeks,
     value_series,
 )
 from pledger.web.views.debt import (
@@ -196,6 +199,8 @@ __all__ = [
     "conversion_filter",
     "cpi_chart",
     "cumulative_composition",
+    "currency_week_form",
+    "currency_weeks",
     "debt_after",
     "debt_difference",
     "debt_form_fields",
@@ -217,6 +222,7 @@ __all__ = [
     "ledger_weeks",
     "line_chart",
     "matches",
+    "missing_weeks",
     "month_end",
     "month_end_balances",
     "months_of",

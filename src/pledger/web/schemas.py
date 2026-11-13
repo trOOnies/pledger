@@ -51,6 +51,12 @@ class ServiceValueIn(BaseModel):
     amount: float | None = None  # None clears it
 
 
+class CurrencyWeekIn(BaseModel):
+    date: str  # YYYY-MM-DD: replaces its row of the currencies CSV, else the unknown one of its week
+    # Each other currency's value in the base currency, or "estimated"; those left out are emptied
+    values: dict[str, float | str]
+
+
 class PriceIn(BaseModel):
     date: str
     account: str  # an investment account

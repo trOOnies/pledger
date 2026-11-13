@@ -8,7 +8,13 @@ import math
 from pandas import Period, Series, Timedelta, Timestamp
 
 from pledger.enums import AccountType, MovementType
-from pledger.models import INTERMEDIARY, Currency, DebtAccount, InvestmentAccount
+from pledger.models import (
+    ESTIMATED,
+    INTERMEDIARY,
+    Currency,
+    DebtAccount,
+    InvestmentAccount,
+)
 from pledger.web.store import (
     BASE_AMOUNT,
     CONVERSION_BOUGHT,
@@ -22,6 +28,7 @@ from pledger.web.store import (
     exchange_base_movement,
     is_cross,
     own_initial_amount,
+    value_text,
 )
 from pledger.web.views.charts import (
     column_chart,
@@ -287,8 +294,9 @@ def build_currencies(snapshot: Snapshot, today: dt.date | None = None) -> dict:
     currency, its value in the base currency (nominal) and that value deflated by the
     CPI (real) over time; the balances of the accounts in each currency, and the share
     of equity in the other currencies (None without them or positive equity); and the
-    share of each currency in the assets at each month end. What is estimated is marked,
-    and what is still estimated after its month or week ended is `overdue`.
+    share of each currency in the assets at each month end; and the weekly values of the
+    other currencies (see currency_weeks). What is estimated is marked, and the months
+    still estimated after they ended are `overdue_inflation`.
     """
     today = today or snapshot.today
     base = snapshot.base_currency
@@ -348,9 +356,6 @@ def build_currencies(snapshot: Snapshot, today: dt.date | None = None) -> dict:
             "real_growth": growth(real.dropna()),
             "real_date": real_date,
             "series": series,
-            "overdue": [
-                d.date().isoformat() for d in sorted(c.estimated) if Week.of(d.date()).end < today
-            ],
             "chart": multi_line_chart([
                 {"name": "Nominal", "series": series, "dashed": False},
                 {"name": "Real", "series": [{"date": p["date"], "value": p["real"]} for p in series], "dashed": True},
@@ -392,4 +397,115 @@ def build_currencies(snapshot: Snapshot, today: dt.date | None = None) -> dict:
         "overdue_inflation": [m["month"] for m in months if m["estimated"] and m["month"] < f"{today:%Y-%m}"],
         "inflation_chart": column_chart(months, percent) if months else None,
         "currency_shares": stacked_chart(monthly, shares),
+        **currency_weeks(snapshot, today),
+    }
+
+
+def _week_cells(snapshot: Snapshot) -> tuple[list[str], dict[dt.date, dict[str, tuple[float, bool]]]]:
+    """
+    The other currencies, and by date of the currencies CSV the (value, estimated) of
+    each one with a value then (an estimated value is the last known one, see
+    models._with_estimates).
+    """
+    names = [n for n, c in snapshot.currencies.items() if not c.is_base_currency]
+    cells: dict[dt.date, dict[str, tuple[float, bool]]] = {}
+    for name in names:
+        c = snapshot.currencies[name]
+        estimated = set(c.estimated)
+        for date, value in c.base_currency_mapping.items():
+            cells.setdefault(date.date(), {})[name] = (float(value), date in estimated)
+    return names, dict(sorted(cells.items()))
+
+
+def missing_weeks(snapshot: Snapshot, today: dt.date | None = None) -> list[dict]:
+    """
+    Each other currency with past weeks (ended by `today`) without a known value, from
+    the week of its first known one on: estimated, empty or with no row in the
+    currencies CSV, with those weeks (their Monday), oldest first.
+    """
+    today = today or snapshot.today
+    names, cells = _week_cells(snapshot)
+    current = Week.of(today)
+    found = []
+    for name in names:
+        known = {Week.of(d) for d, row in cells.items() if name in row and not row[name][1]}
+        if not known:
+            continue
+        week, weeks = min(known), []
+        while week < current:
+            if week not in known:
+                weeks.append(week.start.isoformat())
+            week = Week(week.start + dt.timedelta(days=7))
+        if weeks:
+            found.append({"currency": name, "weeks": weeks})
+    return found
+
+
+def currency_weeks(snapshot: Snapshot, today: dt.date | None = None) -> dict:
+    """
+    The weekly values of the other currencies in the base currency, newest first: a row
+    per date of the currencies CSV, with a cell per currency, None without a value; and
+    the `missing_weeks`.
+    """
+    today = today or snapshot.today
+    names, cells = _week_cells(snapshot)
+    current = Week.of(today)
+    weeks = [
+        {
+            "date": date.isoformat(),
+            "week": Week.of(date).start.isoformat(),
+            "future": Week.of(date) > current,
+            "past": Week.of(date) < current,
+            "cells": [
+                {"value": row[n][0], "estimated": row[n][1]} if n in row else None for n in names
+            ],
+        }
+        for date, row in reversed(cells.items())
+    ]
+    return {"week_currencies": names, "weeks": weeks, "missing_weeks": missing_weeks(snapshot, today)}
+
+
+def currency_week_form(snapshot: Snapshot, date: str = "", values: dict | None = None) -> dict:
+    """
+    The state of the weekly values form: a date's values to edit it, or by default the
+    first week up to the current one with a currency without a known value (on the date
+    of its row, if any, else on its Monday), else the next week; with the last known
+    value of each currency before it, to fill it in with.
+    """
+    names, cells = _week_cells(snapshot)
+    if not date:
+        current = Week.of(snapshot.today)
+        missing = sorted({w for m in missing_weeks(snapshot) for w in m["weeks"]})
+        if missing:
+            week = Week(dt.date.fromisoformat(missing[0]))
+        else:
+            in_current = [row for d, row in cells.items() if Week.of(d) == current]
+            done = in_current and all(any(n in row and not row[n][1] for row in in_current) for n in names)
+            week = Week(current.start + dt.timedelta(days=7)) if done else current
+        dates = [d for d in cells if Week.of(d) == week]
+        unknown = [d for d in dates if all(e for _, e in cells[d].values())]
+        date = (unknown or dates or [week.start])[0].isoformat()
+    try:
+        day = dt.date.fromisoformat(date)
+    except ValueError:
+        day = None
+    row = cells.get(day, {}) if day else {}
+    if values is None:
+        values = {n: ESTIMATED if row[n][1] else value_text(row[n][0]) for n in row}
+    last = {}
+    for d, r in cells.items():
+        if day is None or d < day:
+            last.update({n: (d, v) for n, (v, e) in r.items() if not e})
+    return {
+        "date": date,
+        "values": values,
+        "currencies": names,
+        "editing": day in cells,
+        "autofill": (
+            {
+                "date": max(d for d, _ in last.values()).isoformat(),
+                "fields": {f"currency:{n}": value_text(v) for n, (_, v) in last.items()},
+            }
+            if last else None
+        ),
     }
