@@ -6,7 +6,7 @@ import re
 
 from pandas import DataFrame, Period
 
-from pledger.enums import AccountType, MovementType
+from pledger.enums import AccountType, CreditorKind, MovementType
 from pledger.ledger import Ledger
 from pledger.models import (
     Account,
@@ -29,9 +29,11 @@ MOVEMENT_SOURCES = {
     "work": ("🟠", "Generated each week from the salary of the Work tab"),
     "accounts": ("🟣", "Generated from the initial amount of the account, in the Accounts tab"),
     "corrections": ("🟣", "A balance correction, added from the Audit tab; it can be deleted here"),
-    "debt": ("🟡", "Added, edited and deleted from the Debt tab"),
-    "differences": ("🟡", "A Difference added with a debt movement, in the Debt tab; it can be deleted here"),
+    "debt": ("🟡", "Added, edited and deleted from the People tab"),
+    "differences": ("🟡", "A Difference added with a debt movement, in the People tab; it can be deleted here"),
     "services": ("🟡", "Generated from the monthly value of the service, in the Services tab"),
+    "service-payments": ("🟡", "A movement of a service, added and deleted from the Services tab"),
+    "work-loan": ("🟠", "A movement of a company, added and deleted from the Work tab"),
     "credit-cards": ("🔴", "Added, edited and deleted from the Credit Cards tab"),
     "cart": ("🟤", "A product of a cart, added, edited and deleted from the Cart tab"),
 }
@@ -48,6 +50,10 @@ ACCOUNT_GROUPS = {
     "debt": ("🤝", "Debts & loans"),
     "credit_cards": ("💳", "Credit cards"),
 }
+
+
+# The source of the movements of the debt accounts of the services and of the companies (see movement_rows)
+DEBT_SOURCES = {CreditorKind.SERVICE: "service-payments", CreditorKind.COMPANY: "work-loan"}
 
 
 def account_group(account: Account) -> str | None:
@@ -90,7 +96,7 @@ def source_link(source: str, move, move_id: str | None) -> str:
         return f"/work#{row_anchor('month', move_id[2:9])}"  # W-<month>-<week>
     tab = {
         "investments": "/investments", "prices": "/investments", "currencies": "/currencies",
-        "services": "/services",
+        "services": "/services", "service-payments": "/services", "work-loan": "/work",
         "debt": f"/debt?month={move.move_date[:7]}", "differences": f"/debt?month={move.move_date[:7]}",
         "credit-cards": f"/credit-cards?month={move.move_date[:7]}",
     }[source]
@@ -145,14 +151,15 @@ def movement_rows(snapshot: Snapshot, rows: DataFrame, ledger: Ledger) -> list[d
             return "services"
         if ix in initials:
             return "accounts"
-        if move.move_base.name in debt_bases:
-            return "debt"
+        debt = next((a for a in (move.acc_debit, move.acc_credit) if isinstance(a, DebtAccount)), None)
+        if move.move_base.name in debt_bases or (move.move_base.name in differences and debt is not None):
+            if debt is not None and debt.kind != CreditorKind.PERSON:
+                return DEBT_SOURCES[debt.kind]
+            return "debt" if move.move_base.name in debt_bases else "differences"
         if move.move_base.name in card_bases:
             return "credit-cards"
         if move.move_base.name in corrections:
             return "corrections"
-        if move.move_base.name in differences and any(isinstance(a, DebtAccount) for a in (move.acc_debit, move.acc_credit)):
-            return "differences"
         return None
 
     movements = [

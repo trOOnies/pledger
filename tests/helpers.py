@@ -67,10 +67,10 @@ Month;Company;Position;Work - Salary Main;Tax
 2026-01;Globex;GX Dev;2000.00;400.00"""
 
 
-def with_salaries(settings, debit="Ca"):
+def with_salaries(settings, debit="Wo"):
     """
     The settings, with the base movement of the salaries of the work history debiting
-    that account, and the Tax loss of their deductions.
+    that account (Wo, the only one it can debit), and the Tax loss of their deductions.
     """
     path = settings.base_movements_path
     salary = f"        Work - Salary Main:\n          description: Main salary\n          debit: {debit}\n"

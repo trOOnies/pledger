@@ -300,7 +300,7 @@ class LinkedStore(MovementStore):
         if isinstance(other, DebtAccount) and is_foreign(other):
             raise ValueError(
                 f"A card in another currency can't be paid with the debt account {other.name}, in another "
-                "currency too: pay it from an account, then add the debt in the Debt tab"
+                "currency too: pay it from an account, then add the debt in the People tab"
             )
         value = _parse_amount(amount, "amount", NEGATIVE)
         paid = _own_amount(card, other, value, amount_card, "debt was paid")
@@ -369,7 +369,7 @@ class LinkedStore(MovementStore):
         """
         Add a movement of a debt base movement to the ledger CSV, about `who`, someone of
         its debt account but a company (their debt comes from the work history): its
-        comment names them first (prefixed if it doesn't), so the Debt tab adds it to them.
+        comment names them first (prefixed if it doesn't), so the People tab adds it to them.
 
         Its debt account, of any currency, follows `amount_debt`, in its currency, and the
         other account `amount`, in its own: only optional if they are the same (see

@@ -9,10 +9,12 @@ import pytest
 from fastapi.testclient import TestClient
 from helpers import DEBT_YAML, HTMX, SERVICES_HEADER, card_labels, with_internal
 
+from pledger.enums import CreditorKind
 from pledger.web.app import create_app
 from pledger.web.store import (
     LedgerDataError,
     LedgerStore,
+    row_fingerprint,
 )
 
 
@@ -48,23 +50,25 @@ class TestServices:
     def test_services_are_owed_up_to_today(self, settings):
         assert self.owed(settings) == [
             # Week 1 of 2026-01 starts on 2025-12-29, before the ledger, like 2025-12
-            ("S-Rent-2026-01-2", "2026-01-05", "Food", "Eq", "De", "20.00", "Rent: week 2/5 of 2026-01"),
-            ("S-Rent-2026-01-3", "2026-01-12", "Food", "Eq", "De", "20.00", "Rent: week 3/5 of 2026-01"),
-            ("S-Rent-2026-01-4", "2026-01-19", "Food", "Eq", "De", "20.00", "Rent: week 4/5 of 2026-01"),
-            ("S-Rent-2026-01-5", "2026-01-26", "Food", "Eq", "De", "20.00", "Rent: week 5/5 of 2026-01"),
-            ("S-Expenses-2026-01-2", "2026-01-05", "Food", "Eq", "De", "6.00", "Expenses: week 2/5 of 2026-01"),
-            ("S-Expenses-2026-01-3", "2026-01-12", "Food", "Eq", "De", "6.00", "Expenses: week 3/5 of 2026-01"),
-            ("S-Expenses-2026-01-4", "2026-01-19", "Food", "Eq", "De", "6.00", "Expenses: week 4/5 of 2026-01"),
-            ("S-Expenses-2026-01-5", "2026-01-26", "Food", "Eq", "De", "6.00", "Expenses: week 5/5 of 2026-01"),
-            ("S-Gas-2026-01-2", "2026-01-05", "Food", "Eq", "De", "10.00", "Gas: week 2/5 of 2026-01"),
-            ("S-Gas-2026-01-3", "2026-01-12", "Food", "Eq", "De", "10.00", "Gas: week 3/5 of 2026-01"),
-            ("S-Gas-2026-01-4", "2026-01-19", "Food", "Eq", "De", "10.00", "Gas: week 4/5 of 2026-01"),
-            ("S-Gas-2026-01-5", "2026-01-26", "Food", "Eq", "De", "10.00", "Gas: week 5/5 of 2026-01"),
+            ("S-Rent-2026-01-2", "2026-01-05", "Food", "Eq", "SeD", "20.00", "Rent: week 2/5 of 2026-01"),
+            ("S-Rent-2026-01-3", "2026-01-12", "Food", "Eq", "SeD", "20.00", "Rent: week 3/5 of 2026-01"),
+            ("S-Rent-2026-01-4", "2026-01-19", "Food", "Eq", "SeD", "20.00", "Rent: week 4/5 of 2026-01"),
+            ("S-Rent-2026-01-5", "2026-01-26", "Food", "Eq", "SeD", "20.00", "Rent: week 5/5 of 2026-01"),
+            ("S-Expenses-2026-01-2", "2026-01-05", "Food", "Eq", "SeD", "6.00", "Expenses: week 2/5 of 2026-01"),
+            ("S-Expenses-2026-01-3", "2026-01-12", "Food", "Eq", "SeD", "6.00", "Expenses: week 3/5 of 2026-01"),
+            ("S-Expenses-2026-01-4", "2026-01-19", "Food", "Eq", "SeD", "6.00", "Expenses: week 4/5 of 2026-01"),
+            ("S-Expenses-2026-01-5", "2026-01-26", "Food", "Eq", "SeD", "6.00", "Expenses: week 5/5 of 2026-01"),
+            ("S-Gas-2026-01-2", "2026-01-05", "Food", "Eq", "SeD", "10.00", "Gas: week 2/5 of 2026-01"),
+            ("S-Gas-2026-01-3", "2026-01-12", "Food", "Eq", "SeD", "10.00", "Gas: week 3/5 of 2026-01"),
+            ("S-Gas-2026-01-4", "2026-01-19", "Food", "Eq", "SeD", "10.00", "Gas: week 4/5 of 2026-01"),
+            ("S-Gas-2026-01-5", "2026-01-26", "Food", "Eq", "SeD", "10.00", "Gas: week 5/5 of 2026-01"),
             # Up to the Monday of today's week, the third of 2026-02; empty values are none
-            ("S-Expenses-2026-02-1", "2026-02-02", "Food", "Eq", "De", "7.50", "Expenses: week 1/4 of 2026-02"),
-            ("S-Expenses-2026-02-2", "2026-02-09", "Food", "Eq", "De", "7.50", "Expenses: week 2/4 of 2026-02"),
+            ("S-Expenses-2026-02-1", "2026-02-02", "Food", "Eq", "SeD", "7.50", "Expenses: week 1/4 of 2026-02"),
+            ("S-Expenses-2026-02-2", "2026-02-09", "Food", "Eq", "SeD", "7.50", "Expenses: week 2/4 of 2026-02"),
         ]
-        creditors = LedgerStore(settings).load().debt_accounts()[0].creditors
+        sed, sel = LedgerStore(settings).load().debt_accounts(kind=CreditorKind.SERVICE)[::-1]
+        creditors = sed.creditors  # the services, owed in SeD (none charges in advance)
+        assert sel.creditors == {} and "Rent" not in LedgerStore(settings).load().accounts["De"].creditors
         assert creditors["Rent"].amount == 80 and creditors["Expenses"].amount == 24 + 15
         assert creditors["Gas"].amount == 5 + 40
 
@@ -105,7 +109,7 @@ class TestServices:
     @pytest.mark.parametrize(
         ("old", "new", "message"),
         [
-            ("    amount: 5\n    base_movement: Food\n", "    base_movement: Salary\n", "must be a loss, not internal, that may credit its debt account, De: not 'Salary' (Gas)"),
+            ("    amount: 5\n    base_movement: Food\n", "    base_movement: Salary\n", "must be a loss, not internal, that may credit its debt account, SeD: not 'Salary' (Gas)"),
             ("    amount: 5\n    base_movement: Food\n", "    base_movement: Card fee\n", "not 'Card fee'"),
             ("    amount: 5\n    base_movement: Food\n", "    base_movement: Nope\n", "not 'Nope'"),
             ("    amount: 5\n    base_movement: Food\n", "    base_movement: 3\n", "'Gas' base_movement must be a name: 3"),
@@ -152,22 +156,24 @@ class TestServices:
         store.set_service_value("2026-01", "Water", "2")  # its column is added
         assert settings.services_path.read_text() == "month;Rent;Water\n2026-01;1.00;2.00\n"
 
-    def test_the_ones_charging_in_advance_are_owed_in_lo(self, settings):
+    def test_the_ones_charging_in_advance_are_owed_in_sel(self, settings):
         path = settings.creditors_path
         path.write_text(path.read_text().replace("    amount: 0\n    base_movement: Food\n", "    amount: 0\n    expected: debtor\n    base_movement: Food\n", 1))
         owed = self.owed(settings)
-        assert {r[4] for r in owed if r[0].startswith("S-Rent")} == {"Lo"}
-        assert {r[4] for r in owed if not r[0].startswith("S-Rent")} == {"De"}
-        snapshot = LedgerStore(settings).load()
-        de, lo, *_ = snapshot.debt_accounts()
-        assert "Rent" not in de.creditors and lo.creditors["Rent"].amount == 80
+        assert {r[4] for r in owed if r[0].startswith("S-Rent")} == {"SeL"}
+        assert {r[4] for r in owed if not r[0].startswith("S-Rent")} == {"SeD"}
+        accounts = LedgerStore(settings).load().accounts
+        sed = accounts["SeD"]
+        debts = {a.name: a for a in LedgerStore(settings).load().debt_accounts()}
+        assert "Rent" not in sed.creditors and debts["SeL"].creditors["Rent"].amount == 80
+        assert "Rent" not in accounts["Lo"].creditors  # never in the loan accounts of the people
         r = TestClient(create_app(settings)).get("/services")
         table = r.text.split('data-sortable="services"')[1].split("</table>")[0]
-        assert "<strong>Rent</strong></td>\n        <td>Lo</td>" in table and "<strong>Gas</strong></td>\n        <td>De</td>" in table
-        # Its base movement must be able to credit Lo
+        assert "<strong>Rent</strong></td>\n        <td>SeL</td>" in table and "<strong>Gas</strong></td>\n        <td>SeD</td>" in table
+        # Its base movement must be able to credit SeL
         base = settings.base_movements_path
-        base.write_text(base.read_text().replace("        Food:\n          description: Groceries\n", "        Food:\n          description: Groceries\n          credit: De\n"))
-        with pytest.raises(LedgerDataError, match=re.escape("that may credit its debt account, Lo: not 'Food' (Rent)")):
+        base.write_text(base.read_text().replace("        Food:\n          description: Groceries\n", "        Food:\n          description: Groceries\n          credit: SeD\n"))
+        with pytest.raises(LedgerDataError, match=re.escape("that may credit its debt account, SeL: not 'Food' (Rent)")):
             LedgerStore(settings).load()
 
     def test_services_tab(self, settings, client):
@@ -187,7 +193,7 @@ class TestServices:
         assert "Fill in from 2026-02" in form and '"service:Expenses": "30.00"' in html.unescape(form)
         assert 'hx-get="/services/form?month=2026-02" hx-target="#service-form"' in values  # its ✎
         moves = client.get("/services", params={"service": "Rent"}, headers=HTMX).text
-        assert "<html" not in moves and "<h2>Movements <small>4</small></h2>" in moves
+        assert "<html" not in moves and "<h2>Movements <small>4, all time</small></h2>" in moves
         assert 'id="movement-S-Rent-2026-01-5"' in moves and 'data-sort="80.0">$80.00</td>' in moves  # owed after it
         index = client.get("/", params={"month": ""}).text
         assert 'href="/services#movement-S-Rent-2026-01-2" title="Generated from the monthly value of the service' in index
@@ -222,7 +228,7 @@ class TestServices:
         assert r.text.index('id="service-payment-form"') < r.text.index('id="service-form"')  # above New month
         form = r.text.split('id="service-payment-form"')[1].split("</form>")[0]
         assert "<h2>New service payment</h2>" in form and 'value="2026-02"' in form  # this month
-        assert "(credit of Debt - Paid, to De)" in form and "<option >Ca</option>" in form
+        assert "(credit of Debt - Paid, to SeD)" in form and "<option >Ca</option>" in form
         assert "<option >Lo</option>" not in form  # no debt accounts
         # A known value fills in the amount, and can't be replaced
         r = client.get("/services/payment-form", params={"service": "Expenses", "month": "2026-02"})
@@ -245,9 +251,21 @@ class TestServices:
         snapshot = LedgerStore(settings).load()
         row = snapshot.rows.iloc[-1]
         assert (row.base_movement, row.acc_debit, row.acc_credit, row.amount, row.comment) == (
-            "Debt - Paid", "De", "Ca", "25.00", "Expenses: payment of 2026-02",
+            "Debt - Paid", "SeD", "Ca", "25.00", "Expenses: payment of 2026-02",
         )
-        assert snapshot.debt_accounts()[0].creditors["Expenses"].amount == 39 - 25
+        sed = {a.name: a for a in snapshot.debt_accounts()}["SeD"]
+        assert sed.creditors["Expenses"].amount == 39 - 25
+        # Listed with the values owed, and deleted from the Services tab
+        moves = client.get("/services", params={"service": "Expenses"}, headers=HTMX).text
+        index = len(snapshot.rows) - 1
+        assert f'hx-post="/debt/movements/{index}/delete"' in moves and "Debt - Paid" in moves
+        assert 'title="A movement of a service, added and deleted from the Services tab"' in client.get("/", params={"month": ""}).text
+        r = client.post(f"/debt/movements/{index}/delete", data={"fingerprint": row_fingerprint(snapshot.rows.iloc[index])})
+        assert r.status_code == 200 and "services-changed" in r.headers["HX-Trigger"]
+        assert len(LedgerStore(settings).load().rows) == index
+        client.post("/services/payments", data={
+            "service": "Expenses", "month": "2026-02", "move_date": "2026-02-10", "acc_credit": "Ca", "amount": "25",
+        })
         r = client.post("/services/payments", data={
             "service": "Expenses", "month": "2026-02", "move_date": "2026-02-10", "acc_credit": "Ca", "amount": "25",
             "set_value": "true",

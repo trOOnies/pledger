@@ -1,4 +1,4 @@
-"""work.py: the Work tab: the work history, salaries and the month form."""
+"""work.py: the Work tab: the work history, salaries and the month form, and what the companies owe in Wo."""
 
 from __future__ import annotations
 
@@ -6,10 +6,13 @@ import datetime as dt
 
 from pandas import Series
 
-from pledger.models import next_month
-from pledger.web.store import Work, work_fingerprint
+from pledger.enums import CreditorKind, DebtRole, LedgerSide
+from pledger.models import DebtAccount, next_month, rounds_to_zero
+from pledger.web.store import LOAN_COLLECTED, Snapshot, Work, work_fingerprint
 from pledger.web.views.charts import line_chart, with_real
 from pledger.web.views.common import month_end
+from pledger.web.views.debt import kind_movements, net_creditors
+from pledger.web.views.forms import by_group
 
 
 def work_form(work: Work, month: str = "", values: dict | None = None) -> dict:
@@ -124,4 +127,66 @@ def salary_charts(work: Work, cpi: Series | None = None) -> dict:
     return {
         "gross_chart": chart("gross"),
         "net_chart": chart("net"),
+    }
+
+
+def build_work_loan(snapshot: Snapshot) -> dict:
+    """
+    What the companies of the work history owe us in Wo, their debt account (a loan
+    account): the salaries, net of their deductions, minus what they paid. Each company
+    with what it owes now and what it paid in all, and the movements of Wo but the
+    generated salaries and deductions (those are the months of the Work tab), newest
+    first, each with what its company owes right after it; the debt movements and their
+    differences can be deleted.
+    """
+    accounts, movements = kind_movements(snapshot, CreditorKind.COMPANY)
+    companies = net_creditors(snapshot, accounts)[0]
+    paid = dict.fromkeys(companies, 0.0)
+    for m in movements:
+        if m["base"] == LOAN_COLLECTED and m["who"] in paid:
+            paid[m["who"]] += m["amount"]
+    unassigned = sum(a.unassigned for a in accounts)
+    return {
+        "loan_account": accounts[0].name if accounts else "",
+        "companies": [
+            {"name": n, "owed": -c.amount, "paid": paid[n]} for n, c in companies.items()
+        ],
+        "owed": -sum(c.amount for c in companies.values()),
+        "unassigned": -unassigned,
+        "has_unassigned": not rounds_to_zero(unassigned),
+        "movements": [m for m in movements if not m["salary"]],
+    }
+
+
+def collection_form(snapshot: Snapshot, company: str = "", values: dict | None = None) -> dict:
+    """
+    The state of the Salary received form of the Work tab: a LOAN_COLLECTED crediting Wo,
+    from a company (the current job's by default) into an account in the base currency
+    (not a debt account), its amount what that company owes now, if anything.
+    """
+    work = snapshot.work
+    names = list(work.companies)
+    if company not in names:
+        company = work.current.company if work.current and work.current.company in names else next(iter(names), "")
+    base = snapshot.debt_base_movements().get(LOAN_COLLECTED)
+    loan = snapshot.base_debt_account(DebtRole.DEBTOR, CreditorKind.COMPANY)
+    options = [
+        a.name for a in (snapshot.side_accounts(base, LedgerSide.DEBIT) if base is not None else [])
+        if a.currency.is_base_currency and not isinstance(a, DebtAccount)
+    ]
+    values = dict(values or {})
+    values.setdefault("move_date", dt.date.today().isoformat())
+    if "amount" not in values:
+        owed = 0.0
+        if loan is not None:
+            owed = -next((a.creditors[company].amount for a in snapshot.debt_accounts(kind=CreditorKind.COMPANY)
+                          if company in a.creditors), 0.0)
+        values["amount"] = f"{owed:,.2f}" if owed > 0.005 else ""
+    return {
+        "companies": names,
+        "company": company,
+        "base_movement": LOAN_COLLECTED if base is not None else "",
+        "loan_account": loan.name if loan is not None else "",
+        "groups": by_group(snapshot, options),
+        "values": values,
     }

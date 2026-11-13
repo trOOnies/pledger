@@ -16,10 +16,6 @@
 <label>Who <span class="muted small">(of {{ account }})</span>
   <select name="who" required>
     <option value="">Choose…</option>
-    {% for group, names in who.items() %}
-    <optgroup label="{{ group }}">
-      {% for name in names %}<option {% if name == values.who %}selected{% endif %}>{{ name }}</option>{% endfor %}
-    </optgroup>
-    {% endfor %}
+    {% for name in who %}<option {% if name == values.who %}selected{% endif %}>{{ name }}</option>{% endfor %}
   </select>
 </label>

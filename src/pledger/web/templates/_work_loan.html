@@ -1,0 +1,32 @@
+{% from "_account_movements.html" import account_movements with context %}
+{# What the companies owe in Wo (views.build_work_loan, as `loan`) #}
+<div class="view">
+  <div class="cards">
+    <div class="card" title="What the companies owe us in {{ loan.loan_account }}: their net salaries minus what they paid"><span class="label">Owed to us</span><span class="num money">{{ loan.owed | money }}</span></div>
+    {% if loan.has_unassigned %}
+    <div class="card" title="Debt of the movements of {{ loan.loan_account }} whose comment names no company"><span class="label">Unassigned</span><span class="num money">{{ loan.unassigned | money }}</span></div>
+    {% endif %}
+  </div>
+  <div class="panel">
+    <h2>Companies <small>{{ loan.companies | length }}, in {{ loan.loan_account }}</small></h2>
+    <div class="table-scroll">
+    <table data-sortable="work-companies">
+      <thead><tr><th>Company</th><th class="num" title="What it paid us in all, with Loan - Collected">Paid</th><th class="num" title="What it owes us now (negative: what we owe it)">Owes us</th></tr></thead>
+      <tbody>
+      {% for c in loan.companies %}
+      <tr>
+        <td class="nowrap"><strong>{{ c.name }}</strong></td>
+        <td class="num money {{ 'muted' if not c.paid }}" data-sort="{{ c.paid }}">{{ c.paid | money }}</td>
+        <td class="num money {{ 'loss' if c.owed < -0.005 }}" data-sort="{{ c.owed }}">{{ c.owed | money }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="3" class="muted">No companies yet: they are those of the work history.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <p class="muted small">The salaries of the work history, net of their deductions, are owed in <code>{{ loan.loan_account }}</code>
+      by the company named in their comment, until it pays them, with the <em>Salary received</em> form.</p>
+  </div>
+  {{ account_movements(loan.movements, "work-loan-movements", "all time, but the salaries", who=True, added_here="the salaries received", edit="/debt/movements/%d/edit", delete="/debt/movements/%d/delete", running=("Owed", "What we owe the company it is about right after it (negative and green: what it owes us)", "debt"), title="Movements of " ~ loan.loan_account) }}
+</div>

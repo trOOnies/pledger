@@ -57,12 +57,12 @@
   {% endif %}
   <p class="muted small">The comment names who it is about first, so their debt adds it. Debts go to a debt account
     and loans to a loan account, one of each per currency: whoever is expected to be a creditor only has debts, and
-    whoever is expected to be a debtor only loans. The debt with companies comes from the salaries of the
-    <a href="/work">Work</a> tab.</p>
+    whoever is expected to be a debtor only loans. The services are paid from the <a href="/services">Services</a>
+    tab, and the companies from the <a href="/work">Work</a> tab.</p>
   <button type="submit">{{ "Save changes" if editing else "Add debt movement" }}</button>
   {% endif %}
   {% if missing %}
-  <p class="msg warn small">The Debt tab needs these base movements, under <code>transfer</code> in the
+  <p class="msg warn small">The People tab needs these base movements, under <code>transfer</code> in the
     <code>internal</code> section of the base movements YAML: {{ missing | join(", ") }}.</p>
   {% endif %}
 </form>

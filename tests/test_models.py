@@ -125,9 +125,16 @@ class TestAccount:
 
     def test_load_yaml(self, accounts_yaml, currencies_yaml):
         accounts = Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml))
-        assert set(accounts) == {"Ca", "Bk", "Cc", "Fi", "Eq", "De", "Lo", "DeD", "LoD"}
+        assert set(accounts) == {"Ca", "Bk", "Cc", "Fi", "SeL", "Wo", "SeD", "Eq", "De", "Lo", "DeD", "LoD"}
         # The debt accounts of each currency, of currencies.yaml, after the internal ones of accounts.yaml
-        assert [n for n, a in accounts.items() if a.internal] == ["Fi", "Eq", "De", "Lo", "DeD", "LoD"]
+        assert [n for n, a in accounts.items() if a.internal] == ["Fi", "SeL", "Wo", "SeD", "Eq", "De", "Lo", "DeD", "LoD"]
+        # The services and the companies have theirs, internal ones of accounts.yaml, in the base currency
+        assert [(a.role, a.kind, a.acc_type) for a in (accounts["SeD"], accounts["SeL"], accounts["Wo"])] == [
+            (DebtRole.CREDITOR, CreditorKind.SERVICE, AccountType.LIABILITY),
+            (DebtRole.DEBTOR, CreditorKind.SERVICE, AccountType.ASSET),
+            (DebtRole.DEBTOR, CreditorKind.COMPANY, AccountType.ASSET),
+        ]
+        assert accounts["De"].kind is CreditorKind.PERSON
         assert isinstance(accounts["De"], DebtAccount) and accounts["Fi"].checks == (AccountCheck.NET_ZERO,)
         assert isinstance(accounts["Lo"], DebtAccount) and accounts["Lo"].acc_type is AccountType.ASSET
         assert accounts["DeD"].currency.name == "USD" and accounts["DeD"].role is DebtRole.CREDITOR
@@ -201,10 +208,18 @@ class TestAccount:
     @pytest.mark.parametrize(
         ("text", "message"),
         [
-            ("", r"must have exactly the asset Fi and the equity Eq: it has none"),
-            (INTERNAL_ACCOUNTS_YAML.replace("{Fi:", "{Fx:"), r"it has \{'Fx': 'asset', 'Eq': 'equity'\}"),
-            # The debt accounts left there are of the currencies YAML now
-            (INTERNAL_ACCOUNTS_YAML.replace("[net_zero]}}", "[net_zero]}, Lo: {description: Loans}}"),
+            ("", r"must have exactly the assets Fi, SeL and Wo, the liability SeD and the equity Eq: it has none"),
+            (INTERNAL_ACCOUNTS_YAML.replace("{Fi:", "{Fx:"), r"it has \{'Fx': 'asset', 'SeL': 'asset'"),
+            (INTERNAL_ACCOUNTS_YAML.replace(", Wo: {description: Work loans}", ""), r"must have exactly .*: it has .*'Eq': 'equity'\}"),
+            # SeD is a liability
+            (INTERNAL_ACCOUNTS_YAML.replace("  liability: {SeD: {description: Services debts}}\n", "").replace("Wo: {description: Work loans}}", "Wo: {description: Work loans}, SeD: {description: d}}"),
+             r"must have exactly"),
+            (INTERNAL_ACCOUNTS_YAML.replace("SeL: {description: Services loans}", "SeL: {description: Services loans, initial_amount: 0}"),
+             "Debt account 'SeL' must not have an initial_amount"),
+            (INTERNAL_ACCOUNTS_YAML.replace("{description: Work loans}", "{description: Work loans, currency: USD}"),
+             "The internal account 'Wo' must be in the base currency"),
+            # The debt accounts of the people left there are of the currencies YAML now
+            (INTERNAL_ACCOUNTS_YAML.replace("Wo: {description: Work loans}}", "Wo: {description: Work loans}, Lo: {description: Loans}}"),
              r"must have exactly .* debt_account and loan_account of each currency"),
             (INTERNAL_ACCOUNTS_YAML + "equity:\n  Eq2:\n    description: d\n", r"The only equity account is the internal Eq: \['Eq2'\]"),
             (INTERNAL_ACCOUNTS_YAML + "asset:\n  Ca:\n    description: d\n    initial_amount: 0\n  Fi:\n    description: d\n",
@@ -830,16 +845,15 @@ class TestDebtAccount:
         assert isinstance(de, DebtAccount) and de.acc_type == AccountType.LIABILITY and de.internal
         assert isinstance(lo, DebtAccount) and lo.acc_type == AccountType.ASSET and lo.internal
         # Who has no expected role is in both, with what we owe them in De, and what they owe us in Lo
-        assert de.creditors == {
-            "Dad": Creditor("Dad", 100.0), "Mum": Creditor("Mum", 0.0),
-            "Work": Creditor("Work", 0.0, CreditorKind.SERVICE, DebtRole.CREDITOR),
-        }
+        assert de.creditors == {"Dad": Creditor("Dad", 100.0), "Mum": Creditor("Mum", 0.0)}
         assert lo.creditors == {"Dad": Creditor("Dad", 0.0), "Mum": Creditor("Mum", -150.5)}
-        assert list(de.get_kind(CreditorKind.SERVICE)) == ["Work"]
+        # The services are in theirs, SeD (and SeL, but this one is expected to be a creditor)
+        assert accounts["SeD"].creditors == {"Work": Creditor("Work", 0.0, CreditorKind.SERVICE, DebtRole.CREDITOR)}
+        assert accounts["SeL"].creditors == {} and accounts["Wo"].creditors == {}
         # Each one's own balance: what we owe in De, what we are owed in Lo
         assert (de.initial_amount, lo.initial_amount) == (100.0, 150.5)
         debts = [n for n, a in accounts.items() if isinstance(a, DebtAccount)]
-        assert debts == ["De", "Lo", "DeD", "LoD"]
+        assert debts == ["SeL", "Wo", "SeD", "De", "Lo", "DeD", "LoD"]
         # Those of another currency share the creditors, but the initial amounts are in the base one
         ded, lod = accounts["DeD"], accounts["LoD"]
         assert list(ded.creditors) == list(de.creditors) and list(lod.creditors) == list(lo.creditors)
@@ -855,8 +869,9 @@ class TestDebtAccount:
         accounts = self.load(paths)
         # Even against their expected role, they only are in its account
         assert accounts["De"].creditors == {"Ann": Creditor("Ann", -5.0, expected=DebtRole.CREDITOR)}
-        assert list(accounts["Lo"].creditors) == ["Bob", "Rent"]
-        assert accounts["Lo"].creditors["Bob"].amount == 5.0 and accounts["Lo"].initial_amount == 15.0
+        assert list(accounts["Lo"].creditors) == ["Bob"] and list(accounts["SeL"].creditors) == ["Rent"]
+        assert accounts["Lo"].creditors["Bob"].amount == 5.0 and accounts["Lo"].initial_amount == -5.0
+        assert accounts["SeL"].initial_amount == 20.0 and accounts["SeD"].creditors == {}
         assert accounts["De"].initial_amount == -5.0
 
     def test_load_yaml_rejects_the_old_layout(self, paths):
@@ -936,17 +951,19 @@ class TestDebtAccount:
             accounts_yaml, *Currency.load_yaml(currencies_yaml), creditors_path=creditors_yaml,
             companies=["Acme", "Globex"],
         )
-        de, lo = accounts["De"], accounts["Lo"]
-        assert {n: c.expected for n, c in {**lo.creditors, **de.creditors}.items()} == {
+        de, lo, sed, sel, wo = (accounts[n] for n in ("De", "Lo", "SeD", "SeL", "Wo"))
+        assert {n: c.expected for a in (de, lo, sed, sel, wo) for n, c in a.creditors.items()} == {
             "Dad": None, "Mum": DebtRole.DEBTOR,  # people have no default
             "Gas": DebtRole.CREDITOR, "Rent": None,  # services default to creditors
             "Acme": DebtRole.DEBTOR, "Globex": DebtRole.DEBTOR,  # companies to debtors
         }
-        # The creditors are only in De, the debtors only in Lo, and the rest in both
-        assert list(de.creditors) == ["Dad", "Gas", "Rent"]
-        assert list(lo.creditors) == ["Dad", "Mum", "Rent", "Acme", "Globex"]
+        # The creditors are only in the debt accounts, the debtors only in the loan ones, and
+        # the rest in both: the people in De and Lo, the services in SeD and SeL, the companies in Wo
+        assert list(de.creditors) == ["Dad"] and list(lo.creditors) == ["Dad", "Mum"]
+        assert list(sed.creditors) == ["Gas", "Rent"] and list(sel.creditors) == ["Rent"]
+        assert list(wo.creditors) == ["Acme", "Globex"]
         assert lo.creditors["Mum"].amount == 2 and lo.initial_amount == -2
-        assert de.initial_amount == 8 and lo.creditors["Dad"].amount == 0
+        assert de.initial_amount == 1 and sed.initial_amount == 7 and lo.creditors["Dad"].amount == 0
 
     @pytest.mark.parametrize(
         ("expected", "amount", "met"),

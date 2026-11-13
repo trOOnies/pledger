@@ -43,12 +43,12 @@ class TestPages:
         assert [(name, re.findall(r'href="([^"]+)"', menu)) for _, name, menu in sections] == [
             ("Info", ["/accounts", "/currencies", "/results"]),
             ("Revenue", ["/work", "/investments"]),
-            ("Debt", ["/debt", "/services", "/credit-cards"]),
+            ("Debt", ["/debt", "/services", "/credit-cards"]),  # People, Services and Credit Cards
             ("Other", ["/cart", "/audit", "/budget", "/trip"]),
         ]
         # The section of the tab open stands out, and the tab in it
         assert [current for current, _, _ in sections] == ["", "", "current", ""]
-        assert 'href="/services" aria-current="page"' in header and ">Debts &amp; Loans</a>" in header
+        assert 'href="/services" aria-current="page"' in header and ">People</a>" in header
         # Help and the API aren't in a section
         assert re.search(r'</div>\s*<a href="/help" >Help</a>\s*<a href="/docs" target="_blank" rel="noopener">API</a>\s*</nav>', header)
 
@@ -508,8 +508,8 @@ class TestCharts:
         charts = build_results(snapshot, "2026-02")
         # Only Food moved in February; every other bar is still there, at zero
         by_currency = build_accounts(snapshot, "2026-02")["groupings"]["currency"]
-        assert [c["name"] for r in by_currency["assets"] for c in r["children"]] == ["Ca", "Fi", "Lo", "Bk", "LoD"]
-        assert [c["name"] for r in by_currency["liabilities"] for c in r["children"]] == ["Cc", "De", "DeD"]
+        assert [c["name"] for r in by_currency["assets"] for c in r["children"]] == ["Ca", "Fi", "SeL", "Wo", "Lo", "Bk", "LoD"]
+        assert [c["name"] for r in by_currency["liabilities"] for c in r["children"]] == ["Cc", "SeD", "De", "DeD"]
         gains = charts["gains"]
         assert [(r["name"], r["value"]) for r in gains] == [("Operative", 0), ("Gifts", 0)]
         assert [c["name"] for c in gains[0]["children"]] == ["Salary"]
@@ -630,7 +630,7 @@ class TestApi:
         movements = client.get("/api/movements").json()
         assert movements[0]["date"] == "2026-01-04"  # newest first
         accounts = {a["name"]: a for a in client.get("/api/accounts").json()}
-        assert list(accounts) == ["Ca", "Bk", "Cc", "Fi", "Eq", "De", "Lo", "DeD", "LoD"]
+        assert list(accounts) == ["Ca", "Bk", "Cc", "Fi", "SeL", "Wo", "SeD", "Eq", "De", "Lo", "DeD", "LoD"]
         assert accounts["Bk"] == {
             "name": "Bk", "description": "Bank account", "type": "asset", "currency": "USD",
             "is_liquid": True, "initial_amount": 0.1005, "initial_date": "2025-12-31", "checks": [],

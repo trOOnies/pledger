@@ -109,7 +109,7 @@ class TestAudit:
         assert "<strong>Bk</strong>" not in r.text  # left empty: not audited
         cards = re.findall(r'class="label">(.+?)</span><span class="num">(\d+)<', r.text)
         # Fi, net zero, is always audited at 0.00
-        assert cards == [("Audited", "3"), ("With a difference", "1"), ("Not audited", "6")]
+        assert cards == [("Audited", "3"), ("With a difference", "1"), ("Not audited", "9")]
         assert "Matches" in self.row(r.text, "Fi")
         assert 'name="balance:Ca" value="100"' in r.text and 'name="balance:Bk"' not in r.text
 
@@ -135,7 +135,7 @@ class TestAudit:
         assert names == {
             # By currency, the base one first, then by name
             "assets": ["ab", "Ca", "Fi", "Zz"], "foreign_assets": ["Bk"], "investments": ["Br"],
-            "debt": ["De", "Lo", "DeD", "LoD"],
+            "debt": ["De", "Lo", "SeD", "SeL", "Wo", "DeD", "LoD"],
             "credit_cards": ["Vi"], "liabilities": ["Cc"],
         }
 

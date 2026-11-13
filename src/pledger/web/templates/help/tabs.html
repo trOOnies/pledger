@@ -14,8 +14,8 @@
     here: instead, they show a <strong>colored circle</strong> linking to their row in that tab (or
     to the row they are generated from, like the month of a salary), highlighted:
     🟢 Investments, 🔵 Currencies (conversions and revaluations), 🟠 Work (salaries),
-    🟣 Accounts (initial amounts, and the balance corrections of the Audit tab, which can be deleted here), 🟡 Debt (debts and loans) and Services (what the services are owed) 🔴 Credit Cards (card payments) and 🟤 Cart (the products of a cart). Their <strong>ID</strong> links there too, and the IDs of the Investments,
-    Currencies, Debt and Credit Cards tabs link back to the same movement in the Ledger tab.</dd>
+    🟣 Accounts (initial amounts, and the balance corrections of the Audit tab, which can be deleted here), 🟡 People (debts and loans) and Services (what the services are owed, and their payments), 🔴 Credit Cards (card payments) and 🟤 Cart (the products of a cart). Their <strong>ID</strong> links there too, and the IDs of the Investments,
+    Currencies, People, Services, Work and Credit Cards tabs link back to the same movement in the Ledger tab.</dd>
   <dt>🏦 Accounts</dt>
   <dd>Every account with its <strong>description and balance</strong>, your total
     <strong>assets, liabilities and equity</strong>, and the form to <strong>add a new
@@ -64,8 +64,11 @@
     charts show your <strong>gross and net salary</strong> over time, nominal and real (dashed). Each month's gross
     salary also goes into the ledger <strong>week by week</strong>, split equally between
     the weeks of the month (Monday to Sunday, each in the month with at least 4 of its days),
-    and so do its deductions, out of the account the salary goes to.
-    The Ledger tab shows these with a 🟠: change them by editing the month here.</dd>
+    and so do its deductions, into <code>Wo</code>, the account of what the companies owe you: the net salary is owed by
+    the company until it pays it. The Ledger tab shows these with a 🟠: change them by editing the month here. Below,
+    <strong>what each company owes</strong> in <code>Wo</code>, and the <strong>Salary received</strong> form, which
+    adds a company's payment (a <em>Loan - Collected</em>) into the account you got it in, filled in with what it owes;
+    its movements are listed with what it owes after each one, and deleted there.</dd>
   <dt>📈 Investments</dt>
   <dd>What you hold in your <strong>investment accounts</strong>: each investment with its
     type, quantity, amount, <strong>price</strong> (amount over quantity) and broker <strong>fees over
@@ -84,17 +87,15 @@
     narrow the movements down (an investment shows all its movements, broker fees and dividends
     included), and each movement shows the total of its account and the amount and quantity of
     its investment right after it.</dd>
-  <dt>🤝 Debt</dt>
-  <dd>Who is in your <strong>debt accounts</strong>, two per currency (set in the currencies file): the
+  <dt>👥 People</dt>
+  <dd>The <strong>people</strong> in your <strong>debt accounts</strong>, two per currency (set in the currencies file): the
     <strong>debt account</strong>, the debts (what you owe), and the <strong>loan account</strong>, the loans (what
-    you are owed), split into <strong>people</strong>,
-    <strong>services</strong> and <strong>companies</strong>: <strong>what you owe</strong>
-    each of them in each account, in its currency, and in all, <strong>what they owe you</strong>, and your net debt,
-    in the base currency. A movement of a debt
-    account counts for whoever is named in its <strong>comment</strong>; the companies you
-    worked for (from the Work tab) are listed automatically. Whoever is <strong>expected</strong> to be a creditor
-    (by default, the services) is only in the debt accounts, whoever is expected to be a debtor (by default, the
-    companies) only in the loan accounts, and the rest in all of them. A warning shows up when a movement names no one, or someone who isn't in its account, or when
+    you are owed): <strong>what you owe</strong> each of them in each account, in its currency, and in all,
+    <strong>what they owe you</strong>, and your net debt, in the base currency. The services and the companies have
+    accounts of their own, in the Services and Work tabs. A movement of a debt
+    account counts for whoever is named in its <strong>comment</strong>. Whoever is <strong>expected</strong> to be a
+    creditor is only in the debt accounts, whoever is expected to be a debtor only in the loan accounts, and the
+    rest in all of them. A warning shows up when a movement names no one, or someone who isn't in its account, or when
     someone owes the other way around from what is expected. The
     <strong>movements</strong> of the debt accounts are listed too, with who each one names.
     Borrowing (<em>Debt</em>, then Incurred or Paid, in a debt account) and lending (<em>Loan</em>, then Given or
@@ -108,15 +109,16 @@
     before you add it: a <em>Difference (G)</em> if you owed them, a <em>Difference (L)</em> if they owed you, leaving
     them at 0.00. It can't be edited, only deleted, here or in the Ledger tab.</dd>
   <dt>🧾 Services</dt>
-  <dd>The <strong>monthly values</strong> of the services of your debt accounts (rent, gas,
+  <dd>The <strong>monthly values</strong> of your services (rent, gas,
     internet…), a column each in the services file, set month by month and <strong>split between the
-    weeks</strong> of the month, on their Mondays (prorated, like the salaries). Each one becomes
-    movements of its <code>base_movement</code>, an expense, crediting the debt account of the base currency (or its
-    loan account, for a service expected to be a debtor: one that charges in advance), naming the service, up to today, so the Debt tab shows what you owe it; pay
-    it from there with <em>Debt - Paid</em> (or, in advance, <em>Loan - Given</em>), or from the
-    <strong>New service payment</strong> form of this tab: the value of the month, if known, fills in
+    weeks</strong> of the month, on their Mondays (prorated, like the salaries). They have two accounts of their own:
+    <code>SeD</code>, what you owe them, and <code>SeL</code>, what they owe you, for a service expected to be a
+    debtor (one that charges in advance). Each value becomes movements of its <code>base_movement</code>, an expense,
+    crediting the account of its service, naming the service, up to today. Pay them with the
+    <strong>New service payment</strong> form: the value of the month, if known, fills in
     the amount (paying another one leaves the difference with the service, to balance later); if it
-    isn't known, the amount paid can become the value of the month.</dd>
+    isn't known, the amount paid can become the value of the month. The movements of <code>SeD</code> and
+    <code>SeL</code> are listed with what you owe each service after them, and the payments are deleted there.</dd>
   <dt>💳 Credit Cards</dt>
   <dd>What you <strong>owe on each credit card</strong>, plus what was <strong>charged</strong>
     to it and <strong>paid</strong> off it. With a month picked, the balance is the one at
@@ -165,5 +167,5 @@
   <dd>These pages: pick a section in the index, or read them in order with the links at the bottom.</dd>
 </dl>
 <p class="note">🗓️ The <strong>Month filter is shared</strong>: pick a month on Ledger,
-  Accounts, Results, Debt or Credit Cards and the other tabs open on that same month. Pick
+  Accounts, Results, People or Credit Cards and the other tabs open on that same month. Pick
   <em>All time</em> to clear it.</p>

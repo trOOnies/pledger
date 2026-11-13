@@ -1,0 +1,45 @@
+{# The Salary received form of the Work tab: a company paying what it owes in Wo (see views.collection_form). #}
+<form id="collection-form" class="stack" hx-post="/work/collections" hx-swap="outerHTML">
+  <h2>Salary received</h2>
+  {% if error %}<p class="msg error">{{ error }}</p>{% endif %}
+  {% if success %}<p class="msg success">{{ success }}</p>{% endif %}
+  {% if not companies %}
+  <p class="muted">No companies yet: they are those of the work history.</p>
+  {% elif not base_movement or not loan_account %}
+  <p class="msg warn small">Receiving a salary needs the base movement <em>Loan - Collected</em>, under <code>transfer</code> in the
+    <code>internal</code> section of the base movements YAML, and the internal account <code>Wo</code>.</p>
+  {% else %}
+  {# Picking another company fills in what it owes again #}
+  <label>Company
+    <select name="company" required hx-get="/work/collection-form" hx-trigger="change" hx-target="#collection-form" hx-swap="outerHTML"
+      hx-include="#collection-form [name='company'], #collection-form [name='move_date'], #collection-form [name='acc_debit']">
+      {% for c in companies %}<option {% if c == company %}selected{% endif %}>{{ c }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Date
+    <input type="date" name="move_date" value="{{ values.move_date }}" required data-future-warning>
+    <span class="hint warn" hidden>⚠️ This date is in the future.</span>
+  </label>
+  <label><span>Received in <em class="optional">(debit of {{ base_movement }}, from {{ loan_account }})</em></span>
+    <select name="acc_debit" required>
+      <option value="">Choose…</option>
+      {% for group, names in groups.items() %}
+      <optgroup label="{{ group }}">
+        {% for acc in names %}<option {% if acc == values.acc_debit %}selected{% endif %}>{{ acc }}</option>{% endfor %}
+      </optgroup>
+      {% endfor %}
+    </select>
+  </label>
+  <label>Amount
+    <span class="money-input">
+      <span class="prefix">{{ currency }}</span>
+      <input name="amount" inputmode="decimal" min="0" value="{{ values.amount }}" placeholder="0.00" required autocomplete="off" data-money>
+    </span>
+  </label>
+  <span class="hint">Filled in with what {{ company }} owes now: its net salaries minus what it paid.</span>
+  <label><span>Comment <em class="optional">(optional)</em></span>
+    <input name="comment" value="{{ values.comment or '' }}" autocomplete="off">
+  </label>
+  <button type="submit">Add salary received</button>
+  {% endif %}
+</form>

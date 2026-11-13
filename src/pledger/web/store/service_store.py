@@ -29,7 +29,7 @@ class ServiceStore(StoreBase):
     ) -> str:
         """
         Pay a service its value of a month (see service_payment_base): a movement of the
-        Debt tab debiting its debt account and crediting `acc_credit`, about it, commented
+        People tab debiting its debt account and crediting `acc_credit`, about it, commented
         with the month. A known value of the month is never changed, even if the payment
         differs from it: what remains is balanced later. With `set_value`, only for a
         month whose value isn't known (estimated or empty), the amount becomes its value.

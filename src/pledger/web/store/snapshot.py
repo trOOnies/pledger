@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 from pandas import DataFrame
 
-from pledger.enums import AccountType, DebtRole, LedgerSide, MovementType
+from pledger.enums import AccountType, CreditorKind, DebtRole, LedgerSide, MovementType
 from pledger.ledger import Ledger
 from pledger.models import (
     CREDIT_CARD,
@@ -240,13 +240,19 @@ class Snapshot:
         sign = 1 if DEBT_BASES[base_movement] == LedgerSide.CREDIT else -1
         return balance, round(balance + sign * amount, 2)
 
-    def role_accounts(self, role: DebtRole) -> list[DebtAccount]:
-        """The debt accounts of this role (see DebtAccount.role), in the order of the currencies."""
-        return [a for a in self.accounts.values() if isinstance(a, DebtAccount) and a.role == role]
+    def role_accounts(self, role: DebtRole, kind: CreditorKind = CreditorKind.PERSON) -> list[DebtAccount]:
+        """
+        The debt accounts of this role (see DebtAccount.role) and kind of creditors (the
+        people by default), in the order of the currencies.
+        """
+        return [a for a in self.accounts.values() if isinstance(a, DebtAccount) and a.role == role and a.kind == kind]
 
-    def base_debt_account(self, role: DebtRole) -> DebtAccount | None:
-        """The debt account of this role in the base currency, if any: that of the services and companies."""
-        return next((a for a in self.role_accounts(role) if a.currency.is_base_currency), None)
+    def base_debt_account(self, role: DebtRole, kind: CreditorKind = CreditorKind.PERSON) -> DebtAccount | None:
+        """
+        The debt account of this role and kind (the people by default) in the base currency,
+        if any: the only one of the services (SeD or SeL) and of the companies (Wo).
+        """
+        return next((a for a in self.role_accounts(role, kind) if a.currency.is_base_currency), None)
 
     def debt_account_of(self, base_movement: str, acc_debit: str, acc_credit: str) -> DebtAccount | None:
         """The debt account of the role of a debt base movement on the side it takes (see DEBT_BASE_SIDES), if any."""
@@ -326,11 +332,12 @@ class Snapshot:
         initial_rt = self.base_movements[INITIAL_GAIN].result_type
         return {n for n, b in self.base_movements.items() if b.result_type is initial_rt}
 
-    def debt_accounts(self, month: str = "") -> list[DebtAccount]:
+    def debt_accounts(self, month: str = "", kind: CreditorKind | None = None) -> list[DebtAccount]:
         """
-        Copies of the debt accounts as of the end of `month` (all the ledger by default), in
-        their order (see Account.load_yaml): their initial amounts, once they start, plus
-        the booked movements up to then, each in the currency of its account (see _apply_debts).
+        Copies of the debt accounts (only those of a `kind` of creditors, if any) as of the
+        end of `month` (all the ledger by default), in their order (see Account.load_yaml):
+        their initial amounts, once they start, plus the booked movements up to then, each
+        in the currency of its account (see _apply_debts).
         """
         debts = {}
         for a in self.accounts.values():
@@ -341,7 +348,7 @@ class Snapshot:
         rows = self.booked_rows
         rows = rows[rows.move_date.str[:7] <= month] if month else rows
         _apply_debts(self, {**self.accounts, **debts}, rows)
-        return list(debts.values())
+        return [a for a in debts.values() if kind is None or a.kind == kind]
 
     def investment_accounts(
         self, unattributed: list[dict] | None = None, month: str = ""
@@ -392,7 +399,7 @@ class Snapshot:
         }
 
     def debt_base_movements(self) -> dict[str, MovementBase]:
-        """The base movements of DEBT_BASES, added from the Debt tab, that are as expected (see tab_base_movements)."""
+        """The base movements of DEBT_BASES, added from the People tab, that are as expected (see tab_base_movements)."""
         return self.tab_base_movements(DEBT_BASES, DEBT_BASE_SIDES)[0]
 
     def card_payment_base_movements(self) -> dict[str, MovementBase]:
@@ -428,7 +435,7 @@ class Snapshot:
         }
 
     def difference_base_movements(self) -> dict[str, MovementBase]:
-        """The base movements of the differences of the Debt tab (DIFFERENCES) that are internal ones of their type."""
+        """The base movements of the differences of the People tab (DIFFERENCES) that are internal ones of their type."""
         return {
             n: b for n, t in DIFFERENCES.items()
             if (b := self.base_movements.get(n)) is not None and b.internal and b.move_type == t
@@ -451,7 +458,7 @@ class Snapshot:
         auto |= {b.name: "Services" for b in service_bases(self).values()}
         auto |= {n: "Investments" for n in self.invest_base_movements()}
         auto |= {n: "Currencies" for n in self.conversion_base_names if n in self.base_movements}
-        auto |= {n: "Debt" for n in [*self.debt_base_movements(), *self.difference_base_movements()]}
+        auto |= {n: "People" for n in [*self.debt_base_movements(), *self.difference_base_movements()]}
         auto |= {n: "Credit Cards" for n in self.card_payment_base_movements()}
         auto |= {n: "Audit" for n in self.correction_base_movements()}
         return auto

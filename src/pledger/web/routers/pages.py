@@ -7,12 +7,15 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
 
+from pledger.enums import CreditorKind, DebtRole
 from pledger.web.dependencies import StoreDep
+from pledger.web.store import LedgerDataError
 from pledger.web.templating import (
     is_partial,
     remember_month,
     remembered_month,
     render_card_payment_form,
+    render_collection_form,
     render_conversion_form,
     render_debt_form,
     render_form,
@@ -36,6 +39,7 @@ from pledger.web.views import (
     build_services,
     build_view,
     build_work,
+    build_work_loan,
     conversion_filter,
     expense_months,
     invest_filter,
@@ -126,9 +130,23 @@ def credit_cards(request: Request, store: StoreDep, month: str | None = None, ca
 @router.get("/work")
 def work(request: Request, store: StoreDep):
     context = build_work(store.load_work(), cpi=store.load_cpi())
+    # The work history doesn't need the rest of the ledger: what the companies owe does
+    try:
+        snapshot = store.load()
+    except LedgerDataError:
+        snapshot = None
+    if snapshot is not None and snapshot.base_debt_account(DebtRole.DEBTOR, CreditorKind.COMPANY) is not None:
+        context["loan"] = build_work_loan(snapshot)
+        context["collection_form"] = render_collection_form(request, snapshot).body.decode()
     return templates.TemplateResponse(
         request, "work.html", {**context, "settings": store.settings}
     )
+
+
+@router.get("/work/loan")
+def work_loan(request: Request, store: StoreDep):
+    """What the companies owe in Wo, for the Work tab."""
+    return templates.TemplateResponse(request, "_work_loan.html", {"loan": build_work_loan(store.load())})
 
 
 @router.get("/currencies")

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 from pandas import DataFrame
 
 from pledger.enums import MovementType
-from pledger.models import Company, JobPosition, MovementBase, WorkMonth
+from pledger.models import WORK_LOAN, Company, JobPosition, MovementBase, WorkMonth
 from pledger.web.store.common import _generated_rows, _parse_amount, _parse_date
 from pledger.web.store.constants import (
     COMPANY,
@@ -80,7 +80,7 @@ def _salary_rows(snapshot: Snapshot, start: int) -> DataFrame:
     movement on the Monday of each one, from the first date of the ledger on, each
     followed by the deductions of that week, split the same way, crediting the account
     the salary went to (see _deduction_bases). Their comment names the company first,
-    so that a debt account on their side owes them to it (see DebtAccount.creditor_in).
+    so that Wo, the debit of the SALARY, owes them to it (see DebtAccount.creditor_in).
     """
     salary = snapshot.base_movements.get(SALARY)
     bases = _deduction_bases(snapshot, salary)
@@ -114,10 +114,10 @@ def _salary_rows(snapshot: Snapshot, start: int) -> DataFrame:
                        if "comment" in snapshot.rows.columns else {}),
                 })
     if new_rows:
-        if salary is None or salary.move_type != MovementType.GAIN or salary.acc_debit is None:
+        if salary is None or salary.move_type != MovementType.GAIN or salary.acc_debit is None or salary.acc_debit.name != WORK_LOAN:
             raise ValueError(
                 f"The base movement {SALARY!r} is required for the salaries of the work history: "
-                "a gain with a fixed debit account"
+                f"a gain debiting {WORK_LOAN}, so that the companies owe them until they pay"
             )
         for row in new_rows:
             base = bases.get(row["base_movement"], salary)

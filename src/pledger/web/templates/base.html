@@ -29,7 +29,7 @@
       {% for section, tabs in (
         ("Info", (("/accounts", "Accounts"), ("/currencies", "Currencies"), ("/results", "Results"))),
         ("Revenue", (("/work", "Work"), ("/investments", "Investments"))),
-        ("Debt", (("/debt", "Debts &amp; Loans"), ("/services", "Services"), ("/credit-cards", "Credit Cards"))),
+        ("Debt", (("/debt", "People"), ("/services", "Services"), ("/credit-cards", "Credit Cards"))),
         ("Other", (("/cart", "Cart"), ("/audit", "Audit"), ("/budget", "Budget"), ("/trip", "Trip"))),
       ) %}
       <div class="nav-section {{ 'current' if tabs | selectattr(0, 'equalto', path) | list }}">

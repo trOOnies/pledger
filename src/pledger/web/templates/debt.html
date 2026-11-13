@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Debt · pledger{% endblock %}
+{% block title %}People · pledger{% endblock %}
 {% block content %}
 {% if not accounts %}
 <div class="panel">
-  <h2>Debt</h2>
+  <h2>People</h2>
   <p class="muted">No debt accounts yet: they are the <code>debt_account</code> (debts) and the <code>loan_account</code>
     (loans) of each currency of <code>{{ settings.currencies_path.name }}</code>.
-    List the <code>people</code> and <code>services</code> you have debts with in
+    List the <code>people</code> you have debts with in
     <code>{{ settings.creditors_path or "creditors.yaml" }}</code>, with the amount: positive if you
     owe them, negative if they owe you.</p>
 </div>

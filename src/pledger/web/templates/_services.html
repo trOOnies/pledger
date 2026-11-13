@@ -1,13 +1,25 @@
-{% from "_id.html" import id_cell, id_header %}
+{% from "_account_movements.html" import account_movements with context %}
 {% from "_estimated.html" import estimated_alert %}
 <div class="view">
   {% set overdue_items = [] %}
   {% for o in overdue %}{% set _ = overdue_items.append(o.month ~ ": " ~ (o.services | join(", "))) %}{% endfor %}
   {{ estimated_alert(overdue_items, "month", "the services file") }}
+  {% if unassigned_accounts %}
+  <details class="msg warn alert" role="alert">
+    <summary>⚠ Unassigned debt: some movements of {{ unassigned_accounts | map(attribute="name") | join(" and ") }} don't name a service in their comment.</summary>
+    {% for a in unassigned_accounts %}
+    <ul class="small">
+      {% for comment, amount in a.comments %}
+      <li><span class="money">{{ comment }}</span> <span class="muted">({{ a.name }})</span>: <span class="money">{{ amount | money }}</span></li>
+      {% endfor %}
+    </ul>
+    {% endfor %}
+  </details>
+  {% endif %}
   <div class="cards">
     <div class="card" title="The values of the services in {{ month }}"><span class="label">This month's value</span><span class="num money">{{ monthly | money }}</span></div>
     <div class="card" title="What was owed to the services in {{ month }}, up to today"><span class="label">Owed this month</span><span class="num money">{{ this_month | money }}</span></div>
-    <div class="card" title="What we owe the services now, after the payments of the Debt tab (negative: what they owe us)"><span class="label">We owe them</span><span class="num money {{ 'gain' if owed < 0 }}">{{ owed | money }}</span></div>
+    <div class="card" title="What we owe the services now, after the payments of the People tab (negative: what they owe us)"><span class="label">We owe them</span><span class="num money {{ 'gain' if owed < 0 }}">{{ owed | money }}</span></div>
   </div>
 
   <div class="panel">
@@ -32,8 +44,8 @@
     </div>
     <p class="muted small">The services of the creditors file, each with its column of the services file. Their values
       are owed in <code>{{ debt_name }}</code>, or in <code>{{ loan_name }}</code> for the ones expected to be debtors (they charge in advance).
-      What we owe them is in the <a href="/debt">Debt</a> tab too, where their payments are added, naming the service
-      in the comment: <em>Debt - Paid</em> in <code>{{ debt_name }}</code>, <em>Loan - Given</em> in <code>{{ loan_name }}</code>.</p>
+      Their payments are added here, naming the service in the comment: <em>Debt - Paid</em> in <code>{{ debt_name }}</code>,
+      <em>Loan - Given</em> in <code>{{ loan_name }}</code>.</p>
   </div>
 
   <div class="panel">
@@ -61,7 +73,7 @@
       </table>
     </div>
     <p class="muted small">Each value is owed up to today, never before the ledger starts, split equally between the weeks
-      of the month, on their Mondays, as movements of its service's base movement crediting <code>{{ debt_name }}</code>. A week belongs to
+      of the month, on their Mondays, as movements of its service's base movement crediting its account. A week belongs to
       the month of its Thursday. <span class="estimated">In italics</span>, the estimated values: the last known one grown by
       the inflation since then.</p>
   </div>
@@ -71,33 +83,11 @@
       <select name="service">
         <option value="">All services</option>
         {% for s in services %}<option {% if s.name == service %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
+        <option value="-" {% if service == "-" %}selected{% endif %}>No one (unassigned)</option>
       </select>
     </label>
   </form>
-  <div class="panel">
-    <h2>Movements <small>{{ movements | length }}</small></h2>
-    <div class="table-wrap">
-      <table class="movements" data-sortable="service-movements">
-        <thead><tr>{{ id_header() }}<th>Date</th><th>Service</th><th>Base movement</th><th>Debit</th><th class="num">Amount</th><th>Credit</th><th class="num" title="What we owe the service right after it">We owe</th><th>Comment</th></tr></thead>
-        <tbody>
-        {% for m in movements %}
-        <tr{% if m.id %} id="{{ row_anchor('movement', m.id) }}"{% endif %}>
-          {{ id_cell(m.id, ledger_link(m.id, m.date) if m.id) }}
-          <td class="nowrap">{{ m.date }}</td>
-          <td class="nowrap"><strong>{{ m.who }}</strong></td>
-          <td><span class="badge {{ m.type }}">{{ m.type[0] | upper }}</span> {{ m.base }}</td>
-          <td>{{ m.debit }}</td>
-          <td class="num money" data-sort="{{ m.amount }}">{{ m.amount | money }}</td>
-          <td>{{ m.credit }}</td>
-          {% if m.debt is none %}<td class="num muted balance">-</td>{% else %}<td class="num money balance {{ 'gain' if m.debt < -0.005 }}" data-sort="{{ m.debt }}">{{ m.debt | money }}</td>{% endif %}
-          <td class="muted money">{{ m.comment }}</td>
-        </tr>
-        {% else %}
-        <tr><td colspan="9" class="muted">No movements.</td></tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
-    <p class="muted small">Generated from the monthly values: change those to change them.</p>
-  </div>
+  {{ account_movements(movements, "service-movements", "all time", who=True, account=True, added_here="the payments", edit="/debt/movements/%d/edit", delete="/debt/movements/%d/delete", running=("We owe", "What we owe the service it is about right after it (negative and green: what it owes us), or the unassigned debt of its account if it names no one", "debt")) }}
+  <p class="muted small">The values owed are generated from the monthly values: change those to change them. The
+    payments are added with the <em>New service payment</em> form, and deleted with the &times; of their row.</p>
 </div>

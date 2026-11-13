@@ -48,19 +48,34 @@ RESERVED = {INVESTMENT, CREDIT_CARD, FOREIGN_CURRENCY, DEBT_SIDE, LOAN_SIDE}
 
 # The internal accounts, mandatory, under the top-level `internal` key of the accounts
 # YAML: the intermediary between movements (in the base currency, e.g. of the
-# conversions between two other currencies) and the equity (the only equity account).
+# conversions between two other currencies), the equity (the only equity account), and
+# the debt accounts of the services and of the companies (see INTERNAL_DEBTS).
 INTERMEDIARY, EQUITY_ACCOUNT = "Fi", "Eq"
-INTERNAL_ACCOUNTS = {INTERMEDIARY: AccountType.ASSET, EQUITY_ACCOUNT: AccountType.EQUITY}
-# The keys of each currency of the currencies YAML with its two debt accounts (see
-# DebtAccount), internal too, both mandatory: the debts with other people (what we owe
-# them, a liability) and the loans to them (what they owe us, an asset). Each one is the
-# account of the role of the people in it (see Creditor.roles): creditors in the debt
-# account, debtors in the loan one.
+SERVICE_DEBT, SERVICE_LOAN, WORK_LOAN = "SeD", "SeL", "Wo"
+INTERNAL_ACCOUNTS = {
+    INTERMEDIARY: AccountType.ASSET, EQUITY_ACCOUNT: AccountType.EQUITY,
+    SERVICE_DEBT: AccountType.LIABILITY, SERVICE_LOAN: AccountType.ASSET, WORK_LOAN: AccountType.ASSET,
+}
+# The keys of each currency of the currencies YAML with its two debt accounts of the
+# people (see DebtAccount), internal too, both mandatory: the debts with other people
+# (what we owe them, a liability) and the loans to them (what they owe us, an asset). Each
+# one is the account of the role of the people in it (see Creditor.roles): creditors in
+# the debt account, debtors in the loan one.
 DEBT_ACCOUNT_KEY, LOAN_ACCOUNT_KEY = "debt_account", "loan_account"
 ROLE_KEYS = {DebtRole.CREDITOR: DEBT_ACCOUNT_KEY, DebtRole.DEBTOR: LOAN_ACCOUNT_KEY}
 ROLE_TYPES = {DebtRole.CREDITOR: AccountType.LIABILITY, DebtRole.DEBTOR: AccountType.ASSET}
 # The special side taking any debt account of each role, of any currency
 ROLE_SIDES = {DebtRole.CREDITOR: DEBT_SIDE, DebtRole.DEBTOR: LOAN_SIDE}
+# The internal debt accounts of the accounts YAML, in the base currency, each with the
+# role and the kind of the creditors in it: the services, in SeD (the debts) and SeL (the
+# loans, of the ones charging in advance), and the companies of the work history, in Wo
+# (a loan account: they owe us the salaries). The people are in the debt accounts of the
+# currencies.
+INTERNAL_DEBTS = {
+    SERVICE_DEBT: (DebtRole.CREDITOR, CreditorKind.SERVICE),
+    SERVICE_LOAN: (DebtRole.DEBTOR, CreditorKind.SERVICE),
+    WORK_LOAN: (DebtRole.DEBTOR, CreditorKind.COMPANY),
+}
 # The keys of a debt account entry of the currencies YAML: its `name` and `description` are
 # required, and the others are those of the accounts YAML, but its currency (that of the
 # entry) and its initial amount (that of its creditors, see Account.load_yaml).
@@ -497,14 +512,15 @@ class Account:
 
         The top-level `internal` key has the same sections, with exactly the
         INTERNAL_ACCOUNTS, which no other section has: the asset Fi, in the base
-        currency, and the equity Eq, the only equity account.
+        currency, the equity Eq, the only equity account, and the debt accounts of the
+        services and the companies (see INTERNAL_DEBTS), in the base currency too.
 
         Investment accounts are the asset accounts listed in the investments YAML
-        (if given, see InvestmentAccount.config_from_dict). The debt accounts are those of
-        the currencies (see Currency.debt_accounts), internal too, after the internal ones,
-        in the order of the currencies, the debts before the loans of each one, sharing the
-        creditors of the creditors YAML (if given, see DebtAccount.creditors_from_dict and
-        creditors_of). Neither sets an `initial_amount`: theirs comes from the initial amounts of their
+        (if given, see InvestmentAccount.config_from_dict). The debt accounts of the people
+        are those of the currencies (see Currency.debt_accounts), internal too, after the
+        internal ones, in the order of the currencies, the debts before the loans of each
+        one. All the debt accounts share the creditors of the creditors YAML (if given, see
+        DebtAccount.creditors_from_dict and creditors_of), each of its kind. Neither sets an `initial_amount`: theirs comes from the initial amounts of their
         investments (their initial quantity at their initial price, of `initial_prices`:
         account name to investment name to price) or creditors, in the base currency, so
         only the debt accounts in the base currency have one. The `companies` (of the
@@ -529,9 +545,10 @@ class Account:
         expected = {n: t.value for n, t in INTERNAL_ACCOUNTS.items()}
         if found != expected:
             raise ValueError(
-                f"The accounts YAML {INTERNAL!r} key must have exactly the asset {INTERMEDIARY} and "
-                f"the equity {EQUITY_ACCOUNT}: it has {found or 'none'}. The debt and loan accounts are the "
-                f"{DEBT_ACCOUNT_KEY} and {LOAN_ACCOUNT_KEY} of each currency of the currencies YAML"
+                f"The accounts YAML {INTERNAL!r} key must have exactly the assets {INTERMEDIARY}, "
+                f"{SERVICE_LOAN} and {WORK_LOAN}, the liability {SERVICE_DEBT} and the equity "
+                f"{EQUITY_ACCOUNT}: it has {found or 'none'}. The debt and loan accounts of the people are "
+                f"the {DEBT_ACCOUNT_KEY} and {LOAN_ACCOUNT_KEY} of each currency of the currencies YAML"
             )
         for t, at_accounts in data.items():
             if AccountType(t) == AccountType.EQUITY and at_accounts:
@@ -548,7 +565,7 @@ class Account:
             (ROLE_TYPES[role], {entry["name"]: {**entry, "currency": c.name}}, DebtAccount, role)
             for c in currencies.values() for role, entry in c.debt_accounts.items()
         ]
-        debt_names = {n for _, section, _, _ in debt_sections for n in section}
+        debt_names = {n for _, section, _, _ in debt_sections for n in section} | set(INTERNAL_DEBTS)
         both = sorted(set(investments_data) & (set(INTERNAL_ACCOUNTS) | debt_names))
         if both:
             raise ValueError(f"The internal accounts cannot be investment accounts: {both}")
@@ -573,7 +590,9 @@ class Account:
                     raise ValueError(f"Investment account {name!r} must not have an initial_amount")
                 return 0.0  # set from its investments
             if name in debt_names:
-                return 0.0  # set from its creditors (its entry can't have one, see Currency._debt_entries)
+                if name in INTERNAL_DEBTS and "initial_amount" in acc_d:
+                    raise ValueError(f"Debt account {name!r} must not have an initial_amount: it is that of its creditors")
+                return 0.0  # set from its creditors (see Currency._debt_entries)
             if acc_type == AccountType.EQUITY:
                 if "initial_amount" in acc_d:
                     raise ValueError(f"Equity account {name!r} must not have an initial_amount")
@@ -656,7 +675,7 @@ class Account:
                 }
                 if acc_cls is CreditCardAccount:
                     fields[CLOSING_DATES] = acc_d.get(CLOSING_DATES)
-                if name == INTERMEDIARY and not fields["currency"].is_base_currency:
+                if (name == INTERMEDIARY or name in INTERNAL_DEBTS) and not fields["currency"].is_base_currency:
                     raise ValueError(f"The internal account {name!r} must be in the base currency")
                 if name in investments_data:
                     investments, balance_accounts = InvestmentAccount.config_from_dict(
@@ -666,9 +685,10 @@ class Account:
                     accounts[name] = InvestmentAccount(
                         **fields, investments=investments, balance_accounts=balance_accounts
                     )
-                elif acc_cls is DebtAccount:
-                    own = creditors_of(creditors, role, with_amounts=fields["currency"].is_base_currency)
-                    accounts[name] = DebtAccount(**fields, role=role, creditors=own)
+                elif acc_cls is DebtAccount or name in INTERNAL_DEBTS:
+                    role, kind = INTERNAL_DEBTS.get(name, (role, CreditorKind.PERSON))
+                    own = creditors_of(creditors, role, kind, with_amounts=fields["currency"].is_base_currency)
+                    accounts[name] = DebtAccount(**fields, role=role, creditors=own, kind=kind)
                     accounts[name].initial_amount = accounts[name].balance_of(sum(c.amount for c in own.values()))
                 else:
                     accounts[name] = acc_cls(**fields)
@@ -1088,15 +1108,18 @@ DEFAULT_EXPECTED = {
 }
 
 
-def creditors_of(creditors: dict[str, Creditor], role: DebtRole, with_amounts: bool) -> dict[str, Creditor]:
+def creditors_of(
+    creditors: dict[str, Creditor], role: DebtRole, kind: CreditorKind, with_amounts: bool,
+) -> dict[str, Creditor]:
     """
-    The creditors of a debt account of this role: those who can be in it (see
-    Creditor.roles), with their initial amount only `with_amounts` (in the base currency,
-    the one of the initial amounts) and if it is the role of it (see Creditor.initial_role).
+    The creditors of a debt account of this role and kind: those of the kind who can be in
+    it (see Creditor.roles), with their initial amount only `with_amounts` (in the base
+    currency, the one of the initial amounts) and if it is the role of it (see
+    Creditor.initial_role).
     """
     return {
         name: replace(c, amount=c.amount if with_amounts and c.initial_role == role else 0.0)
-        for name, c in creditors.items() if role in c.roles
+        for name, c in creditors.items() if c.kind == kind and role in c.roles
     }
 
 
@@ -1107,11 +1130,14 @@ class DebtAccount(Account):
     the Creditor, always as what we owe them (negative: what they owe us), in the
     currency of the account. Of the role of the people in it: a liability of creditors
     (what we owe, a debt account) or an asset of debtors (what we are owed, a loan
-    account); either total can have the other sign.
+    account); either total can have the other sign. Of one kind of creditors: the people
+    (the debt accounts of the currencies), the services (SeD and SeL) or the companies
+    (Wo), see INTERNAL_DEBTS.
     """
 
     role: DebtRole = DebtRole.CREDITOR
     creditors: dict[str, Creditor] = field(default_factory=dict)
+    kind: CreditorKind = CreditorKind.PERSON
 
     def __post_init__(self):
         super().__post_init__()

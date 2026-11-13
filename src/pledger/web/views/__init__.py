@@ -127,6 +127,8 @@ from pledger.web.views.services import (
 from pledger.web.views.trip import build_trips, ledger_weeks
 from pledger.web.views.work import (
     build_work,
+    build_work_loan,
+    collection_form,
     last_month_fields,
     salary_charts,
     work_form,
@@ -181,10 +183,12 @@ __all__ = [
     "build_trips",
     "build_view",
     "build_work",
+    "build_work_loan",
     "card_payment_fields",
     "cart_form_of",
     "charged_chart",
     "closing_dates",
+    "collection_form",
     "column_chart",
     "compact",
     "composition",

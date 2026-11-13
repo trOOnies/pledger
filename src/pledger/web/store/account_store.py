@@ -14,6 +14,7 @@ from pledger.models import (
     CLOSING_DATES,
     INTEREST_FREQUENCY,
     INTERNAL,
+    INTERNAL_DEBTS,
     SPECIAL_SIDES,
     CreditCardAccount,
     DebtAccount,
@@ -98,6 +99,10 @@ class AccountStore(MovementStore):
             raise ValueError(f"Unknown account: {name!r}")
         if account.acc_type not in {AccountType.ASSET, AccountType.LIABILITY}:
             raise ValueError(f"Only asset and liability accounts can be edited, not {name!r}")
+        if isinstance(account, DebtAccount) and account.name in INTERNAL_DEBTS:
+            raise ValueError(
+                f"The debt account {name!r} is internal, under the internal key of the accounts YAML: edit it there"
+            )
         if isinstance(account, DebtAccount):
             raise ValueError(  # noqa: TRY004 (a bad pick)
                 f"The debt account {name!r} is the {account.currency.name} one of the currencies YAML: edit it there"

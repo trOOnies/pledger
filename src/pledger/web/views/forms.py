@@ -144,7 +144,7 @@ def base_sides(snapshot: Snapshot, move_type: str) -> dict:
         "debit_fixed": equity if move_type == MovementType.LOSS.value else None,
         "credit_fixed": equity if move_type == MovementType.GAIN.value else None,
         "free": [a.name for a in snapshot.free_accounts()],
-        # The special sides a new base movement can take: not those of the debt base movements, of the Debt tab
+        # The special sides a new base movement can take: not those of the debt base movements, of the People tab
         "specials": {k: v for k, v in SPECIAL_LABELS.items() if k not in (DEBT_SIDE, LOAN_SIDE)},
         "labels": SPECIAL_LABELS,
         # Gains and losses are filed under a (non-internal) result type; transfers have none.

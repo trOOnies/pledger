@@ -32,7 +32,8 @@ class TestEditAccounts:
         path = settings.accounts_path
         block = (
             "internal:\n  asset:\n    Fi:\n      description: Intermediary\n      initial_amount: 0\n"
-            "      checks:\n      - net_zero\n  equity:\n    Eq:\n      description: Equity\n"
+            "      checks:\n      - net_zero\n    SeL:\n      description: Services loans\n    Wo:\n      description: Work loans\n"
+            "  liability:\n    SeD:\n      description: Services debts\n  equity:\n    Eq:\n      description: Equity\n"
         )
         path.write_text(path.read_text().replace(INTERNAL_ACCOUNTS_YAML, block))
         LedgerStore(settings).edit_account("Fi", "Between movements", "0", False, "", ["net_zero"])
@@ -46,6 +47,12 @@ class TestEditAccounts:
         assert client.get("/accounts/edit", params={"name": "De"}).status_code == 422
         rows = client.get("/accounts").text.split('<tr id="account-De">')[1].split("</tr>")[0]
         assert "Edit account De" not in rows and "debt or loan account of its currency" in rows
+        # Those of the services and the companies are under the internal key of the accounts YAML
+        with pytest.raises(ValueError, match="'SeD' is internal, under the internal key of the accounts YAML"):
+            LedgerStore(settings).edit_account("SeD", "Mine", "", False)
+        assert client.get("/accounts/edit", params={"name": "Wo"}).status_code == 422
+        rows = client.get("/accounts").text.split('<tr id="account-Wo">')[1].split("</tr>")[0]
+        assert "Edit account Wo" not in rows and "under the internal key of the accounts file" in rows
 
     def test_edit_keeps_the_rest_of_the_file(self, settings, client):
         path = settings.accounts_path
@@ -117,6 +124,7 @@ class TestInternalAccounts:
         }
         assert rows == {
             "Ca": False, "Bk": False, "Fi": True, "Cc": False, "Eq": True,
+            "SeD": True, "SeL": True, "Wo": True,  # those of the services and the companies
             "De": True, "Lo": True, "DeD": True, "LoD": True,  # the debt accounts of the currencies YAML
         }
         # In the bars too

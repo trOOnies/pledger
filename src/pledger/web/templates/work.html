@@ -3,4 +3,13 @@
 {% block content %}
 <p class="muted">The work history is kept in <code>{{ settings.work_path }}</code>, one row per month.</p>
 <div id="work">{% include "_work.html" %}</div>
+{% if loan %}
+<h2 class="currency-heading">What the companies owe</h2>
+<div class="layout">
+  <aside class="panel">{{ collection_form | safe }}</aside>
+  <section id="work-loan-view" hx-get="/work/loan" hx-trigger="work-changed from:body">
+    {% include "_work_loan.html" %}
+  </section>
+</div>
+{% endif %}
 {% endblock %}

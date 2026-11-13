@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pledger.enums import AccountCheck, AccountType, InterestFrequency
 from pledger.models import (
+    INTERNAL_DEBTS,
     SPECIAL_LABELS,
     CreditCardAccount,
     DebtAccount,
@@ -94,7 +95,7 @@ def build_accounts(snapshot: Snapshot, month: str = "", values: dict | None = No
                 # The debt accounts are set in the currencies YAML, with their currency
                 "editable": a.acc_type in EDITABLE_ACCOUNT_TYPES and not isinstance(a, DebtAccount),
                 "internal": a.internal,
-                "debt": isinstance(a, DebtAccount),
+                "debt": isinstance(a, DebtAccount) and a.name not in INTERNAL_DEBTS,  # of the currencies YAML
             }
             for a in snapshot.accounts.values()
             if a.acc_type == t

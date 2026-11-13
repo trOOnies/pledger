@@ -1,4 +1,4 @@
-"""debt.py: the Debt tab: who we owe and who owes us, and the debt movement form."""
+"""debt.py: the People tab: who we owe and who owes us, and the debt movement form."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ from pledger.web.store import (
 )
 from pledger.web.store.common import _parse_amount, _value_on
 from pledger.web.store.movements import debt_amount
-from pledger.web.views.common import account_movements, grouped_composition, months_of
+from pledger.web.views.common import account_movements, composition, months_of
 from pledger.web.views.forms import account_fields
 
 CREDITOR_KIND_LABELS = {
@@ -40,7 +40,7 @@ CREDITOR_KIND_LABELS = {
 CREDITOR_KIND_EMOJIS = {CreditorKind.PERSON: "👥", CreditorKind.SERVICE: "🧾", CreditorKind.COMPANY: "🏢"}
 
 
-UNASSIGNED = "-"  # the who filter of the Debt tab for the movements naming no one
+UNASSIGNED = "-"  # the who filter of the People tab for the movements naming no one
 
 
 # What debt_after gives a movement it leaves out (initial or a revaluation)
@@ -48,7 +48,7 @@ NO_DEBT = {"debt": None, "debt_currency": None, "own_amount": None, "own_currenc
 
 
 def as_of(snapshot: Snapshot, month: str = "") -> str:
-    """The date the Debt tab values the debt accounts in other currencies at: the end of `month`, else today."""
+    """The date the People tab values the debt accounts in other currencies at: the end of `month`, else today."""
     return month_last_day(month).isoformat() if month else snapshot.today.isoformat()
 
 
@@ -93,7 +93,7 @@ def net_creditors(
 
 def shown_accounts(snapshot: Snapshot, accounts: list[DebtAccount]) -> list[DebtAccount]:
     """
-    The debt accounts the Debt tab has a column for: those in the base currency, and those
+    The debt accounts the People tab has a column for: those in the base currency, and those
     in another currency with any movement or amount owed.
     """
     rows = snapshot.all_rows
@@ -153,28 +153,27 @@ def by_currency(
 
 def build_debts(snapshot: Snapshot, month: str = "", who: str = "") -> dict:
     """
-    The people, services and companies of the debt accounts: the ones we owe (creditors)
-    and the ones that owe us (debtors), in all of them, with what we owe and are owed
-    as positive amounts, in the base currency (see net_creditors), plus the debt of the
-    movements whose comment names no one (unassigned), as of the end of `month` (all the
-    ledger by default). What is owed in each account is in its currency. Lists who isn't
-    in their expected role, the unassigned debt of each account by comment, and the
-    movements naming someone who isn't in their account (misplaced).
+    The People tab: the people of their debt accounts, those of the currencies (the
+    services and the companies have theirs, in the Services and Work tabs): the ones we
+    owe (creditors) and the ones that owe us (debtors), in all of them, with what we owe
+    and are owed as positive amounts, in the base currency (see net_creditors), plus the
+    debt of the movements whose comment names no one (unassigned), as of the end of
+    `month` (all the ledger by default). What is owed in each account is in its currency.
+    Lists who isn't in their expected role, the unassigned debt of each account by
+    comment, and the movements naming someone who isn't in their account, but in another
+    debt account (misplaced).
     """
     date = as_of(snapshot, month)
-    every = snapshot.debt_accounts(month)
+    all_debts = snapshot.debt_accounts(month)
+    every = [a for a in all_debts if a.kind == CreditorKind.PERSON]
     people, amounts = net_creditors(snapshot, every, month)
     accounts = shown_accounts(snapshot, every)
 
-    def by_kind(sign: int) -> list[dict]:
+    def owed_by(sign: int) -> list[dict]:
         def owed(c: Creditor) -> bool:
             return c.is_creditor if sign > 0 else c.is_debtor
 
-        return grouped_composition({
-            title: {n: sign * c.amount for n, c in people.items() if c.kind == kind and owed(c)}
-            for kind, title in CREDITOR_KIND_LABELS.items()
-            if any(c.kind == kind and owed(c) for c in people.values())
-        })
+        return composition({n: sign * c.amount for n, c in people.items() if owed(c)}, limit=None)
 
     currency_tables = by_currency(snapshot, every, people, amounts)
 
@@ -190,17 +189,15 @@ def build_debts(snapshot: Snapshot, month: str = "", who: str = "") -> dict:
         m["account"] = debt.name
         m["revaluation"] = m["base"] in (RESULT_GAIN, RESULT_LOSS)
         m["who"] = None if m["revaluation"] else debt.creditor_in(m["comment"])
-        other = next((a for a in every if a.role != debt.role and a.creditor_in(m["comment"])), None)
+        other = next((a for a in all_debts if a.name != debt.name and a.creditor_in(m["comment"])), None)
         if m["who"] is None and not m["revaluation"] and other is not None:
             misplaced.append({**m, "names": other.creditor_in(m["comment"]), "belongs": other.name})
     after = debt_after(snapshot, every)
     for m in movements:
         m |= after.get(m["index"], NO_DEBT)
-    # Who to pick in the filter of the movements, by kind
-    who_options = {
-        title: sorted(n for n, c in people.items() if c.kind == kind) for kind, title in CREDITOR_KIND_LABELS.items()
-    }
-    names = {n for ns in who_options.values() for n in ns}
+    # Who to pick in the filter of the movements
+    who_options = sorted(people)
+    names = set(who_options)
     if who not in names and who != UNASSIGNED:
         who = ""
     if who:
@@ -217,7 +214,7 @@ def build_debts(snapshot: Snapshot, month: str = "", who: str = "") -> dict:
                 "currency": a.currency.name,
                 "own": own_currency(a),
                 "role": "Debts" if a.role == DebtRole.CREDITOR else "Loans",
-                "counts": {title: len(a.get_kind(kind)) for kind, title in CREDITOR_KIND_LABELS.items()},
+                "people": len(a.creditors),
                 "unassigned": a.unassigned,
                 "net": (net := sum(c.amount for c in a.creditors.values()) + a.unassigned),
                 "base_net": in_base(a, net, date),
@@ -231,7 +228,7 @@ def build_debts(snapshot: Snapshot, month: str = "", who: str = "") -> dict:
         "month": month,
         "unmet": [
             {
-                "name": c.name, "kind": CREDITOR_KIND_LABELS[c.kind], "role": role_of(c), "amount": c.amount,
+                "name": c.name, "role": role_of(c), "amount": c.amount,
                 "expected": c.expected.value.capitalize() if c.expected else None,
             }
             for c in people.values() if not c.meets_expected
@@ -254,14 +251,14 @@ def build_debts(snapshot: Snapshot, month: str = "", who: str = "") -> dict:
         "misplaced": misplaced,
         "movements": movements,
         "who": who,
-        "who_options": {title: ns for title, ns in who_options.items() if ns},
+        "who_options": who_options,
         "we_owe": we_owe,
         "owed_to_us": owed_to_us,
         "unassigned": unassigned,
         "has_unassigned": not rounds_to_zero(unassigned),
         "net": we_owe - owed_to_us + unassigned,
-        "creditors": by_kind(1),
-        "debtors": by_kind(-1),
+        "creditors": owed_by(1),
+        "debtors": owed_by(-1),
     }
 
 
@@ -297,7 +294,30 @@ def debt_after(snapshot: Snapshot, accounts: list[DebtAccount]) -> dict[int, dic
     return after
 
 
-# The base movements of the Debt tab, in two kinds: the debt we owe and the loans we give,
+def kind_movements(snapshot: Snapshot, kind: CreditorKind, who: str = "") -> tuple[list[DebtAccount], list[dict]]:
+    """
+    The debt accounts of the services (SeD and SeL) or of the companies (Wo), with all the
+    ledger applied, and their movements, newest first (about `who` only, if any): each
+    with its account, who its comment names and what we owe them right after it (see
+    debt_after). Those of the debt base movements and their differences can be deleted
+    (see the delete route of the debt movements).
+    """
+    accounts = snapshot.debt_accounts(kind=kind)
+    by_name = {a.name: a for a in accounts}
+    movements = account_movements(
+        snapshot, list(by_name), deletable={**snapshot.debt_base_movements(), **snapshot.difference_base_movements()},
+    )
+    after = debt_after(snapshot, accounts)
+    for m in movements:
+        debt = by_name.get(m["debit"]) or by_name[m["credit"]]
+        m |= {"account": debt.name, "revaluation": False, "who": debt.creditor_in(m["comment"])}
+        m |= after.get(m["index"], NO_DEBT)
+    if who:
+        movements = [m for m in movements if (m["who"] or UNASSIGNED) == who]
+    return accounts, movements
+
+
+# The base movements of the People tab, in two kinds: the debt we owe and the loans we give,
 # with the color of their side, the label of the button of each base movement and the role
 # of their debt accounts (see DEBT_BASE_ROLES).
 DEBT_PAIRS = [
@@ -308,14 +328,14 @@ DEBT_PAIRS = [
 
 def debt_form_fields(snapshot: Snapshot, base_movement: str = "", kind: str = "") -> dict:
     """
-    The debt base movements to pick from in the Debt tab: first the kind (see DEBT_PAIRS),
+    The debt base movements to pick from in the People tab: first the kind (see DEBT_PAIRS),
     that of the base movement if any, else `kind`, else the first one; then the base
     movements of that kind, with the account fields of the selected one (the first one by
-    default), whose side takes the debt accounts of its role, in any currency. Also the
-    ones of DEBT_BASES that aren't as expected, who of the debt accounts of that kind a
-    movement can be about, by kind: people and services, but no companies, whose debt comes
-    from the salaries of the Work tab; and the currency of every account, so the form
-    shows each amount in its own.
+    default), whose side takes the debt accounts of the people of its role, in any
+    currency (never those of the services or the companies, on either side). Also the ones
+    of DEBT_BASES that aren't as expected, the people of the debt accounts of that kind a
+    movement can be about, and the currency of every account, so the form shows each
+    amount in its own.
     """
     bases, missing = snapshot.tab_base_movements(DEBT_BASES, DEBT_BASE_SIDES)
     kinds = [
@@ -338,13 +358,9 @@ def debt_form_fields(snapshot: Snapshot, base_movement: str = "", kind: str = ""
     buttons = picked["buttons"] if picked else {}
     if base_movement not in buttons:
         base_movement = next(iter(buttons), "")
-    who: dict[str, set[str]] = {label: set() for label in CREDITOR_KIND_LABELS.values()}
     role = DEBT_BASE_ROLES.get(base_movement)
     accounts = snapshot.role_accounts(role) if role else []
-    for account in accounts:
-        for c in account.creditors.values():
-            if c.kind != CreditorKind.COMPANY:
-                who[CREDITOR_KIND_LABELS[c.kind]].add(c.name)
+    who = {n for account in accounts for n in account.creditors}
     return {
         "kinds": [{"title": k["title"], "color": k["color"]} for k in kinds],
         "account": f"the {'debt' if role == DebtRole.CREDITOR else 'loan'} accounts" if accounts else "",
@@ -353,9 +369,9 @@ def debt_form_fields(snapshot: Snapshot, base_movement: str = "", kind: str = ""
         "bases": list(bases),
         "base_movement": base_movement,
         "missing": missing,
-        "fields": account_fields(snapshot, base_movement),
+        "fields": people_fields(snapshot, account_fields(snapshot, base_movement)),
         "debt_side": "acc_credit" if DEBT_BASES.get(base_movement) == LedgerSide.CREDIT else "acc_debit",
-        "who": {label: sorted(names) for label, names in who.items() if names},
+        "who": sorted(who),
         "difference_missing": sorted(DIFFERENCES.keys() - snapshot.difference_base_movements().keys()),
         # Every account in another currency, its currency (see the debt form): the others are in the base one
         "account_currencies": {
@@ -364,6 +380,18 @@ def debt_form_fields(snapshot: Snapshot, base_movement: str = "", kind: str = ""
         "base_currency": snapshot.base_currency.name,
         "foreign_debts": any(is_foreign(a) for a in snapshot.accounts.values() if isinstance(a, DebtAccount)),
     }
+
+
+def people_fields(snapshot: Snapshot, fields: dict) -> dict:
+    """The account fields of a debt base movement (see account_fields) without the debt accounts of the services and the companies."""
+    others = {a.name for a in snapshot.accounts.values() if isinstance(a, DebtAccount) and a.kind != CreditorKind.PERSON}
+    fields = dict(fields)
+    for side in ("debit", "credit"):
+        fields[f"{side}_options"] = [n for n in fields[f"{side}_options"] if n not in others]
+        fields[f"{side}_groups"] = {
+            g: kept for g, names in fields[f"{side}_groups"].items() if (kept := [n for n in names if n not in others])
+        }
+    return fields
 
 
 def debt_difference(

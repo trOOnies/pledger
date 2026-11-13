@@ -8,11 +8,12 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
 
-from pledger.models import INTERMEDIARY, DebtAccount
+from pledger.models import INTERMEDIARY, INTERNAL_DEBTS, WORK_LOAN, DebtAccount
 from pledger.web.dependencies import StoreDep
 from pledger.web.store import (
     CARD_SURPLUS,
     INSTALLMENTS_COLUMN,
+    LOAN_COLLECTED,
     OTHER_AMOUNT,
     LedgerStore,
     Snapshot,
@@ -25,6 +26,7 @@ from pledger.web.store.common import _amount_of, _value_on
 from pledger.web.templating import (
     money,
     render_card_payment_form,
+    render_collection_form,
     render_conversion_form,
     render_debt_form,
     render_form,
@@ -749,7 +751,8 @@ def editable_account(store: LedgerStore, name: str):
     if account is None or account.acc_type not in EDITABLE_ACCOUNT_TYPES:
         raise HTTPException(status_code=404, detail=f"No asset or liability account {name!r}")
     if isinstance(account, DebtAccount):
-        raise HTTPException(status_code=422, detail=f"The debt account {name!r} is edited in the currencies YAML")
+        where = "accounts" if name in INTERNAL_DEBTS else "currencies"
+        raise HTTPException(status_code=422, detail=f"The debt account {name!r} is edited in the {where} YAML")
     return account
 
 
@@ -838,9 +841,12 @@ async def correct_balance(request: Request, store: StoreDep):
 
 
 def render_work(request: Request, store: LedgerStore, form: dict | None = None, **extra):
-    return templates.TemplateResponse(
+    """The work history of the Work tab, refreshing what the companies owe in Wo after it (see work.html)."""
+    response = templates.TemplateResponse(
         request, "_work.html", {**build_work(store.load_work(), form, store.load_cpi()), **extra}
     )
+    response.headers["HX-Trigger"] = "work-changed"
+    return response
 
 
 @router.get("/work/form")
@@ -882,6 +888,39 @@ async def save_work_month(
         "success": f"{'Added' if created else 'Updated'} {month.strip()} ({what})",
     }
     return render_work(request, store, form)
+
+
+@router.get("/work/collection-form")
+def work_collection_form(request: Request, store: StoreDep, company: str = "", move_date: str = "", acc_debit: str = ""):
+    """The Salary received form, with what the company picked owes as the amount."""
+    values = {k: v for k, v in {"move_date": move_date, "acc_debit": acc_debit}.items() if v}
+    return render_collection_form(request, store.load(), company.strip(), values)
+
+
+@router.post("/work/collections")
+def create_collection(
+    request: Request,
+    store: StoreDep,
+    company: Annotated[str, Form()],
+    move_date: Annotated[str, Form()],
+    amount: Annotated[str, Form()],
+    acc_debit: Annotated[str, Form()] = "",
+    comment: Annotated[str, Form()] = "",
+):
+    """A company paying what it owes in Wo: a Loan - Collected crediting it."""
+    values = {"move_date": move_date, "acc_debit": acc_debit, "amount": amount, "comment": comment}
+    try:
+        store.add_debt_movement(move_date, LOAN_COLLECTED, acc_debit, WORK_LOAN, amount, company, comment)
+    except ValueError as e:
+        return render_collection_form(request, store.load(), company, values, error=str(e))
+    snapshot = store.load()
+    what = f"Added {LOAN_COLLECTED} ({company.strip()}): {amount_text(snapshot.accounts.get(acc_debit), amount, store.settings.currency)}"
+    future = " (dated in the future)" if move_date > dt.date.today().isoformat() else ""
+    response = render_collection_form(
+        request, snapshot, company, {"move_date": move_date, "acc_debit": acc_debit}, success=what + future,
+    )
+    response.headers["HX-Trigger"] = "work-changed"
+    return response
 
 
 @router.post("/work/months/{index}/delete")
@@ -1090,7 +1129,7 @@ def edit_conversion(
 @router.get("/form/debt-bases")
 def form_debt_bases(request: Request, store: StoreDep, debt_kind: str = "", who: str = ""):
     """
-    The debt base movements of a kind of the Debt tab (see views.debt_form_fields), still
+    The debt base movements of a kind of the People tab (see views.debt_form_fields), still
     about `who` if they can be (see Creditor.accounts).
     """
     return templates.TemplateResponse(
@@ -1227,7 +1266,7 @@ def delete_debt_movement(store: StoreDep, index: int, fingerprint: Annotated[str
         raise HTTPException(status_code=409, detail=str(e)) from None
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from None
-    return Response(status_code=200, headers={"HX-Trigger": "debt-changed"})
+    return Response(status_code=200, headers={"HX-Trigger": "debt-changed, services-changed, work-changed"})
 
 
 @router.post("/credit-cards/payments/{index}/delete", response_class=Response)

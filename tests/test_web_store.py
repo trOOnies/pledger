@@ -224,10 +224,10 @@ class TestSetupStore:
 
         lines = before.splitlines()
         assert path.read_text().splitlines() == (
-            lines[:12] + [
+            lines[:13] + [
                 "  Sv:", "    description: 'Savings: 10%'", "    currency: ARS",
                 "    is_liquid: false", "    initial_amount: 0.0",
-            ] + lines[12:]
+            ] + lines[13:]
         )
         sv = LedgerStore(settings).load().accounts["Sv"]
         assert sv.description == "Savings: 10%"

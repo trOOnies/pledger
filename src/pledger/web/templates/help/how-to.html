@@ -27,7 +27,7 @@
   movement. It keeps its ID. To remove it instead, use the <strong>&times;</strong> button.
   The movements of other tabs are edited the same way there: the investment movements in
   <a href="/investments">Investments</a>, the conversions in <a href="/currencies">Currencies</a>, the debt
-  movements in <a href="/debt">Debt</a> and the card payments in <a href="/credit-cards">Credit Cards</a>.
+  movements in <a href="/debt">People</a> and the card payments in <a href="/credit-cards">Credit Cards</a>.
   The ones pledger generates (salaries, initial amounts, revaluations) change with what they come from.</p>
 
 <h3>➕ Add an account</h3>
@@ -58,7 +58,7 @@
       <li class="flow-step">
         <span class="flow-q">Is it money that <strong>someone owes you</strong> (a loan you gave)?</span>
         <span class="flow-yes"><em>Yes</em> → <strong>no new account</strong>: add them to <code>creditors.yaml</code>,
-          with a negative amount, and use the <a href="/debt">Debt</a> tab: loans are in the loan accounts, one per currency.</span>
+          with a negative amount, and use the <a href="/debt">People</a> tab: loans are in the loan accounts, one per currency.</span>
       </li>
       <li class="flow-step">
         <span class="flow-q">Is it only a <strong>step between movements</strong> that always goes back to 0.00?</span>
@@ -83,9 +83,10 @@
       <li class="flow-step">
         <span class="flow-q">Is it owed to a <strong>person</strong> or a <strong>service</strong> (a friend, the rent, a bill)?</span>
         <span class="flow-yes"><em>Yes</em> → <strong>no new account</strong>: add them to
-          <code>creditors.yaml</code>, with a positive amount, and use the <a href="/debt">Debt</a> tab: debts are in
-          the debt accounts, one per currency. Your employers are there already, from the Work tab, in the loan
-          account of the base currency.</span>
+          <code>creditors.yaml</code>, with a positive amount: a person in <code>people</code>, with the
+          <a href="/debt">People</a> tab, where debts are in the debt accounts, one per currency; a service in
+          <code>services</code>, with the <a href="/services">Services</a> tab, in <code>SeD</code> (or <code>SeL</code>).
+          Your employers are there already, from the Work tab, in <code>Wo</code>.</span>
       </li>
       <li class="flow-step flow-end">
         <span class="flow-q">None of the above (a bank loan, a mortgage…)</span>
@@ -121,11 +122,12 @@
   <strong>Currency</strong> follows the account you pick: Pledger handles the conversion for you.</p>
 
 <h3>🤝 Keep track of who owes you</h3>
-<p>Add lending, borrowing and paying back from the <a href="/debt">Debt</a> tab, picking
+<p>Add lending, borrowing and paying back from the <a href="/debt">People</a> tab, picking
   <strong>who</strong> it is about: debts go to a debt account and loans to a loan account, of the currency they are
-  in (each currency has both, in the currencies file). For other movements of a debt account, write the person's,
-  service's or company's <strong>name in the comment</strong>, such as "Lunch with Dad". The
-  Debt tab adds them to them, and warns you about movements that name no one.</p>
+  in (each currency has both, in the currencies file). Pay the services from the <a href="/services">Services</a>
+  tab, and add the salaries you receive from the <a href="/work">Work</a> tab. For other movements of a debt account,
+  write the person's, service's or company's <strong>name in the comment</strong>, such as "Lunch with Dad". Each
+  tab adds them to them, and the People tab warns you about movements that name no one.</p>
 
 <h3>🔍 Check your balances against reality</h3>
 <p>Go to <a href="/audit">Audit</a> and fill in the balances you see today, leaving empty the accounts you don't
@@ -133,6 +135,6 @@
   it, or use the button next to it to add a correction dated today.</p>
 
 <h3>🔎 Look at a single month or account</h3>
-<p>Use the <strong>Month</strong> filter on Ledger, Accounts, Results, Debt or Credit Cards (it is remembered
+<p>Use the <strong>Month</strong> filter on Ledger, Accounts, Results, People or Credit Cards (it is remembered
   across tabs), and the <strong>Account</strong> filter on Ledger. Pick <em>All time</em> to
   go back.</p>

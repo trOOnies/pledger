@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 
 
 def services_of(snapshot: Snapshot) -> dict[str, Creditor]:
-    """The services of the debt accounts, each once (they share the creditors YAML)."""
+    """The services of the debt accounts of the services (SeD and SeL), each once (they share the creditors YAML)."""
     services = {}
     for a in snapshot.accounts.values():
         if isinstance(a, DebtAccount):
@@ -41,22 +41,21 @@ def services_of(snapshot: Snapshot) -> dict[str, Creditor]:
 
 def service_account(snapshot: Snapshot, service: Creditor) -> str:
     """
-    The debt account a service is owed its values of the services CSV in: that of the first
-    role it can be in (see Creditor.roles), in the base currency, the one of its values. The
-    debt account unless it is expected to be a debtor (it charges in advance), then the loan
-    account.
+    The debt account of the services a service is owed its values of the services CSV in:
+    that of the first role it can be in (see Creditor.roles). SeD unless it is expected to be
+    a debtor (it charges in advance), then SeL.
     """
-    account = snapshot.base_debt_account(service.roles[0])
+    account = snapshot.base_debt_account(service.roles[0], CreditorKind.SERVICE)
     if account is None:
-        raise ValueError(f"No {service.roles[0].value} account in {snapshot.base_currency.name} for the service {service.name!r}")
+        raise ValueError(f"No {service.roles[0].value} account of the services for the service {service.name!r}")
     return account.name
 
 
 def service_payment_base(snapshot: Snapshot, service: str) -> tuple[str, str]:
     """
     The base movement paying a service (see service_account), and its debt account, the
-    debit of it: Debt - Paid in the debt account, else Loan - Given in the loan account,
-    for the ones expected to be debtors (they charge in advance).
+    debit of it: Debt - Paid in SeD, else Loan - Given in SeL, for the ones expected to be
+    debtors (they charge in advance).
     """
     account = service_account(snapshot, services_of(snapshot)[service])
     role = snapshot.accounts[account].role

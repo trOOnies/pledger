@@ -93,10 +93,16 @@ def _check_not_cart(row, action: str) -> None:
         raise ValueError(f"The movement is a product of the cart {cart}: it is {action} from the Cart tab")
 
 
+# Each kind of creditor, as a noun, and the tab of its debt accounts
+KIND_ARTICLES = {CreditorKind.PERSON: "a person", CreditorKind.SERVICE: "a service", CreditorKind.COMPANY: "a company"}
+KIND_TABS = {CreditorKind.PERSON: "People", CreditorKind.SERVICE: "Services", CreditorKind.COMPANY: "Work"}
+
+
 def _debt_comment(snapshot: Snapshot, acc_debit: str, acc_credit: str, who: str, comment: str) -> str:
     """
     The comment of a debt movement about `who` (see LedgerStore.add_debt_movement), naming
-    them first.
+    them first. They must be someone of its debt account: a person in the debt accounts
+    of the people, a service in SeD or SeL, a company in Wo.
     """
     accounts = [snapshot.accounts.get(n) for n in (acc_debit, acc_credit)]
     debts = [a for a in accounts if isinstance(a, DebtAccount)]
@@ -104,8 +110,13 @@ def _debt_comment(snapshot: Snapshot, acc_debit: str, acc_credit: str, who: str,
     if not who:
         raise ValueError("Pick who the debt movement is about")
     found = [a for a in snapshot.accounts.values() if isinstance(a, DebtAccount) and who in a.creditors]
-    if debts and any(a.creditors[who].kind == CreditorKind.COMPANY for a in found):
-        raise ValueError(f"{who!r} is a company: its debt comes from the salaries of the Work tab")
+    if debts and found and not any(a.kind == found[0].kind for a in debts):
+        kind = found[0].kind
+        where = "the debt accounts of the people" if kind == CreditorKind.PERSON else " and ".join(a.name for a in found)
+        raise ValueError(
+            f"{who!r} is {KIND_ARTICLES[kind]}: their movements are in {where} ({KIND_TABS[kind]} tab), "
+            f"not in {debts[0].name}"
+        )
     if debts and not any(who in a.creditors for a in debts):
         if found:
             expected = found[0].creditors[who].expected
@@ -212,7 +223,7 @@ def _check_tab(
     """
     Each tab adds (or edits, or deletes: the `action`) the movements of its own base
     movements: the conversions are only added from the Currencies tab, the debt
-    movements from the Debt tab, the card payments from the Credit Cards tab, the
+    movements from the People tab, the card payments from the Credit Cards tab, the
     balance corrections from the Audit tab (`correction`; the Ledger tab deletes
     them with it too), the differences with their debt movement (`difference`; the Ledger and Debt
     tabs delete them with it too), and
@@ -222,10 +233,10 @@ def _check_tab(
     if base_name in snapshot.conversion_base_names:
         raise ValueError(f"The conversions ({base_name!r}) are added from the Currencies tab")
     for wanted, bases, what, tab in (
-        (debt, snapshot.debt_base_movements(), "debt", "Debt"),
+        (debt, snapshot.debt_base_movements(), "debt", "People, Services or Work"),
         (card_payment, snapshot.card_payment_base_movements(), "card payment", "Credit Cards"),
         (correction, snapshot.correction_base_movements(), "balance correction", "Audit"),
-        (difference, snapshot.difference_base_movements(), "debt difference", "Debt"),
+        (difference, snapshot.difference_base_movements(), "debt difference", "People"),
     ):
         if wanted and base_name not in bases:
             raise ValueError(f"Base movement {base_name!r} is not a {what} base movement")

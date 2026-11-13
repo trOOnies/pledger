@@ -56,7 +56,7 @@ class MovementStore(StoreBase):
         _investment_details); an investment of an investment account must be one it has
         (see _check_known_investment). Without it, it must be of a non-internal base
         movement whose movements aren't generated, and goes to the ledger CSV: one of a
-        debt base movement with `debt` (from the Debt tab), one of a card payment base
+        debt base movement with `debt` (from the People tab), one of a card payment base
         movement with `card_payment` (from the Credit Cards tab), a balance correction with
         `correction` (from the Audit tab), else one of the Ledger tab (see _check_tab). It gets the next id of its CSV (see _appended).
         A charge to a credit card of the Ledger tab can be in `installments` (see INSTALLMENTS_COLUMN).
@@ -100,7 +100,7 @@ class MovementStore(StoreBase):
         """
         Delete a row of the ledger CSV by position, optionally checking it is the
         expected one. Never of an internal base movement, but a debt movement with
-        `debt` (from the Debt tab), a card payment with `card_payment` (from the
+        `debt` (from the People tab), a card payment with `card_payment` (from the
         Credit Cards tab), a balance correction with `correction` or a Difference with
         `difference`, which are only deleted that way (see _check_tab).
         """
@@ -124,7 +124,7 @@ class MovementStore(StoreBase):
         """
         Replace a row of the ledger CSV by position with a movement of the same tab,
         optionally checking it is the expected one, like delete: of the Ledger tab, else
-        of the Debt tab with `debt` or of the Credit Cards tab with `card_payment` (see
+        of the People tab with `debt` or of the Credit Cards tab with `card_payment` (see
         _check_tab). The row keeps its id and any other column. A card payment of a card in
         another currency, or a movement of a debt account in another one, has its
         `amount_other` in that currency, its OTHER_AMOUNT (see LinkedStore.edit_card_payment

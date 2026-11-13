@@ -135,7 +135,7 @@ CONVERSIONS = {CONVERSION_BOUGHT, CONVERSION_SOLD}
 CROSS_CONVERSION = f"{CONVERSION_SOLD} + {CONVERSION_BOUGHT}"
 
 
-# The internal transfers of the debt accounts, added from the Debt tab, with that side
+# The internal transfers of the debt accounts, added from the People tab, with that side
 # taking any debt account of one role (DEBT_BASE_SIDES), in any currency: we owe more or
 # less (the debts, of the DEBT_SIDE), or are owed more or less (the loans, of the LOAN_SIDE).
 DEBT_INCURRED, DEBT_PAID = "Debt - Incurred", "Debt - Paid"
@@ -201,7 +201,7 @@ CORRECTIONS = {CORRECTION_GAIN: MovementType.GAIN, CORRECTION_LOSS: MovementType
 
 
 # Internal base movements settling what remains with someone after a debt movement, in its
-# debt account, against the equity account: added from the Debt tab with that movement (see
+# debt account, against the equity account: added from the People tab with that movement (see
 # LedgerStore.add_debt_movement), and deleted from there or the Ledger tab. A gain if what
 # remained is what we owed them.
 DIFFERENCE_GAIN, DIFFERENCE_LOSS = "Difference (G)", "Difference (L)"

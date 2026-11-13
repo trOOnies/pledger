@@ -48,10 +48,11 @@ month;monthly_inflation
 
 # The mandatory internal accounts, first in every accounts YAML of the tests: in flow
 # style, so that replacing the lines of the other sections leaves them alone. The debt
-# accounts are those of the currencies (see CURRENCIES_YAML).
+# accounts of the people are those of the currencies (see CURRENCIES_YAML).
 INTERNAL_ACCOUNTS_YAML = """\
 internal:
-  asset: {Fi: {description: Intermediary, initial_amount: 0, checks: [net_zero]}}
+  asset: {Fi: {description: Intermediary, initial_amount: 0, checks: [net_zero]}, SeL: {description: Services loans}, Wo: {description: Work loans}}
+  liability: {SeD: {description: Services debts}}
   equity: {Eq: {description: Equity}}
 """
 

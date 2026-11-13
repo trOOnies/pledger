@@ -44,7 +44,7 @@ class TestCurrencies:
     def test_build_currencies(self, values):
         currencies = build_currencies(LedgerStore(values).load(), self.TODAY)
         assert currencies["base"] == {
-            "name": "ARS", "description": "Pesos", "accounts": 5,  # Ca, Cc, Fi, Lo and De
+            "name": "ARS", "description": "Pesos", "accounts": 8,  # Ca, Cc, Fi, SeD, SeL, Wo, Lo and De
             "assets": pytest.approx(159.75), "liabilities": pytest.approx(0), "own": [],
         }
         # Each month's inflation, the CPI at its end; March is projected

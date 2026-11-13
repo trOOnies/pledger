@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pledger.enums import CreditorKind, DebtRole, LedgerSide
-from pledger.models import DebtAccount, next_month
+from pledger.models import DebtAccount, next_month, rounds_to_zero
 from pledger.web.store import (
     SERVICE_COLUMN,
     Snapshot,
@@ -14,22 +14,23 @@ from pledger.web.store import (
     service_months,
     service_payment_base,
 )
-from pledger.web.views.common import movement_rows
-from pledger.web.views.debt import debt_after, net_creditors
+from pledger.web.views.debt import UNASSIGNED, kind_movements, net_creditors
 from pledger.web.views.forms import by_group
 
 
 def build_services(snapshot: Snapshot, service: str = "") -> dict:
     """
-    The services of the debt accounts (see store._service_rows): each one's debt account
-    (see store.service_account), base movement and value this month, what was owed to it
-    this month, up to today, and in all, and what we owe it now, in both debt accounts. Also the rows of the services CSV, newest first, and the movements
-    owed to the services, newest first (of `service` only, if any), each with what we owe
-    that service right after it. The estimated values are marked, and `overdue` has the
-    months already ended with any (see store.service_estimates).
+    The services of their debt accounts, SeD and SeL (see store._service_rows): each one's
+    debt account (see store.service_account), base movement and value this month, what was
+    owed to it this month, up to today, and in all, and what we owe it now, in both. Also
+    the rows of the services CSV, newest first, and the movements of SeD and SeL, newest
+    first (of `service` only, if any), each with what we owe its service right after it:
+    the values owed and the payments, which can be deleted. The estimated values are
+    marked, and `overdue` has the months already ended with any (see
+    store.service_estimates).
     """
-    accounts = snapshot.debt_accounts()
-    services = {n: c for n, c in net_creditors(snapshot, accounts)[0].items() if c.kind == CreditorKind.SERVICE}
+    accounts, every = kind_movements(snapshot, CreditorKind.SERVICE)
+    services = net_creditors(snapshot, accounts)[0]
     bases, months = service_bases(snapshot), service_months(snapshot)
     month = snapshot.today.strftime("%Y-%m")
     now = dict(months).get(month, {})
@@ -59,24 +60,27 @@ def build_services(snapshot: Snapshot, service: str = "") -> dict:
         }
         for m, v in sorted(months, reverse=True) if v
     ]
-    if service not in services:
+    if service not in services and service != UNASSIGNED:
         service = ""
-    picked = (rows[rows[SERVICE_COLUMN] == service] if service else rows).sort_values("move_date", kind="stable")
-    generated = picked.drop(columns=[SERVICE_COLUMN])
-    movements = movement_rows(snapshot, generated, snapshot.ledger(generated))
-    after = debt_after(snapshot, accounts)
-    for m, name in zip(movements, list(picked[SERVICE_COLUMN])[::-1]):
-        m |= {"who": name, **after.get(m["index"], {"debt": None})}
+    movements = [m for m in every if not service or (m["who"] or UNASSIGNED) == service]
+    unassigned = [a for a in accounts if not rounds_to_zero(a.unassigned)]
     return {
         "has_debt": bool(accounts),
-        # The accounts the services are owed in: those of the base currency (see store.service_account)
-        "debt_name": (de.name if (de := snapshot.base_debt_account(DebtRole.CREDITOR)) else ""),
-        "loan_name": (lo.name if (lo := snapshot.base_debt_account(DebtRole.DEBTOR)) else ""),
+        # The accounts the services are owed in (see store.service_account)
+        "debt_name": (de.name if (de := snapshot.base_debt_account(DebtRole.CREDITOR, CreditorKind.SERVICE)) else ""),
+        "loan_name": (lo.name if (lo := snapshot.base_debt_account(DebtRole.DEBTOR, CreditorKind.SERVICE)) else ""),
         "services": table,
         "columns": names,
         "values": values,
         "overdue": [{"month": m, "services": estimates[m]} for m in sorted(estimates) if m < month],
         "movements": movements,
+        "unassigned_accounts": [
+            {"name": a.name, "amount": a.unassigned, "comments": sorted(
+                ((c or "(no comment)", v) for c, v in a.unassigned_comments.items() if not rounds_to_zero(v)),
+                key=lambda cv: -abs(cv[1]),
+            )}
+            for a in unassigned
+        ],
         "service": service,
         "month": month,
         "monthly": sum(s["value"] for s in table),

@@ -17,6 +17,7 @@ from pledger.web.views import (
     MOVEMENT_SOURCES,
     base_fields,
     card_payment_fields,
+    collection_form,
     conversion_fields,
     debt_form_fields,
     invest_fields,
@@ -225,6 +226,15 @@ def render_service_payment_form(
     )
 
 
+def render_collection_form(request: Request, snapshot: Snapshot, company: str = "", values: dict | None = None, **extra):
+    """The Salary received form of the Work tab (see views.collection_form)."""
+    return templates.TemplateResponse(
+        request,
+        "_collection_form.html",
+        {"currency": request.app.state.store.settings.currency, **collection_form(snapshot, company, values), **extra},
+    )
+
+
 def render_conversion_form(request: Request, snapshot: Snapshot, values: dict, **extra):
     """The new conversion form of the Currencies tab, for the conversions CSV."""
     values.setdefault("move_date", dt.date.today().isoformat())
@@ -244,7 +254,7 @@ def render_conversion_form(request: Request, snapshot: Snapshot, values: dict, *
 
 
 def render_debt_form(request: Request, snapshot: Snapshot, values: dict, **extra):
-    """The new debt movement form of the Debt tab, for the debt base movements."""
+    """The new debt movement form of the People tab, for the debt base movements."""
     values.setdefault("move_date", dt.date.today().isoformat())
     fields = debt_form_fields(snapshot, values.get("base_movement", ""))
     values["base_movement"] = fields["base_movement"]
