@@ -34,8 +34,9 @@
   color-scheme: light;
 }
 
+/* Dark: the system's, unless the theme toggle of the top bar picked one (data-theme on <html>) */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --bg: #111418;
     --surface: #1a1e24;
     --border: #2c323b;
@@ -66,6 +67,38 @@
     --series-neutral: #7c838d;
     color-scheme: dark;
   }
+}
+
+:root[data-theme="dark"] {
+  --bg: #111418;
+  --surface: #1a1e24;
+  --border: #2c323b;
+  --text: #e6e9ee;
+  --muted: #9099a6;
+  --accent: #6f93f2;
+  --accent-text: #0d1117;
+  --gain: #4cc38a;
+  --gain-nested: #b9edd3;
+  --loss: #f07167;
+  --loss-nested: #fccbc6;
+  --warn: #e3b341;
+  --transfer: #9099a6;
+  --gain-bg: #17321f;
+  --loss-bg: #3a1c1a;
+  --transfer-bg: #262b33;
+  --series-asset: #3987e5;
+  --series-asset-nested: #b3d1f5;
+  --series-liability: #d95926;
+  --series-liability-nested: #f5c2aa;
+  --track: #222730;
+  --series-3: #199e70;
+  --series-4: #c98500;
+  --series-5: #d55181;
+  --series-6: #008300;
+  --series-7: #9085e9;
+  --series-8: #e66767;
+  --series-neutral: #7c838d;
+  color-scheme: dark;
 }
 
 * { box-sizing: border-box; }
@@ -112,17 +145,25 @@ code { font-size: .9em; }
 .nav-section:hover .nav-menu, .nav-section:focus-within .nav-menu { display: flex; }
 .topbar .nav-menu a { padding: .35rem .75rem; }
 .topbar .nav-menu a:hover { color: var(--text); background: var(--bg); }
-/* The icon buttons of the top bar: the visibility toggle and Save & Quit (an open door) */
-.visibility, .quit {
+/* The icon buttons of the top bar: the visibility toggle, the theme toggle and Save & Quit (an open door) */
+.visibility, .theme, .quit {
   display: inline-flex; width: auto; padding: .3rem; border: 1px solid var(--border); border-radius: 6px;
   background: none; color: var(--muted); cursor: pointer;
 }
 .visibility { margin-left: auto; flex: none; }
-.quit { margin-left: -1rem; flex: none; }
-.visibility:hover, .visibility[aria-pressed="true"], .quit:hover { color: var(--text); }
-.visibility svg, .quit svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.theme, .quit { margin-left: -1rem; flex: none; }
+.visibility:hover, .visibility[aria-pressed="true"], .theme:hover, .quit:hover { color: var(--text); }
+.visibility svg, .theme svg, .quit svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .visibility .eye-closed, .hide-money .visibility .eye-open { display: none; }
 .hide-money .visibility .eye-closed { display: block; }
+/* The theme toggle shows the theme in use: a moon in dark, a sun in light */
+.theme .sun { display: none; }
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .theme .moon { display: none; }
+  :root:not([data-theme="dark"]) .theme .sun { display: block; }
+}
+:root[data-theme="light"] .theme .moon { display: none; }
+:root[data-theme="light"] .theme .sun { display: block; }
 /* Hidden amounts show a fixed mask (set by the visibility toggle), in a neutral color so
    not even the sign shows. Not yet masked ones (e.g. mid-swap) stay invisible. */
 .hide-money .money { color: var(--muted); }

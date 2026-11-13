@@ -50,7 +50,7 @@ class TestPages:
         assert [current for current, _, _ in sections] == ["", "", "current", ""]
         assert 'href="/services" aria-current="page"' in header and ">Debts &amp; Loans</a>" in header
         # Help and the API aren't in a section
-        assert re.search(r'</div>\s*<a href="/help" >Help</a>\s*<a href="/docs">API</a>\s*</nav>', header)
+        assert re.search(r'</div>\s*<a href="/help" >Help</a>\s*<a href="/docs" target="_blank" rel="noopener">API</a>\s*</nav>', header)
 
     def test_comments_are_hidden_with_the_amounts(self, client):
         client.post("/movements", data={

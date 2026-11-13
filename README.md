@@ -50,7 +50,7 @@ web app.
 
 ```sh
 make install   # editable install with the web and dev extras
-make serve     # http://127.0.0.1:8000 (API docs at /docs)
+make serve     # http://127.0.0.1:8000 (API docs at /docs, the API tab, in a new browser tab)
 ```
 
 pledger reads its files from `info/` in the current directory (see
@@ -95,6 +95,8 @@ A few things are shared across tabs:
   **projected**: dashed in the CPI chart and faded in the inflation one.
 - 👁️ The **eye button** in the top bar replaces every amount with `******` until clicked
   again. The browser remembers the choice.
+- 🌙 The **theme button**, next to it, switches between dark (a moon) and light (a sun) mode.
+  Until clicked it follows the system's theme; then the browser remembers the choice.
 - 🔗 The **ID** of a movement links to its other face: from the Ledger tab to its row in the tab
   that handles it (like its colored circle), and from the Investments, Currencies, Debt and
   Credit Cards tabs back to the Ledger tab.

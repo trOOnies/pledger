@@ -10,9 +10,11 @@
   <link rel="stylesheet" href="{{ url_for('static', path='style.css') }}?v={{ static_version('style.css') }}">
   <script src="{{ url_for('static', path='htmx.min.js') }}?v={{ static_version('htmx.min.js') }}" defer></script>
   <script>
-    // Apply the hidden amounts setting before the first paint, so amounts never flash.
+    // Apply the hidden amounts and theme settings before the first paint, so neither flashes.
     try {
       if (localStorage.getItem("pledger-hide-money") === "true") document.documentElement.classList.add("hide-money");
+      const theme = localStorage.getItem("pledger-theme");
+      if (theme === "dark" || theme === "light") document.documentElement.dataset.theme = theme;
     } catch {}
   </script>
 </head>
@@ -36,11 +38,16 @@
       </div>
       {% endfor %}
       <a href="/help" {% if path.startswith('/help') %}aria-current="page"{% endif %}>Help</a>
-      <a href="/docs">API</a>
+      <a href="/docs" target="_blank" rel="noopener">API</a>
     </nav>
     <button type="button" id="visibility" class="visibility" aria-pressed="false" aria-label="Hide amounts and comments" title="Hide amounts and comments">
       <svg class="eye-open" viewBox="0 0 24 24" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
       <svg class="eye-closed" viewBox="0 0 24 24" aria-hidden="true"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+    </button>
+    {# The theme in use, the system's until picked: a moon in dark, a sun in light (see style.css) #}
+    <button type="button" id="theme" class="theme" aria-label="Switch to light mode" title="Switch to light mode">
+      <svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+      <svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
     </button>
     <button type="button" id="quit" class="quit" aria-label="Save &amp; Quit" title="Save &amp; Quit: save what is left to save and stop pledger">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 4h3a2 2 0 0 1 2 2v14"/><path d="M2 20h3"/><path d="M13 20h9"/><path d="M10 12v.01"/><path d="M13 4.562v16.157a1 1 0 0 1-1.242.97L5 20V5.562a2 2 0 0 1 1.515-1.94l4-1A2 2 0 0 1 13 4.561Z"/></svg>
@@ -114,6 +121,24 @@
     if (moneyHidden()) maskMoney(document);
     showVisibility();
     document.addEventListener("htmx:afterSwap", () => { if (moneyHidden()) maskMoney(document); });
+
+    // The theme toggle: the system's theme until one is picked, then the one picked, remembered.
+    const themeButton = document.getElementById("theme");
+    const darkSystem = window.matchMedia("(prefers-color-scheme: dark)");
+    const isDark = () => (document.documentElement.dataset.theme || (darkSystem.matches ? "dark" : "light")) === "dark";
+    function showTheme() {
+      const label = isDark() ? "Switch to light mode" : "Switch to dark mode";
+      themeButton.setAttribute("aria-label", label);
+      themeButton.title = label;
+    }
+    themeButton.addEventListener("click", () => {
+      const theme = isDark() ? "light" : "dark";
+      document.documentElement.dataset.theme = theme;
+      try { localStorage.setItem("pledger-theme", theme); } catch {}
+      showTheme();
+    });
+    darkSystem.addEventListener("change", showTheme);
+    showTheme();
     // Confirmation questions mentioning an amount (data-confirm-money) mask it too.
     document.addEventListener("htmx:confirm", (e) => {
       const amount = e.detail.elt.dataset.confirmMoney;
