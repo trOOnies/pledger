@@ -26,6 +26,9 @@
     </div>
   </div>
   <div id="debt-bases" class="stack">{% include "_debt_bases.html" %}</div>
+  {# Who it can be about, again once someone is added in the New person form #}
+  <span hidden hx-get="/form/debt-bases" hx-trigger="person-added from:body" hx-target="#debt-bases" hx-swap="innerHTML"
+    hx-include="#debt-form [name='debt_kind'], #debt-form [name='who']"></span>
   <label>Amount{% if foreign_debts %} <em class="optional">({{ "as in the ledger" if editing else "in the currency of the other account" }})</em>{% endif %}
     <span class="money-input">
       <span class="prefix" data-amount-prefix="{{ currency }}">{{ currency }}</span>

@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from pledger.enums import (
     AccountCheck,
     AccountType,
+    DebtRole,
     InterestFrequency,
     InvestmentType,
     MovementType,
@@ -69,6 +70,12 @@ class DebtMovementIn(MovementIn):
     remaining_as_difference: bool = False  # settle what remains with them with a Difference
     # In the currency of its debt account, when the other account is in another one (see add_debt_movement)
     amount_debt: float | None = None
+
+
+class PersonIn(BaseModel):
+    name: str
+    amount: float | None = None  # initial debt in the base currency (positive: we owe them), 0 by default
+    expected: DebtRole | None = None  # their expected role, none by default
 
 
 class ConversionIn(BaseModel):

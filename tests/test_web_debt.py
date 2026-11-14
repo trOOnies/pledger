@@ -897,3 +897,80 @@ class TestInOtherCurrencies:
         assert client.post("/api/debt/movements", json={**movement, "amount_debt": 100}).status_code == 201
         assert self.dad(LedgerStore(settings), "DeD") == 100
 
+
+
+class TestNewPerson:
+    """Adding someone to the people of the creditors YAML, from the New person form of the People tab."""
+
+    @pytest.fixture
+    def settings(self, settings, tmp_path):
+        path = tmp_path / "creditors.yaml"
+        path.write_text("# who we owe\npeople:\n  Dad: 0\nservices:\n  Gym: 0\n", encoding="utf-8")
+        with_internal(settings.base_movements_path, transfers=DEBT_YAML)
+        return replace(settings, creditors_path=path)
+
+    @pytest.fixture
+    def client(self, settings):
+        return TestClient(create_app(settings))
+
+    def test_add_person(self, settings):
+        store = LedgerStore(settings)
+        store.add_person(" Mum ")
+        store.add_person("Ana", "-1,250.5")
+        store.add_person("Bank", "50", "creditor")
+        assert settings.creditors_path.read_text() == (
+            "# who we owe\npeople:\n  Dad: 0\n  Mum: 0.0\n  Ana: -1250.5\n  Bank:\n    amount: 50.0\n"
+            "    expected: creditor\nservices:\n  Gym: 0\n"
+        )
+        de, lo, *_ = store.load().debt_accounts(kind=CreditorKind.PERSON)
+        assert de.creditors["Bank"].amount == 50 and "Bank" not in lo.creditors
+        assert lo.creditors["Ana"].amount == pytest.approx(-1250.5)
+        before = settings.creditors_path.read_text()
+        for args, error in [
+            (("Dad",), "'Dad' already exists"),
+            (("dad",), "'Dad' already exists, as 'dad' would be"),
+            (("Gym",), "'Gym' already exists"),  # a service
+            ((" ",), "The person name is required"),
+            (("A;B",), "cannot contain ';'"),
+            (("Leo", "x"), "Invalid initial debt: 'x'"),
+            (("Leo", "1", "friend"), "Unknown expected role: 'friend'"),
+            (("Leo", "-1", "creditor"), "A creditor can't start owing us"),
+            (("Leo", "1", "debtor"), "A debtor can't start owing them"),
+        ]:
+            with pytest.raises(ValueError, match=re.escape(error)):
+                store.add_person(*args)
+        assert settings.creditors_path.read_text() == before
+
+    def test_creates_the_creditors_yaml(self, settings):
+        settings.creditors_path.unlink()
+        LedgerStore(settings).add_person("Mum", "10")
+        assert settings.creditors_path.read_text() == "people:\n  Mum: 10.0\n"
+        assert LedgerStore(settings).load().debt_accounts(kind=CreditorKind.PERSON)[0].creditors["Mum"].amount == 10
+
+    def test_not_a_company(self, settings):
+        # The companies of the work history are taken too
+        settings = replace(settings, work_path=settings.ledger_path.with_name("work.csv"))
+        settings.work_path.write_text(WORK_CSV, encoding="utf-8")
+        before = settings.creditors_path.read_text()
+        with pytest.raises(ValueError, match="'Acme' already exists"):
+            LedgerStore(with_salaries(settings)).add_person("Acme")
+        assert settings.creditors_path.read_text() == before
+
+    def test_new_person_form(self, settings, client):
+        r = client.get("/debt")
+        aside = r.text.split('<aside class="column">')[1].split("</aside>")[0]
+        # Below the New debt movement form
+        assert aside.index('id="debt-form"') < aside.index('id="person-form"')
+        assert "<h2>New person</h2>" in aside and 'hx-trigger="person-added from:body"' in aside
+        r = client.post("/debt/people", data={"name": "Dad", "amount": "5"})
+        assert 'class="msg error"' in r.text and 'value="Dad"' in r.text and 'value="5"' in r.text  # kept in the form
+        r = client.post("/debt/people", data={"name": "Mum", "amount": "-20", "expected": "debtor"})
+        assert "Added Mum to the people" in r.text and 'value="Mum"' not in r.text
+        assert r.headers["HX-Trigger"] == "person-added, debt-changed"
+        # The debt movement form can be about them now
+        bases = client.get("/form/debt-bases", params={"debt_kind": "Loan"}).text
+        assert "<option >Mum</option>" in bases
+        assert client.post("/api/debt/people", json={"name": "Leo", "amount": 3}).status_code == 201
+        assert client.post("/api/debt/people", json={"name": "Leo"}).status_code == 422
+        assert client.post("/api/debt/people", json={"name": "Ana", "expected": "friend"}).status_code == 422
+        assert "Leo: 3.0" in settings.creditors_path.read_text()

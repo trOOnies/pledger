@@ -22,6 +22,7 @@ from pledger.web.templating import (
     render_form,
     render_invest_form,
     render_new_investment_form,
+    render_person_form,
     render_prices_form,
     render_service_form,
     render_service_payment_form,
@@ -114,6 +115,7 @@ def debt(request: Request, store: StoreDep, month: str | None = None, who: str =
     if is_partial(request):
         return remember_month(templates.TemplateResponse(request, "_debt.html", context), month)
     context["debt_form"] = render_debt_form(request, snapshot, {}).body.decode()
+    context["person_form"] = render_person_form(request, {}).body.decode()
     return remember_month(templates.TemplateResponse(request, "debt.html", context), month)
 
 

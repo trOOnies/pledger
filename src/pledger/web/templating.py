@@ -282,6 +282,21 @@ def render_debt_form(request: Request, snapshot: Snapshot, values: dict, **extra
     )
 
 
+def render_person_form(request: Request, values: dict, **extra):
+    """The new person form of the People tab, for the people of the creditors YAML."""
+    settings = request.app.state.store.settings
+    return templates.TemplateResponse(
+        request,
+        "_person_form.html",
+        {
+            "currency": settings.currency,
+            "path": settings.creditors_path.name if settings.creditors_path else "creditors.yaml",
+            "values": values,
+            **extra,
+        },
+    )
+
+
 def render_card_payment_form(request: Request, snapshot: Snapshot, values: dict, **extra):
     """The new card payment form of the Credit Cards tab, for the card payment base movements."""
     values.setdefault("move_date", dt.date.today().isoformat())

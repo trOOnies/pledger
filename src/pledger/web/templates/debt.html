@@ -21,8 +21,13 @@
 </form>
 
 <div class="layout">
-  <aside class="panel">
-    {{ debt_form | safe }}
+  <aside class="column">
+    <section class="panel">
+      {{ debt_form | safe }}
+    </section>
+    <section class="panel">
+      {{ person_form | safe }}
+    </section>
   </aside>
   <section id="debt-view" hx-get="/debt" hx-include="#filters, #who-filter" hx-trigger="debt-changed from:body">
     {% include "_debt.html" %}

@@ -1,4 +1,4 @@
-"""account_store.py: the accounts, result types and base movements of the YAMLs, and the balance corrections."""
+"""account_store.py: the accounts, result types and base movements of the YAMLs, the people of the creditors YAML, and the balance corrections."""
 
 from __future__ import annotations
 
@@ -8,10 +8,11 @@ from pathlib import Path
 
 import yaml
 
-from pledger.enums import AccountType, MovementType
+from pledger.enums import AccountType, CreditorKind, DebtRole, MovementType
 from pledger.models import (
     AFTER,
     CLOSING_DATES,
+    CREDITOR_SECTIONS,
     INTEREST_FREQUENCY,
     INTERNAL,
     INTERNAL_DEBTS,
@@ -272,6 +273,50 @@ class AccountStore(MovementStore):
         if credit:
             fields["credit"] = credit
         self._add_yaml_entry(self.settings.base_movements_path, section, name, fields)
+
+    def add_person(self, name: str, amount: str | float = "", expected: str = "") -> None:
+        """
+        Add a person to the `people` of the creditors YAML (created if missing), with their
+        initial debt in the base currency (positive: we owe them; negative: they owe us; 0
+        by default) and, optionally, their expected role (a DebtRole value), which the
+        initial debt must not contradict. Their name must not be taken by anyone of the
+        debt accounts, not even in another case, as the comments name them ignoring it.
+        """
+        snapshot = self.load()
+        path = self.settings.creditors_path
+        if path is None:
+            raise ValueError("No creditors YAML is set")
+        before = path.read_bytes().decode("utf-8") if path.exists() else None
+        data = yaml.safe_load(before or "") or {}
+        sections = [data.get(k.value) for k in CREDITOR_SECTIONS] if isinstance(data, dict) else []
+        taken = {n for a in snapshot.debt_accounts() for n in a.creditors}
+        taken |= {str(n) for section in sections if isinstance(section, dict) for n in section}
+        name = _check_name(name, {}, "person")
+        same = next((n for n in sorted(taken) if n.casefold() == name.casefold()), None)
+        if same is not None:
+            raise ValueError(f"{same!r} already exists" if same == name else f"{same!r} already exists, as {name!r} would be")
+        initial = _parse_number(amount, "initial debt") if str(amount).strip() else 0.0
+        role = None
+        if expected.strip():
+            try:
+                role = DebtRole(expected.strip())
+            except ValueError:
+                raise ValueError(f"Unknown expected role: {expected!r}") from None
+        if (role == DebtRole.CREDITOR and initial < 0) or (role == DebtRole.DEBTOR and initial > 0):
+            raise ValueError(
+                f"A {role.value} can't start owing {'us' if role == DebtRole.CREDITOR else 'them'}: the initial debt "
+                f"must be {'positive' if role == DebtRole.CREDITOR else 'negative'} or 0"
+            )
+        fields: float | dict = {"amount": initial, "expected": role.value} if role else initial
+        _atomic_write(path, _insert_yaml_entry(before or "", (CreditorKind.PERSON.value,), name, fields))
+        try:
+            self.load()
+        except (LedgerDataError, ValueError) as e:
+            if before is None:
+                path.unlink()
+            else:
+                _atomic_write(path, before)
+            raise ValueError(f"Could not add {name!r}: {e}") from None
 
     def _add_yaml_entry(
         self, path: Path, section: tuple[str, ...], name: str, fields: dict

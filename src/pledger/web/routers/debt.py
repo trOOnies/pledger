@@ -7,7 +7,7 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query
 
 from pledger.web.dependencies import StoreDep
-from pledger.web.schemas import DebtMovementIn
+from pledger.web.schemas import DebtMovementIn, PersonIn
 from pledger.web.store import StaleRowError
 
 router = APIRouter(prefix="/api/debt", tags=["debt"])
@@ -26,6 +26,16 @@ def create_debt_movement(store: StoreDep, movement: DebtMovementIn):
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from None
     return {"ok": True, "difference": dict(zip(("base_movement", "amount"), difference)) if difference else None}
+
+
+@router.post("/people", status_code=201)
+def create_person(store: StoreDep, person: PersonIn):
+    """Added to the people of the creditors YAML, with their initial debt in the base currency and expected role."""
+    try:
+        store.add_person(person.name, "" if person.amount is None else person.amount, person.expected.value if person.expected else "")
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
+    return {"ok": True}
 
 
 @router.delete("/movements/{index}")

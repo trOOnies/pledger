@@ -1,0 +1,33 @@
+{# The new person form of the People tab: someone added to the people of the creditors YAML. #}
+<form id="person-form" class="stack" hx-post="/debt/people" hx-swap="outerHTML">
+  <h2>New person</h2>
+  {% if error %}<p class="msg error">{{ error }}</p>{% endif %}
+  {% if success %}<p class="msg success">{{ success }}</p>{% endif %}
+  <label>Name
+    <input name="name" value="{{ values.name }}" required autocomplete="off" placeholder="e.g. Dad">
+  </label>
+  <label><span>Initial debt <em class="optional">(optional)</em></span>
+    <span class="money-input">
+      <span class="prefix">{{ currency }}</span>
+      <input name="amount" inputmode="decimal" value="{{ values.amount }}" placeholder="0.00" autocomplete="off">
+    </span>
+  </label>
+  <div class="field">
+    <span class="field-label" id="person-expected">Expected role</span>
+    <div class="segmented types" role="radiogroup" aria-labelledby="person-expected">
+      {% for value, label, title in [
+        ("", "None", "Can be in the debt and the loan accounts"),
+        ("creditor", "Creditor", "Only in the debt accounts: we owe them"),
+        ("debtor", "Debtor", "Only in the loan accounts: they owe us"),
+      ] %}
+      <label title="{{ title }}">
+        <input type="radio" name="expected" value="{{ value }}" {% if value == (values.expected or "") %}checked{% endif %}>
+        {{ label }}
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+  <p class="muted small">Added to the <code>people</code> of <code>{{ path }}</code>. The initial debt is what was
+    owed when the ledger starts, in the base currency: positive if we owe them, negative if they owe us.</p>
+  <button type="submit">Add person</button>
+</form>

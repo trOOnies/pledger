@@ -33,6 +33,7 @@ from pledger.web.templating import (
     render_form,
     render_invest_form,
     render_new_investment_form,
+    render_person_form,
     render_prices_form,
     render_service_form,
     render_service_payment_form,
@@ -629,6 +630,25 @@ def create_debt_movement(
     future = " (dated in the future)" if move_date > dt.date.today().isoformat() else ""
     response = render_debt_form(request, snapshot, keep, success=f"Added {base_movement} ({who.strip()}): {what}{future}")
     response.headers["HX-Trigger"] = "debt-changed"
+    return response
+
+
+@router.post("/debt/people")
+def create_person(
+    request: Request,
+    store: StoreDep,
+    name: Annotated[str, Form()],
+    amount: Annotated[str, Form()] = "",
+    expected: Annotated[str, Form()] = "",
+):
+    values = {"name": name, "amount": amount, "expected": expected}
+    try:
+        store.add_person(name, amount, expected)
+    except ValueError as e:
+        return render_person_form(request, values, error=str(e))
+    response = render_person_form(request, {}, success=f"Added {name.strip()} to the people")
+    # The debt movement form can be about them now, and the tables list them.
+    response.headers["HX-Trigger"] = "person-added, debt-changed"
     return response
 
 
