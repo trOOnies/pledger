@@ -1,0 +1,258 @@
+{# The Split tab (routers.split), one form whose fields keep everything until the movements are created:
+   Step 1, one table of the get-together: a column per person (you first, then the others, named in their header,
+   + adding one), a row per item with its base movement and who fronts it, and a last row of what each one put in;
+   Step 2, what you settle now with whom; Step 3, the movements of your part, to check before creating them. #}
+{% set people = [you] + values.others %}
+{% set reflecting = plan is defined and plan %}
+{% macro share_cell(r, p, value) %}
+<td class="split-share" data-share>
+  <input type="checkbox" name="items-{{ r }}-share-{{ p }}" value="on" {% if value and not values.percentages %}checked{% endif %}
+    {% if values.percentages %}hidden disabled{% endif %} aria-label="Fronts it" data-check>
+  <input name="items-{{ r }}-share-{{ p }}" inputmode="decimal" value="{{ value if values.percentages else '' }}" placeholder="0"
+    autocomplete="off" aria-label="Percentage" {% if not values.percentages %}hidden disabled{% endif %} data-percent>
+</td>
+{% endmacro %}
+{% macro base_select(r, picked) %}
+<select name="items-{{ r }}-base" aria-label="Base movement" title="The base movement of your share of it" data-split-base>
+  <option value="">Base movement…</option>
+  {% for group, names in base_groups.items() %}
+  <optgroup label="{{ group }}">
+    {% for b in names %}<option {% if b == picked %}selected{% endif %}>{{ b }}</option>{% endfor %}
+  </optgroup>
+  {% endfor %}
+</select>
+{% endmacro %}
+{% macro item_row(r, item, cells=True) %}
+<tr data-item>
+  <td><input name="items-{{ r }}-name" value="{{ item.name }}" placeholder="e.g. Pizza" autocomplete="off" aria-label="Item"></td>
+  <td>
+    <span class="money-input">
+      <span class="prefix">{{ currency }}</span>
+      <input name="items-{{ r }}-price" inputmode="decimal" value="{{ item.price }}" placeholder="0.00" autocomplete="off" aria-label="Price" data-money>
+    </span>
+  </td>
+  <td>{{ base_select(r, item.base) }}</td>
+  {% if cells %}{% for p in range(people | length) %}{{ share_cell(r, p, item.shares[p] if p < item.shares | length else "") }}{% endfor %}{% endif %}
+  <td data-spacer></td>
+  <td class="num split-sum" data-sum {% if not values.percentages %}hidden{% endif %}></td>
+  <td><button type="button" class="icon" title="Remove item" aria-label="Remove this item" data-remove-item>&times;</button></td>
+</tr>
+{% endmacro %}
+{% macro paid_cell(value) %}
+<td data-paid>
+  <span class="money-input">
+    <span class="prefix">{{ currency }}</span>
+    <input name="paid" inputmode="decimal" value="{{ value }}" placeholder="0.00" autocomplete="off" aria-label="Put in" data-money>
+  </span>
+</td>
+{% endmacro %}
+{% macro other_header(name) %}
+<th class="split-share" data-person data-other>
+  <span class="split-name">
+    <input name="others" value="{{ name }}" required autocomplete="off" placeholder="Name" aria-label="Name" list="split-people">
+    <button type="button" class="icon" title="Remove this person (their column)" aria-label="Remove this person" data-remove-person>&times;</button>
+  </span>
+</th>
+{% endmacro %}
+{% macro account_select(name, picked, label) %}
+<select name="{{ name }}" aria-label="{{ label }}">
+  <option value="">Account…</option>
+  {% for group, names in account_groups.items() %}
+  <optgroup label="{{ group }}">
+    {% for acc in names %}<option {% if acc == picked %}selected{% endif %}>{{ acc }}</option>{% endfor %}
+  </optgroup>
+  {% endfor %}
+</select>
+{% endmacro %}
+{% if created is defined and created %}
+<p class="msg success" role="status">Created {{ created.movements | length }} movement{{ "s" if created.movements | length != 1 }} in the
+  <a href="/">ledger</a>{% if created.new_people %}, and added {{ created.new_people | join(", ") }} to <a href="/debt">People</a>{% endif %}.</p>
+{% endif %}
+<form id="split-form" class="stack split" hx-post="/split" hx-target="#split" data-split-form data-max-others="{{ max_others }}">
+  <datalist id="split-people">{% for p in people_names %}<option value="{{ p }}">{% endfor %}</datalist>
+
+  <section class="panel stack" data-step1 {% if reflecting %}inert{% endif %}>
+    <div class="form-head">
+      <h2>Step 1: What was meant vs What was paid</h2>
+      <label class="check" title="Split each item in percentages instead of evenly among who fronts it">
+        <input type="checkbox" name="percentages" value="true" {% if values.percentages %}checked{% endif %} data-percentages> Percentages
+      </label>
+    </div>
+    {% if error %}<p class="msg error">{{ error }}</p>{% endif %}
+    <div class="table-scroll">
+    <table class="split-table">
+      <thead><tr>
+        <th>Item</th><th class="split-price">Price</th>
+        <th class="split-base" title="The base movement of your share of each item: only needed for those you have a share in">Base movement</th>
+        <th class="split-share" data-person><span class="split-you">{{ you }}</span></th>
+        {% for name in values.others %}{{ other_header(name) }}{% endfor %}
+        <th class="split-add"><button type="button" class="icon" title="Add a person (up to {{ max_others }} besides you)"
+          aria-label="Add a person" data-add-person {% if values.others | length >= max_others %}disabled{% endif %}>+</button></th>
+        <th class="num" data-sum {% if not values.percentages %}hidden{% endif %} title="Each row must add up to 100%">Total</th>
+        <th></th>
+      </tr></thead>
+      <tbody data-items>
+        {% for item in values["items"] %}{{ item_row(loop.index, item) }}{% endfor %}
+      </tbody>
+      <tfoot>
+        <tr data-paid-row>
+          <th colspan="3" title="What each one actually put into the tab">Put in</th>
+          {% for name in people %}{{ paid_cell(values.paid[loop.index0] if loop.index0 < values.paid | length else "") }}{% endfor %}
+          <td data-spacer></td><td data-sum {% if not values.percentages %}hidden{% endif %}></td><td></td>
+        </tr>
+      </tfoot>
+    </table>
+    </div>
+    <div class="split-actions">
+      <button type="button" class="secondary" data-add-item>+ Item</button>
+      <p class="small"><span class="muted">Items</span> <strong class="money" data-items-total></strong>
+        · <span class="muted">Put in</span> <strong class="money" data-paid-total></strong></p>
+    </div>
+    <p class="muted small" data-hint-even {% if values.percentages %}hidden{% endif %}>Check who fronts each item: it is split
+      evenly among them. Name each person in their column; + adds one, &times; removes theirs. The base movement is
+      that of your share, so only needed where you have one.</p>
+    <p class="muted small" data-hint-percent {% if not values.percentages %}hidden{% endif %}>The percentages of each item
+      must add up to 100%, none negative. Name each person in their column; + adds one, &times; removes theirs. The base
+      movement is that of your share, so only needed where you have one.</p>
+    <div><button type="submit" name="action" value="split">Split</button></div>
+
+    {% if result %}
+    <div class="split-result" data-result>
+      <div>
+        <h3>Who pays whom <small class="muted">tab of <span class="money">{{ (result.total / 100) | money }}</span></small></h3>
+        {% if result.transfers %}
+        <ul class="split-transfers">
+          {% for t in result.transfers %}
+          <li><strong>{{ t.from }}</strong> {{ "pay" if t.from == you else "pays" }} <strong>{{ t.to }}</strong>
+            <span class="money">{{ (t.cents / 100) | money }}</span></li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="msg success">Everyone is even: no one owes anyone.</p>
+        {% endif %}
+        <p class="muted small">Whoever owes the most pays whoever is owed the most, until everyone is even.</p>
+      </div>
+      <div class="table-scroll">
+      <table>
+        <thead><tr><th>Who</th><th class="num" title="Their part of the items">Fronts</th><th class="num" title="What they put into the tab">Put in</th>
+          <th class="num" title="What they get back (negative: what they owe)">Balance</th><th>To settle</th></tr></thead>
+        <tbody>
+          {% for p in result.people %}
+          <tr>
+            <td class="nowrap"><strong>{{ p.name }}</strong></td>
+            <td class="num money">{{ (p.owes / 100) | money }}</td>
+            <td class="num money">{{ (p.paid / 100) | money }}</td>
+            <td class="num money {{ 'gain' if p.balance > 0 else ('loss' if p.balance < 0) }}">{{ (p.balance / 100) | money }}</td>
+            <td>
+              {% set pays = result.transfers | selectattr("from", "equalto", p.name) | list %}
+              {% set gets = result.transfers | selectattr("to", "equalto", p.name) | list %}
+              {% for t in pays %}{{ "Pay" if p.name == you else "Pays" }} {{ t.to }} <span class="money">{{ (t.cents / 100) | money }}</span>{% if not loop.last %}; {% endif %}{% endfor %}
+              {% for t in gets %}{{ "Get" if p.name == you else "Gets" }} <span class="money">{{ (t.cents / 100) | money }}</span> from {{ t.from }}{% if not loop.last %}; {% endif %}{% endfor %}
+              {% if not pays and not gets %}<span class="muted">Even</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      </div>
+    </div>
+    {% endif %}
+    <p class="msg warn small" data-stale hidden>Step 1 changed: press <strong>Split</strong> again to settle it.</p>
+  </section>
+
+  {% if result %}
+  {% set yours = result.people[0] %}
+  <section class="panel stack" data-step2 {% if reflecting %}inert{% endif %}>
+    <h2>Step 2: Settling differences</h2>
+    {% if settle_error is defined and settle_error %}<p class="msg error">{{ settle_error }}</p>{% endif %}
+    <div class="split-details">
+      <label>Date
+        <input type="date" name="date" value="{{ values.date }}" required data-future-warning>
+        <span class="hint warn" hidden>⚠️ This date is in the future.</span>
+      </label>
+      <label><span>Description <em class="optional">(optional)</em></span>
+        <input name="description" value="{{ values.description }}" placeholder="e.g. Friday dinner" autocomplete="off">
+      </label>
+      {% if yours.paid %}
+      <label><span>You paid <span class="money">{{ (yours.paid / 100) | money }}</span> from</span>
+        {{ account_select("paid_from", values.paid_from, "You paid from") }}
+      </label>
+      {% else %}
+      <p class="muted small">You put nothing into the tab: no account to pay it from.</p>
+      {% endif %}
+    </div>
+    {% if settling %}
+    <div class="table-scroll">
+    <table class="split-settling">
+      <thead><tr><th>Who</th><th>In pledger</th><th class="num">Owed</th>
+        <th title="What is paid now: the rest stays owed, in the People tab">Paid now</th><th>Account</th></tr></thead>
+      <tbody>
+        {% for s in settling %}
+        <tr>
+          <td class="nowrap"><strong>{{ s.existing or s.who }}</strong>
+            <input type="hidden" name="settle-{{ loop.index }}-who" value="{{ s.who }}"></td>
+          <td>{% if s.existing %}<span class="badge gain">In People</span>{% else %}<span class="badge transfer" title="Added to the People tab when the movements are created">New: added to People</span>{% endif %}</td>
+          <td class="num nowrap">{% if s.owes_you %}Owes you{% else %}You owe{% endif %} <span class="money">{{ (s.cents / 100) | money }}</span></td>
+          <td>
+            <span class="money-input">
+              <span class="prefix">{{ currency }}</span>
+              <input name="settle-{{ loop.index }}-amount" inputmode="decimal" value="{{ s.amount }}" placeholder="0.00" autocomplete="off"
+                aria-label="{{ 'What they pay you now' if s.owes_you else 'What you pay them now' }}" data-money>
+            </span>
+          </td>
+          <td class="nowrap"><span class="muted small">{{ "into" if s.owes_you else "from" }}</span>
+            {{ account_select("settle-%d-account" % loop.index, s.account, "Account the money goes into" if s.owes_you else "Account the money comes from") }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <p class="muted small">What isn't paid now stays as a debt (you owe them) or a loan (they owe you) in the
+      <a href="/debt">People</a> tab. An account is only needed for an amount that isn't 0.00.</p>
+    {% else %}
+    <p class="muted">You are even with everyone: there is nothing to settle.</p>
+    {% endif %}
+    <div><button type="submit" name="action" value="process">Process all</button></div>
+  </section>
+  {% endif %}
+
+  {% if reflecting %}
+  <section class="panel stack" data-step3>
+    <h2>Step 3: Reflect with movements</h2>
+    {% if plan.new_people %}
+    <p class="msg warn small">Added to <a href="/debt">People</a> when you create the movements, with nothing owed before
+      this: <strong>{{ plan.new_people | join(", ") }}</strong>.</p>
+    {% endif %}
+    {% if plan.movements %}
+    <div class="table-scroll">
+    <table>
+      <thead><tr><th>Date</th><th>Base movement</th><th>Debit</th><th>Credit</th><th class="num">Amount</th><th>Comment</th></tr></thead>
+      <tbody>
+        {% for m in plan.movements %}
+        <tr>
+          <td class="nowrap">{{ values.date }}</td>
+          <td class="nowrap">{{ m.base_movement }}</td>
+          <td>{{ m.acc_debit }}</td>
+          <td>{{ m.acc_credit }}</td>
+          <td class="num money">{{ (m.cents / 100) | money }}</td>
+          <td class="money">{{ m.comment }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+    <p class="muted">There are no movements to create: you have no share in any item and put nothing in.</p>
+    {% endif %}
+    <div class="split-actions">
+      <button type="submit" class="secondary" name="action" value="settle" formnovalidate>Return to Settling</button>
+      {% if plan.movements %}<button type="submit" name="action" value="create">Create movements</button>{% endif %}
+    </div>
+  </section>
+  {% endif %}
+
+  <template data-item-template>{{ item_row("__r__", {"name": "", "price": "", "shares": [], "base": ""}, cells=False) }}</template>
+  <template data-cell-template>{{ share_cell("__r__", "__p__", "") }}</template>
+  <template data-other-template>{{ other_header("") }}</template>
+  <template data-paid-template>{{ paid_cell("") }}</template>
+</form>

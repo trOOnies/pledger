@@ -81,17 +81,24 @@ class MovementStore(StoreBase):
         Check these rows of a CSV of movements, then append them to it together, or none of
         them. The ledger CSV gets its INSTALLMENTS_COLUMN with the first row that needs it.
         """
-        path, what, prefix = self._movement_file(field)
+        path, _, prefix = self._movement_file(field)
         frame = getattr(snapshot, field)
         if field == "rows" and INSTALLMENTS_COLUMN not in frame.columns and any(r.get(INSTALLMENTS_COLUMN) for r in new_rows):
             self._add_column(path, len(frame), INSTALLMENTS_COLUMN)
             frame = frame.assign(**{INSTALLMENTS_COLUMN: ""})
             snapshot = replace(snapshot, rows=frame)
+        new_rows = self._check_rows(snapshot, field, new_rows)
+        self._write_file(self._appended(path, prefix, new_rows, list(frame.columns)))
+
+    def _check_rows(self, snapshot, field: str, new_rows: list[dict]) -> list[dict]:
+        """These rows of a CSV of movements fitted to its columns, once the ledger with them checks out, without writing them."""
+        _, what, _ = self._movement_file(field)
+        frame = getattr(snapshot, field)
         new_rows = [_fit_row(row, frame.columns, what) for row in new_rows]
         changed = replace(snapshot, **{field: concat([frame, DataFrame(new_rows)], ignore_index=True)})
         changed.ledger().check_accounts()
         changed.investment_accounts()  # e.g. not selling more than is held
-        self._write_file(self._appended(path, prefix, new_rows, list(frame.columns)))
+        return new_rows
 
     def delete(
         self, index: int, fingerprint: str | None = None, debt: bool = False, card_payment: bool = False,

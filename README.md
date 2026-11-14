@@ -35,6 +35,7 @@ web app.
   - [Budget](#budget)
   - [Cart](#cart)
   - [Trip](#trip)
+  - [Split](#split)
   - [Base movements and internal movements](#base-movements-and-internal-movements)
   - [Currencies and inflation](#currencies-and-inflation)
   - [Investments](#investments)
@@ -84,6 +85,7 @@ A FastAPI + HTMX UI, one tab per area:
 | 🛒 **Cart** | Many movements at once: a purchase at a store on a date, paid from an account, with its products in bags of a base movement (and installments, with a credit card). The carts are listed, edited and deleted here. See [Cart](#cart). |
 | 🎯 **Budget** | Monthly budgets by loss base movement against what was spent, and saving goals tracking the balance of an account. See [Budget](#budget). |
 | ✈️ **Trip** | The planned expenses of a trip, in any currency, against what was spent on it in the ledger. See [Trip](#trip). |
+| 🧾 **Split** | Splits the tab of a get-together among you and up to 7 more, says who pays whom, settles what is paid now and creates the movements of your part, debts and loans included. See [Split](#split). |
 | 🔍 **Audit** | Fill in the balances you checked by hand, without seeing pledger's, then compare them with the actual ones and, if you want, add a correction for each difference. |
 | ❓ **Help** | The concepts, explained for everyday users, in sections with an index and Previous and Next links. |
 
@@ -363,6 +365,45 @@ from the Monday of the week the trip starts to the first Monday after it ends, s
 dated by day a few days around the trip count too. Before it starts, the tab shows what to set
 aside each month. Nothing here adds movements to the ledger, and saving a trip with the name of
 another updates it, keeping its expenses.
+
+### Split
+
+The Split tab takes a get-together (a night out, a dinner...) with you and 1 to 7 more people to
+the ledger, in three steps. Nothing is written until the last one.
+
+**Step 1: What was meant vs What was paid.** One table: a column per person, named in its header
+(*+* adds one, up to 7 besides you, and the *×* of its header removes it), and a row per item, with
+its name, price and **base movement** (a loss one, that of your share: only needed for the items
+you have a share in; a new row takes the one above), fronted by the people checked in it, evenly;
+with *Percentages*, each row takes a percentage per person instead, none negative and adding up to
+100%. Its last row is what each one actually put into the tab, which must add up to the items.
+*Split* shows what each one fronts, put in and gets back, and the transfers that settle it:
+whoever owes the most pays whoever is owed the most, until everyone is even, so there is at most
+one transfer fewer than people. The amounts are split in cents, the ones left by rounding going
+to the first people. Changing the table afterwards asks to split it again.
+
+**Step 2: Settling differences.** The date and an optional description of the movements, the
+account you paid from (only if you put something in), and for each transfer with you (the others
+aren't yours) what is paid now, 0.00 by default, and the account it goes into (they pay you) or
+comes out of (you pay them), only needed if it isn't 0.00. Each one is tagged as *In People* or
+*New: added to People*, matching the names of the People tab ignoring case; a service or a company
+can't be in a split.
+
+**Step 3: Reflect with movements.** *Process all* lists the movements, checked like any other,
+with Steps 1 and 2 locked: *Return to Settling* goes back to Step 2, and *Create movements*
+creates them all together, adding the new people to `creditors.yaml` first (with nothing owed
+before; if the movements can't be created, they aren't added either). With P what you put in and C
+your share of the items:
+- Your share of each item is a movement of its base movement. If P ≥ C, out of the account you
+  paid from; else out of it up to P, then out of the debt account of the people (`De`) for what
+  each one you owe paid for you, naming them, so an item can be in two movements.
+- If P > C, a `Loan - Given` out of the account you paid from to each one who owes you.
+- What is paid now is a `Loan - Collected` (they pay you) or a `Debt - Paid` (you pay them); the
+  rest stays owed, in the People tab.
+
+The comments are the description and the item (or the item), and the description (or `Split`)
+for the debts and loans, naming who they are about first. `POST /api/split` takes Step 1, with the
+shares of each item as numbers (1 or 0, or the percentages), and answers in cents, saving nothing.
 
 ### Base movements and internal movements
 

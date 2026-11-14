@@ -78,6 +78,20 @@ class PersonIn(BaseModel):
     expected: DebtRole | None = None  # their expected role, none by default
 
 
+class SplitItemIn(BaseModel):
+    name: str
+    price: float
+    # Per person, the user first: 1 if they front it (0 if not), or their percentage with `percentages`
+    shares: list[float]
+
+
+class SplitIn(BaseModel):
+    others: list[str]  # the other people, 1 to 7, besides the user
+    items: list[SplitItemIn]
+    paid: list[float]  # what each one put into the tab, the user first
+    percentages: bool = False
+
+
 class ConversionIn(BaseModel):
     move_date: str
     base_movement: str  # a transfer

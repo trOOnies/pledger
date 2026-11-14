@@ -44,7 +44,7 @@ class TestPages:
             ("Info", ["/accounts", "/currencies", "/results"]),
             ("Revenue", ["/work", "/investments"]),
             ("Debt", ["/debt", "/services", "/credit-cards"]),  # People, Services and Credit Cards
-            ("Other", ["/cart", "/trip"]),
+            ("Other", ["/cart", "/trip", "/split"]),
         ]
         # The section of the tab open stands out, and the tab in it
         assert [current for current, _, _ in sections] == ["", "", "current", ""]

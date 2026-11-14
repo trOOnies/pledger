@@ -295,6 +295,49 @@ main { padding: 1rem 1.5rem 2rem; max-width: 1840px; width: 100%; margin: 0 auto
 .cart-product { display: grid; grid-template-columns: minmax(0, 1fr) minmax(7rem, 9rem) auto; gap: .4rem; align-items: center; }
 .cart-products { gap: .4rem; }
 .cart-bag-actions { display: flex; justify-content: space-between; gap: .5rem; }
+/* The Split tab: one table, a column per person named in its header, filling the width, and the result
+   below it: on a wide window (e.g. a full 1920px one) the transfers beside what each one fronts and put in */
+#split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; min-width: 0; }
+.split [inert] { opacity: .6; }  /* Steps 1 and 2 while their movements are checked in Step 3 */
+.split-result h3 { margin: 0 0 .5rem; font-size: 1rem; }
+.split-table th.split-base { width: 13rem; }
+.split-table select { min-width: 9rem; }
+/* Step 2: the date, description and account in a row on a wide window, one under the other on a narrower one */
+.split-details { display: grid; grid-template-columns: minmax(0, 1fr); gap: .75rem; }
+@media (min-width: 1201px) { .split-details { grid-template-columns: 12rem minmax(0, 1fr) minmax(0, 1fr); align-items: end; } }
+.split-settling select { width: auto; min-width: 10rem; }
+.split-settling .money-input { max-width: 10rem; }
+.split-result { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; align-items: start; }
+@media (min-width: 1201px) { .split-result { grid-template-columns: minmax(18rem, 1fr) minmax(0, 2fr); } }
+.split-table th, .split-table td { vertical-align: middle; }
+/* The item takes what the fixed columns leave */
+.split-table td:first-child input { min-width: 8rem; }
+.split-table th.split-price { width: 9rem; }
+.split-table .money-input { min-width: 6.5rem; }
+.split-table th.split-share { width: 9rem; }
+.split-share { text-align: center; }
+.split-name { display: flex; align-items: center; gap: .2rem; }
+.split-name input { min-width: 5rem; font-weight: 600; }
+.split-you { display: block; padding: .4rem .5rem; }
+.split-add, .split-table th:last-child { width: 1%; }
+.split-table th[data-sum] { width: 4.5rem; }
+@media (max-width: 1200px) {
+  /* Half of a 1920px window, beside the tabs bar: you and 3 more fit, more scroll sideways */
+  .split-table th.split-share { width: 6rem; }
+  .split-table th.split-base { width: 10rem; }
+  .split-table th.split-price { width: 7rem; }
+  .split-name input { min-width: 4rem; }
+  .split-table td:first-child input { min-width: 6.5rem; }
+  .split-table th, .split-table td { padding: .3rem .25rem; }
+}
+.split-add button.icon { font-size: 1.2rem; font-weight: 600; color: var(--accent); }
+.split-add button.icon:disabled { color: var(--muted); cursor: not-allowed; }
+.split-share input[data-percent] { width: 4.5rem; text-align: right; }
+.split-actions { display: flex; justify-content: space-between; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.split-actions button { width: auto; }
+.split-actions p { margin: 0; }
+.split-sum.warn, .split [data-paid-total].warn { color: var(--warn); font-weight: 600; }
+.split-transfers { margin: 0 0 1rem; padding-left: 1.25rem; font-size: 1.05rem; line-height: 1.8; }
 .cart-total { margin: 0; display: flex; justify-content: space-between; align-items: baseline; }
 tr.selected > td { background: var(--accent-bg, rgba(127, 127, 127, .08)); }
 #view, #audit, #budget, #trip, #cart, .layout > .view, main > .view, #debt-view > .view, #credit-cards-view > .view, #services-view > .view {

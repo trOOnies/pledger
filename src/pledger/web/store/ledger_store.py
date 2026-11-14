@@ -12,8 +12,9 @@ from pledger.web.store.investment_store import InvestmentStore
 from pledger.web.store.linked_store import LinkedStore
 from pledger.web.store.plan_store import PlanStore
 from pledger.web.store.service_store import ServiceStore
+from pledger.web.store.split_store import SplitStore
 from pledger.web.store.work_store import WorkStore
 
 
-class LedgerStore(AccountStore, AuditStore, LinkedStore, InvestmentStore, ConversionStore, CurrencyStore, WorkStore, ServiceStore, EstimateStore, PlanStore, CartStore):
+class LedgerStore(AccountStore, AuditStore, LinkedStore, InvestmentStore, ConversionStore, CurrencyStore, WorkStore, ServiceStore, EstimateStore, PlanStore, CartStore, SplitStore):
     """Reads and writes the ledger files. The files are the source of truth. Each part of it is in its own class (see StoreBase)."""

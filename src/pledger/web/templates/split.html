@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+{% block title %}Split · pledger{% endblock %}
+{% block content %}
+<div id="split">
+  {% include "_split.html" %}
+</div>
+<script>
+  // Step 1 of the split form (data-split-form): a column per person (data-person: a header, a cell in each item
+  // and one in what they put in), added with + and removed with the x of its header, and a row per
+  // item, all in the browser; its fields are renumbered (items-<r>-..., -share-<p>, p 0 for the user)
+  // in their order, as the server reads them.
+  (() => {
+    const amountOf = (input) => Number((input.value || "").replace(/,/g, "")) || 0;
+    const currency = {{ currency | tojson }};
+    const format = (value) => (value < 0 ? "-" : "") + currency + (/[a-z]$/i.test(currency) ? " " : "")
+      + Math.abs(value).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    // A new element from a template: a row, or a cell of one.
+    function fromTemplate(form, which, r = "") {
+      const html = form.querySelector(`template[data-${which}-template]`).innerHTML.replaceAll("__r__", r);
+      const holder = document.createElement(which === "item" ? "tbody" : "tr");
+      holder.innerHTML = html.trim();
+      return holder.firstElementChild;
+    }
+
+    const percentages = (form) => form.querySelector("[data-percentages]").checked;
+    const others = (form) => [...form.querySelectorAll("thead [data-other]")];
+    const rows = (form) => [...form.querySelectorAll("[data-items] > [data-item]")];
+
+    // Checkboxes or percentages in the cells of who fronts an item.
+    function setMode(cell, percent) {
+      const check = cell.querySelector("[data-check]"), field = cell.querySelector("[data-percent]");
+      check.hidden = check.disabled = percent;
+      field.hidden = field.disabled = !percent;
+    }
+
+    function shareCell(form) {
+      const cell = fromTemplate(form, "cell");
+      setMode(cell, percentages(form));
+      return cell;
+    }
+
+    // The field names in their order, the placeholders of the names and what can be added or removed.
+    function refresh(form) {
+      others(form).forEach((th, i) => { th.querySelector("input").placeholder = `Person ${i + 1}`; });
+      rows(form).forEach((row, i) => {
+        const r = i + 1;
+        row.querySelectorAll("[name^=items-]").forEach((field) => {
+          field.name = field.name.replace(/^items-[^-]+-/, `items-${r}-`);
+        });
+        row.querySelectorAll("[data-share]").forEach((cell, p) => {
+          cell.querySelectorAll("input").forEach((field) => { field.name = `items-${r}-share-${p}`; });
+        });
+      });
+      form.querySelector("[data-add-person]").disabled = others(form).length >= Number(form.dataset.maxOthers);
+      form.querySelectorAll("[data-remove-person]").forEach((b) => { b.disabled = others(form).length <= 1; });
+      totals(form);
+    }
+
+    function totals(form) {
+      const percent = percentages(form);
+      let items = 0;
+      rows(form).forEach((row) => {
+        items += amountOf(row.querySelector("input[name$=-price]"));
+        const sum = [...row.querySelectorAll("[data-percent]")].reduce((s, i) => s + amountOf(i), 0);
+        const cell = row.querySelector("[data-sum]");
+        cell.textContent = `${Math.round(sum * 100) / 100}%`;
+        cell.classList.toggle("warn", percent && Math.abs(sum - 100) > 0.005);
+      });
+      const paid = [...form.querySelectorAll("[data-paid] input")].reduce((s, i) => s + amountOf(i), 0);
+      form.querySelector("[data-items-total]").textContent = format(items);
+      const put = form.querySelector("[data-paid-total]");
+      put.textContent = format(paid);
+      put.classList.toggle("warn", Math.round(items * 100) !== Math.round(paid * 100));
+      if (typeof maskMoney === "function" && document.documentElement.classList.contains("hide-money")) {
+        form.querySelectorAll("[data-items-total], [data-paid-total]").forEach((el) => delete el.dataset.masked);
+        maskMoney(form);
+      }
+    }
+
+    // Checkboxes to percentages: those checked share the row evenly (in hundredths, the rest to the
+    // first ones); back, whoever has a percentage fronts it.
+    function toggle(form) {
+      const percent = percentages(form);
+      rows(form).forEach((row) => {
+        const cells = [...row.querySelectorAll("[data-share]")];
+        if (percent) {
+          const checked = cells.filter((c) => c.querySelector("[data-check]").checked);
+          const each = Math.floor(10000 / (checked.length || 1));
+          cells.forEach((c) => { c.querySelector("[data-percent]").value = ""; });
+          checked.forEach((c, i) => {
+            c.querySelector("[data-percent]").value = (each + (i < 10000 - each * checked.length ? 1 : 0)) / 100;
+          });
+        } else {
+          cells.forEach((c) => { c.querySelector("[data-check]").checked = amountOf(c.querySelector("[data-percent]")) > 0; });
+        }
+        cells.forEach((c) => setMode(c, percent));
+      });
+      form.querySelectorAll("[data-sum]").forEach((el) => { el.hidden = !percent; });
+      form.querySelector("[data-hint-even]").hidden = percent;
+      form.querySelector("[data-hint-percent]").hidden = !percent;
+      totals(form);
+    }
+
+    function addItem(form) {
+      const last = rows(form).at(-1);
+      const row = fromTemplate(form, "item", rows(form).length + 1);
+      // The base movement of the one above, as the items of a night out are often alike
+      if (last) row.querySelector("[data-split-base]").value = last.querySelector("[data-split-base]").value;
+      const spacer = row.querySelector("[data-spacer]");
+      for (let p = 0; p <= others(form).length; p++) spacer.before(shareCell(form));
+      row.querySelector("[data-sum]").hidden = !percentages(form);
+      form.querySelector("[data-items]").append(row);
+      refresh(form);
+      row.querySelector("input").focus();
+    }
+
+    // A column: its header (its name) before the +, a cell in each item and one in what they put in.
+    function addPerson(form) {
+      if (others(form).length >= Number(form.dataset.maxOthers)) return;
+      const th = fromTemplate(form, "other");
+      form.querySelector("thead [data-add-person]").closest("th").before(th);
+      rows(form).forEach((row) => row.querySelector("[data-spacer]").before(shareCell(form)));
+      form.querySelector("[data-paid-row] [data-spacer]").before(fromTemplate(form, "paid"));
+      refresh(form);
+      th.querySelector("input").focus();
+    }
+
+    function removePerson(form, th) {
+      if (others(form).length <= 1) return;
+      const p = [...form.querySelectorAll("thead [data-person]")].indexOf(th);
+      th.remove();
+      rows(form).forEach((row) => row.querySelectorAll("[data-share]")[p].remove());
+      form.querySelectorAll("[data-paid-row] [data-paid]")[p].remove();
+      refresh(form);
+    }
+
+    document.addEventListener("click", (e) => {
+      const form = e.target.closest("form[data-split-form]");
+      if (!form) return;
+      if (e.target.closest("[data-step1] button[type=button]")) stale(form, e.target);
+      if (e.target.closest("[data-add-item]")) addItem(form);
+      else if (e.target.closest("[data-remove-item]")) {
+        e.target.closest("[data-item]").remove();
+        if (!rows(form).length) addItem(form);
+        refresh(form);
+      } else if (e.target.closest("[data-add-person]")) addPerson(form);
+      else if (e.target.closest("[data-remove-person]")) removePerson(form, e.target.closest("[data-other]"));
+    });
+
+    // Enter in the last item adds another one, rather than splitting.
+    document.addEventListener("keydown", (e) => {
+      const input = e.target;
+      if (e.key !== "Enter" || !input.matches("form[data-split-form] [data-items] input:not([type=checkbox])")) return;
+      if (input.closest("[data-item]").nextElementSibling) return;
+      e.preventDefault();
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      addItem(input.form);
+    });
+
+    // Once split, changing Step 1 leaves Steps 2 and 3 behind it, until it is split again.
+    function stale(form, target) {
+      if (!target.closest("[data-step1]") || !form.querySelector("[data-step2]")) return;
+      form.querySelectorAll("[data-result], [data-step2], [data-step3]").forEach((el) => { el.hidden = true; });
+      form.querySelector("[data-stale]").hidden = false;
+    }
+
+    document.addEventListener("change", (e) => {
+      const form = e.target.closest("form[data-split-form]");
+      if (!form) return;
+      if (e.target.matches("[data-percentages]")) toggle(form);
+      else totals(form);
+      stale(form, e.target);
+    });
+    document.addEventListener("input", (e) => {
+      const form = e.target.closest("form[data-split-form]");
+      if (!form) return;
+      totals(form);
+      stale(form, e.target);
+    });
+    const init = () => document.querySelectorAll("form[data-split-form]").forEach(refresh);
+    document.addEventListener("DOMContentLoaded", init);
+    document.addEventListener("htmx:afterSettle", init);
+  })();
+</script>
+{% endblock %}
