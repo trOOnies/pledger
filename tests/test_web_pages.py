@@ -29,13 +29,14 @@ from pledger.web.views import (
 
 
 class TestPages:
-    def test_ledger_is_opened_from_the_logo(self, client):
-        for path, current in (("/", True), ("/accounts", False)):
+    def test_dashboard_is_opened_from_the_logo(self, client):
+        for path, current in (("/", True), ("/accounts", False), ("/ledger", False)):
             header = client.get(path).text.split("</header>")[0]
             brand = header.split('<a class="brand"')[1].split("</a>")[0]
-            assert 'href="/"' in brand and "favicon.svg" in brand and brand.endswith(">pledger")
+            assert 'href="/"' in brand and 'title="Dashboard"' in brand and "favicon.svg" in brand and brand.endswith(">pledger")
             assert ('aria-current="page"' in brand) == current
-            assert ">Ledger</a>" not in header and 'href="/accounts"' in header
+            assert ">Dashboard</a>" not in header and 'href="/accounts"' in header
+        assert 'href="/ledger" aria-current="page">Ledger</a>' in client.get("/ledger").text
 
     def test_tabs_are_in_sections(self, client):
         header = client.get("/services").text.split("</header>")[0]
@@ -49,19 +50,19 @@ class TestPages:
         # The section of the tab open stands out, and the tab in it
         assert [current for current, _, _ in sections] == ["", "", "current", ""]
         assert 'href="/services" aria-current="page"' in header and ">People</a>" in header
-        # Audit, Budget, Help and the API aren't in a section
-        assert re.search(r'</div>\s*<a href="/audit" >Audit</a>\s*<a href="/budget" >Budget</a>\s*<a href="/help" >Help</a>\s*<a href="/docs" target="_blank" rel="noopener">API</a>\s*</nav>', header)
+        # Audit, Budget, Ledger, Help and the API aren't in a section
+        assert re.search(r'</div>\s*<a href="/audit" >Audit</a>\s*<a href="/budget" >Budget</a>\s*<a href="/ledger" >Ledger</a>\s*<a href="/help" >Help</a>\s*<a href="/docs" target="_blank" rel="noopener">API</a>\s*</nav>', header)
 
     def test_comments_are_hidden_with_the_amounts(self, client):
         client.post("/movements", data={
             "move_date": "2026-02-01", "move_type": "loss", "base_movement": "Food", "acc_debit": "Eq", "acc_credit": "Ca",
             "amount": "1", "comment": "secret note",
         })
-        assert '<td class="muted money comment">secret note</td>' in client.get("/", params={"month": ""}).text
-        assert 'title="Hide amounts and comments"' in client.get("/").text
+        assert '<td class="muted money comment">secret note</td>' in client.get("/ledger", params={"month": ""}).text
+        assert 'title="Hide amounts and comments"' in client.get("/ledger").text
 
     def test_index(self, client):
-        r = client.get("/")
+        r = client.get("/ledger")
         assert r.status_code == 200
         assert "New movement" in r.text
         assert "$1,000.50" in r.text
@@ -135,37 +136,37 @@ class TestPages:
         with settings.ledger_path.open("a") as f:
             f.write("2026-02-01;Food;Eq;100;Ca;\n")
         client.get("/results", params={"month": "2026-02"})
-        for path in ["/", "/accounts", "/results"]:
+        for path in ["/ledger", "/accounts", "/results"]:
             assert '<option value="2026-02" selected>' in client.get(path).text, path
         # An explicit "All time" is remembered too
         client.get("/accounts", params={"month": ""})
-        assert '<option value="2026-02" selected>' not in client.get("/").text
+        assert '<option value="2026-02" selected>' not in client.get("/ledger").text
         # Months without movements, or malformed ones, are ignored
         client.cookies.set("pledger_month", "2030-01")
         assert "as of end of" not in client.get("/accounts").text
-        assert client.get("/", params={"month": "<x>"}).status_code == 200
+        assert client.get("/ledger", params={"month": "<x>"}).status_code == 200
 
     def test_visibility_toggle_marks_the_amounts(self, client):
         for path in ["/", "/accounts", "/results", "/investments", "/debt"]:
             r = client.get(path)
             assert 'id="visibility"' in r.text and 'class="eye-closed"' in r.text, path
-        r = client.get("/")
+        r = client.get("/ledger")
         assert '<td class="num money" data-sort="10.0">$10.00</td>' in r.text
         assert 'data-confirm-money="$10.00"' in r.text  # masked in the delete question too
         assert 'class="total money"' in client.get("/results").text
 
     def test_currency_setting(self, settings):
         client = TestClient(create_app(replace(settings, currency="ARS")))
-        assert "ARS 1,000.50" in client.get("/").text
+        assert "ARS 1,000.50" in client.get("/ledger").text
 
     def test_index_partial_for_htmx(self, client):
-        r = client.get("/", params={"month": "2026-01", "account": "Ca"}, headers=HTMX)
+        r = client.get("/ledger", params={"month": "2026-01", "account": "Ca"}, headers=HTMX)
         assert r.status_code == 200
         assert "<html" not in r.text
         assert "Salary" not in r.text.split("<tbody>")[1]  # Salary doesn't touch Ca
 
     def test_form_picks_type_then_base_movement(self, client):
-        r = client.get("/")
+        r = client.get("/ledger")
         form = r.text.split('id="movement-form"')[1].split("</form>")[0]
         types = form.split('class="segmented types"')[1].split("</div>")[0]
         assert re.findall(r'<label class="(\w+)">', types) == ["gain", "loss", "transfer"]
@@ -178,7 +179,7 @@ class TestPages:
     def test_form_selects_swap_their_own_container(self, client):
         # The form swaps outerHTML; without an explicit swap the selects would
         # inherit it and replace (and lose) their target containers.
-        form = client.get("/").text
+        form = client.get("/ledger").text
         assert 'hx-target="#base-fields" hx-swap="innerHTML"' in form
         assert 'hx-target="#account-fields" hx-swap="innerHTML"' in form
         assert 'Comment <em class="optional">(optional)</em>' in form
@@ -227,7 +228,7 @@ class TestPages:
         assert len(rows(settings)) == 4
 
     def test_static_urls_are_versioned(self, client):
-        assert "style.css?v=" in client.get("/").text
+        assert "style.css?v=" in client.get("/ledger").text
 
     def test_create_invalid_movement_shows_error(self, client, settings):
         form = {
@@ -309,7 +310,7 @@ class TestPages:
         assert "Made with Claude Code" in text
 
     def test_tables_are_sortable(self, client):
-        index, setup = client.get("/").text, client.get("/results").text
+        index, setup = client.get("/ledger").text, client.get("/results").text
         accounts = client.get("/accounts").text
         assert 'data-sortable="movements"' in index
         assert 'data-sortable="balances-assets"' in accounts
@@ -380,7 +381,7 @@ class TestPages:
         settings.ledger_path.write_text(
             "move_date;base_movement;acc_debit;amount;acc_credit\n2026-01-01;Nope;Ca;1;Eq\n"
         )
-        r = client.get("/")
+        r = client.get("/ledger")
         assert r.status_code == 500
         assert "Could not load the ledger" in r.text
 
@@ -746,7 +747,7 @@ class TestEditMovements:
             store.edit(2, row_fingerprint(store.load().rows.iloc[2]), "2026-01-03", "Food", "Eq", "Ca", "500")
 
     def test_ledger_rows_have_an_edit_button(self, client):
-        r = client.get("/")
+        r = client.get("/ledger")
         assert len(re.findall(r'hx-get="/movements/\d+/edit"', r.text)) == 4
         assert 'hx-get="/movements/2/edit"' in r.text and "&#9998;" in r.text
 
@@ -797,7 +798,7 @@ class TestEditMovements:
 class TestIdLinks:
     def test_ledger_ids_link_like_their_circles(self, client, settings):
         LedgerStore(settings).freeze_ids()
-        r = client.get("/", params={"initial": "true"})
+        r = client.get("/ledger", params={"initial": "true"})
         # The initial movement of Bk links to its account, by its circle and its ID
         assert r.text.count('href="/accounts#account-Bk"') == 2
         assert '<a class="id-link" href="/accounts#account-Bk"' in r.text
@@ -807,8 +808,8 @@ class TestIdLinks:
     def test_ledger_link(self):
         from pledger.web.views import ledger_link
 
-        assert ledger_link("I-2", "2026-01-05") == "/?month=2026-01#movement-I-2"
-        assert ledger_link("A-1", "2025-12-31", initial=True) == "/?month=2025-12&initial=true#movement-A-1"
+        assert ledger_link("I-2", "2026-01-05") == "/ledger?month=2026-01#movement-I-2"
+        assert ledger_link("A-1", "2025-12-31", initial=True) == "/ledger?month=2025-12&initial=true#movement-A-1"
 
 
 class TestSaveAndQuit:
@@ -822,9 +823,9 @@ class TestSaveAndQuit:
         assert "L-1" in settings.ledger_path.read_text()
 
     def test_button_in_every_page(self, client):
-        assert 'id="quit"' in client.get("/").text and 'id="quit"' in client.get("/help").text
+        assert 'id="quit"' in client.get("/ledger").text and 'id="quit"' in client.get("/help").text
         # An open door icon, like the eye of the visibility toggle
-        button = client.get("/").text.split('id="quit"')[1].split("</button>")[0]
+        button = client.get("/ledger").text.split('id="quit"')[1].split("</button>")[0]
         assert 'aria-label="Save &amp; Quit"' in button and "<svg" in button and "Save &amp; Quit</button>" not in button
 
 
@@ -852,7 +853,7 @@ class TestToggles:
 
 
 class TestLanguage:
-    @pytest.mark.parametrize("path", ["/", "/accounts", "/currencies", "/results", "/work", "/investments", "/debt", "/credit-cards", "/audit", "/help"])
+    @pytest.mark.parametrize("path", ["/", "/ledger", "/accounts", "/currencies", "/results", "/work", "/investments", "/debt", "/credit-cards", "/audit", "/help"])
     def test_every_tab_is_in_english(self, client, path):
         r = client.get(path)
         assert r.headers["Content-Language"] == "en"

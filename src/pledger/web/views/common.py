@@ -113,7 +113,7 @@ def ledger_link(move_id: str, move_date: str, initial: bool = False) -> str:
     The link from a movement of another tab to its row in the Ledger tab, in its month
     and of every account, with the initial movements if it is one.
     """
-    return f"/?month={move_date[:7]}{'&initial=true' if initial else ''}#{row_anchor('movement', move_id)}"
+    return f"/ledger?month={move_date[:7]}{'&initial=true' if initial else ''}#{row_anchor('movement', move_id)}"
 
 
 def months_of(snapshot: Snapshot) -> list[str]:

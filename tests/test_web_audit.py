@@ -216,7 +216,7 @@ class TestAudit:
         assert "Correction (L)" not in client.get("/form/bases", params={"move_type": "loss"}).text  # not picked by hand
         with pytest.raises(ValueError, match="added from the Audit tab"):
             LedgerStore(settings).add("2026-01-05", "Correction (L)", "Eq", "Ca", "1")
-        row = client.get("/").text.split('id="movement-L-5"')[1].split("</tr>")[0]
+        row = client.get("/ledger").text.split('id="movement-L-5"')[1].split("</tr>")[0]
         assert 'href="/accounts#account-Ca"' in row and 'hx-post="/movements/4/delete"' in row and "&#9998;" not in row
         fp = row_fingerprint(rows(settings).iloc[4])
         assert client.post("/movements/4/delete", data={"fingerprint": fp}).status_code == 200

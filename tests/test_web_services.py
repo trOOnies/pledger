@@ -195,7 +195,7 @@ class TestServices:
         moves = client.get("/services", params={"service": "Rent"}, headers=HTMX).text
         assert "<html" not in moves and "<h2>Movements <small>4, all time</small></h2>" in moves
         assert 'id="movement-S-Rent-2026-01-5"' in moves and 'data-sort="80.0">$80.00</td>' in moves  # owed after it
-        index = client.get("/", params={"month": ""}).text
+        index = client.get("/ledger", params={"month": ""}).text
         assert 'href="/services#movement-S-Rent-2026-01-2" title="Generated from the monthly value of the service' in index
 
     def test_form_and_api(self, settings, client):
@@ -259,7 +259,7 @@ class TestServices:
         moves = client.get("/services", params={"service": "Expenses"}, headers=HTMX).text
         index = len(snapshot.rows) - 1
         assert f'hx-post="/debt/movements/{index}/delete"' in moves and "Debt - Paid" in moves
-        assert 'title="A movement of a service, added and deleted from the Services tab"' in client.get("/", params={"month": ""}).text
+        assert 'title="A movement of a service, added and deleted from the Services tab"' in client.get("/ledger", params={"month": ""}).text
         r = client.post(f"/debt/movements/{index}/delete", data={"fingerprint": row_fingerprint(snapshot.rows.iloc[index])})
         assert r.status_code == 200 and "services-changed" in r.headers["HX-Trigger"]
         assert len(LedgerStore(settings).load().rows) == index

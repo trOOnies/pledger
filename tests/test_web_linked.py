@@ -474,7 +474,7 @@ class TestLedgerInOtherCurrencies:
         assert "Added Food: 10.00 USD" in client.post("/movements", data=data).text
         assert client.post("/api/movements", json={k: v for k, v in data.items() if k != "move_type"}).status_code == 201
         assert len(store.load().conversions) == 2
-        page = client.get("/").text
+        page = client.get("/ledger").text
         assert "data-foreign-accounts" in page and "data-amount-prefix" in page
 
     def test_copying_gives_the_account_and_the_amount_back(self, settings, store):

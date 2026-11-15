@@ -1,7 +1,8 @@
 {% extends "base.html" %}
+{% block title %}Ledger · pledger{% endblock %}
 {% block body_class %}fill{% endblock %}
 {% block content %}
-<form id="filters" class="filters" hx-get="/" hx-target="#view" hx-push-url="true"
+<form id="filters" class="filters" hx-get="/ledger" hx-target="#view" hx-push-url="true"
   hx-trigger="change, submit, input changed delay:300ms from:#search">
   <label>Month
     <select name="month">
@@ -46,7 +47,7 @@
   <aside class="panel">
     {{ form | safe }}
   </aside>
-  <section id="view" hx-get="/" hx-include="#filters" hx-trigger="ledger-changed from:body">
+  <section id="view" hx-get="/ledger" hx-include="#filters" hx-trigger="ledger-changed from:body">
     {% include "_view.html" %}
   </section>
 </div>

@@ -73,10 +73,11 @@ A FastAPI + HTMX UI, one tab per area:
 
 | Tab | What it shows |
 | --- | --- |
-| 📋 **Ledger** | The home page, opened by clicking the pledger logo. Lists, adds, edits and deletes movements, with the balances of their accounts right after each one, filtered by month, account and base movement, by whether it can be edited here, and by a search (every word in its id, date, base movement, accounts, comment or amount; `"quote"` a phrase). The **Debit** and **Credit** fields of every form, and the **Account** filter, group the accounts by type (and currency), and the **Base movement** filter and field group the base movements by result type, then the transfers. Its ⧉ button fills the form in with a movement, to add a similar one: nothing is saved until it is added, as a new movement. Conversions, debt movements and card payments are added in their own tabs instead. |
+| 🏠 **Dashboard** | The home page, opened by clicking the pledger logo. A fixed **New movement** panel, with a button per kind of movement that goes to its tab and form (Currencies, Work, Investments, People, Services, Credit Cards, Cart, Split and Ledger; only those the tab shows), and slots for **number cards** (8) and **plots** (6): a free slot is dotted with a **+**, which picks what goes in it (assets, liabilities, equity, net liquidity, the gains, losses and profit of this month, the equity change of this month, the monthly expenses and the months of them covered; equity over time, debt and net liquidity over equity, gains, losses and profit by month, equity in months of expenses; grouped in the picker by Accounts and Results), and the **×** of a card or plot frees its slot. **Rearrange** lets you drag them to other slots of their kind (or move them with their arrows) until **Done**, Escape or leaving the tab. Kept in `dashboard.yaml`. |
+| 📋 **Ledger** | Lists, adds, edits and deletes movements, with the balances of their accounts right after each one, filtered by month, account and base movement, by whether it can be edited here, and by a search (every word in its id, date, base movement, accounts, comment or amount; `"quote"` a phrase). The **Debit** and **Credit** fields of every form, and the **Account** filter, group the accounts by type (and currency), and the **Base movement** filter and field group the base movements by result type, then the transfers. Its ⧉ button fills the form in with a movement, to add a similar one: nothing is saved until it is added, as a new movement. Conversions, debt movements and card payments are added in their own tabs instead. |
 | 🏦 **Accounts** | Balances (also in their currency, for the accounts in another one), total assets, liabilities and equity, a form to add accounts, edit the asset and liability ones (✎), the composition of assets and liabilities (by currency or by liquidity) and, at each month end, debt over equity and net liquidity (liquid assets minus liquid liabilities) over equity. |
 | 💱 **Currencies** | Balances per currency, the balance of each account in other currencies in its own currency, the daily CPI of the base currency, its monthly inflation, the nominal and real value of each other currency, and the share of each currency in the assets at each month end. The conversions are added (picking the currency sold and the one bought), edited and deleted here, filtered by currency and account, each with the account's balance in its own currency after it. |
-| 📊 **Results** | The nominal and real change of equity in the period and the months of expenses it covers, gains, losses and profit by result type (also cumulative), a waterfall of the result by type (with its result statement as a table, both also as a share of the gains of the first result type, e.g. *Operative*), equity in months of expenses at each month end (of the loss result types picked, or their raw average monthly losses stacked) and equity over time. Result types and base movements are listed and added here. |
+| 📊 **Results** | The nominal and real change of equity in the period and the months of expenses it covers (how long equity would last at the average monthly losses of the last year, leaving out the initial and internal ones and those tagged `employment`), gains, losses and profit by result type (also cumulative), a waterfall of the result by type (with its result statement as a table, both also as a share of the gains of the first result type, e.g. *Operative*), equity in months of expenses at each month end (of the loss result types picked, or their raw average monthly losses stacked) and equity over time. Result types and base movements are listed and added here, with a badge on those tagged Employment. |
 | 💼 **Work** | The company, job position and salary of each month, from gross to net through its deductions (taxes, contributions...), with a chart of both salaries (0 for the months without a job). Below, what each company owes in `Wo` (the net salaries it hasn't paid yet) and its movements; the salaries received are added (*Salary received*) and deleted here. |
 | 📈 **Investments** | The investments of the investment accounts with their price (amount over quantity), their composition by type or by account, the results of each one, the interest on money of regular accounts, and charts of the total invested and the total result. The broker fees of each investment are shown over its amount. The **Investment account**, **Investment** and **Base movement** filters narrow the movements down (an investment shows all its movements, whatever their accounts), each with the total of its account and the amount and quantity of its investment after it. The internal `Invest` movements are added, edited and deleted here, and so are new prices of the investments, from which their capital gains and losses are generated. |
 | 👥 **People** | Who we owe and who owes us among the people, in the debt and loan accounts of each currency, each in its currency and in all in the base one, with alerts and the movements of the month, each with what we owe whoever it names after it. The debt and loan movements of the people are added and edited here, in any currency, and new people added to `creditors.yaml`. (The `Debt` menu has People, Services and Credit Cards.) |
@@ -105,8 +106,8 @@ A few things are shared across tabs:
 - ↕️ The bars of Accounts, Results, Investments and Debt have an **Expand all / Collapse all**
   toggle.
 - ⏻ **Save & Quit**, in the top bar, saves what is left to save (the IDs of the rows added to the
-  CSVs by hand) and stops the server, `make serve` included, closing the window if the browser
-  allows it.
+  CSVs by hand) and stops the server, `make serve` included. The page then says pledger has
+  stopped, and the tab can be closed.
 - 💲 Amounts are shown with a `$` symbol and two decimals. Set `PLEDGER_CURRENCY` (e.g. `ARS`)
   to use another one.
 
@@ -132,6 +133,7 @@ with an environment variable:
 | `trips.csv` | | `PLEDGER_TRIPS` | The trips |
 | `trip_items.csv` | | `PLEDGER_TRIP_ITEMS` | The planned expenses of the trips |
 | `carts.csv` | | `PLEDGER_CARTS` | The carts of the Cart tab (their products are in `ledger.csv`) |
+| `dashboard.yaml` | | `PLEDGER_DASHBOARD` | What each slot of the Dashboard tab shows (created when changing it) |
 | `currencies.yaml` | ✅ | `PLEDGER_CURRENCIES` | Base and other currencies, with the debt and loan accounts of each one (with `base_currency.csv` and `currencies.csv` next to it) |
 | `investment.yaml` | | `PLEDGER_INVESTMENTS` | The investments of each investment account |
 | `creditors.yaml` | | `PLEDGER_CREDITORS` | Who the debt accounts are owed by or owe to: the people and the services |
@@ -408,7 +410,18 @@ shares of each item as numbers (1 or 0, or the percentages), and answers in cent
 ### Base movements and internal movements
 
 A base movement is a dict (`description` and optional fixed `debit`/`credit` accounts) or just
-its description. A side set to `INVESTMENT`, `CREDIT CARD` or `FOREIGN CURRENCY` (reserved
+its description. A gain or loss can also set `employment: true`: it relies on having a job, like
+the salary and the taxes taken from it. Its losses are then left out of the expenses whose months
+equity covers (the Results tab and the Dashboard), as they would stop with the job; the initial
+movements are never counted there either.
+
+```yaml
+Work - Income taxes:
+  description: Income taxes taken from the salary
+  credit: Wo
+  employment: true
+```
+ A side set to `INVESTMENT`, `CREDIT CARD` or `FOREIGN CURRENCY` (reserved
 names) takes any investment, credit card or foreign currency account (in another currency, but
 the investment ones) instead of a fixed one, and the forms only offer those there. So do
 `DEBT ACCOUNT` and `LOAN ACCOUNT`, the debt or loan account of any currency, of the debt

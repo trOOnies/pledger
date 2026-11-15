@@ -100,7 +100,7 @@ class TestBudgets:
         assert 'class="msg error"' in r.text and 'value="7.5"' in r.text
         r = client.post("/budget/budgets/stop", data={"month": "2026-03", "base_movement": "Food"}, headers=HTMX)
         assert "Stopped budgeting Food" in r.text and "No budgets in 2026-03" in r.text
-        assert '<a href="/budget"' in client.get("/").text
+        assert '<a href="/budget"' in client.get("/ledger").text
 
     def test_never_touches_the_ledger(self, store, client, settings):
         before = settings.ledger_path.read_bytes()

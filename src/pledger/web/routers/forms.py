@@ -1007,13 +1007,14 @@ def create_base_movement(
     debit: Annotated[str, Form()] = "",
     credit: Annotated[str, Form()] = "",
     result_type: Annotated[str, Form()] = "",
+    employment: Annotated[bool, Form()] = False,
 ):
     try:
-        store.add_base_movement(name, move_type, description, debit, credit, result_type)
+        store.add_base_movement(name, move_type, description, debit, credit, result_type, employment)
     except ValueError as e:
         values = {
             "move_type": move_type, "base_name": name, "base_description": description,
-            "debit": debit, "credit": credit, "result_type": result_type,
+            "debit": debit, "credit": credit, "result_type": result_type, "employment": employment,
         }
         return render_setup(request, store, values, base_error=str(e))
     return render_setup(

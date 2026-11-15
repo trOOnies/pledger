@@ -21,8 +21,8 @@
 {# A page can fill the height of the window (body class "fill", see style.css), e.g. the Ledger tab #}
 <body class="{% block body_class %}{% endblock %}">
   <header class="topbar">
-    <a class="brand" href="/" title="Ledger" {% if request.url.path == '/' %}aria-current="page"{% endif %}><img src="{{ url_for('static', path='favicon.svg') }}?v={{ static_version('favicon.svg') }}" alt="" width="24" height="24">pledger</a>
-    {# The tabs, in sections that unroll on hover (or focus); the Ledger tab is the brand #}
+    <a class="brand" href="/" title="Dashboard" {% if request.url.path == '/' %}aria-current="page"{% endif %}><img src="{{ url_for('static', path='favicon.svg') }}?v={{ static_version('favicon.svg') }}" alt="" width="24" height="24">pledger</a>
+    {# The tabs, in sections that unroll on hover (or focus); the Dashboard tab is the brand #}
     {% set path = request.url.path %}
     {% macro tab(href, label) %}<a href="{{ href }}" {% if path == href %}aria-current="page"{% endif %}>{{ label }}</a>{% endmacro %}
     <nav>
@@ -39,6 +39,7 @@
       {% endfor %}
       {{ tab("/audit", "Audit") }}
       {{ tab("/budget", "Budget") }}
+      {{ tab("/ledger", "Ledger") }}
       <a href="/help" {% if path.startswith('/help') %}aria-current="page"{% endif %}>Help</a>
       <a href="/docs" target="_blank" rel="noopener">API</a>
     </nav>
@@ -385,8 +386,8 @@
     document.addEventListener("DOMContentLoaded", () => initExpandAll(document));
     document.addEventListener("htmx:afterSettle", (e) => initExpandAll(e.detail.elt));
 
-    // Save & Quit: the server saves what is left and stops; then this window closes, or
-    // says it can be closed if the browser doesn't let a page close a window it didn't open.
+    // Save & Quit: the server saves what is left and stops; then the page says so, with the logo.
+    // It doesn't close the window: Firefox would close a tab with no history, before it's seen.
     function unsentForms() {
       return [...document.forms].filter((form) => form.id !== "filters" && [...form.elements].some((el) => {
         if (el.type === "checkbox" || el.type === "radio") return el.checked !== el.defaultChecked;
@@ -414,10 +415,11 @@
         setTimeout(() => { flash.hidden = true; }, 6000);
         return;
       }
-      window.close();
       document.title = "pledger stopped";
+      document.body.classList.remove("fill");
       document.querySelector("main").innerHTML =
-        '<div class="panel quit-done"><h2>pledger has stopped</h2>' +
+        '<div class="panel quit-done"><img src="{{ url_for('static', path='favicon.svg') }}?v={{ static_version('favicon.svg') }}" alt="pledger" width="72" height="72">' +
+        '<h2>pledger has stopped</h2>' +
         '<p class="muted">Everything is saved. You can close this tab; run <code>make serve</code> to start pledger again.</p></div>';
       document.querySelector(".topbar nav").remove();
       document.getElementById("quit").remove();
@@ -489,6 +491,21 @@
         if (field) field.value = value;
       }
     });
+
+    // A link to a form of a tab (e.g. /debt#debt-form, from the New movement buttons of the
+    // Dashboard) shows it, highlighted for a moment, with its first field focused.
+    function showLinkedForm() {
+      const form = location.hash.length > 1 && document.getElementById(decodeURIComponent(location.hash.slice(1)));
+      if (form?.tagName !== "FORM") return;
+      form.scrollIntoView({ block: "start" });
+      const field = form.querySelector("input:not([type=hidden]):not(:disabled), select:not(:disabled), textarea:not(:disabled)");
+      field?.focus({ preventScroll: true });
+      form.classList.remove("linked");
+      void form.offsetWidth;  // to play the highlight again
+      form.classList.add("linked");
+    }
+    document.addEventListener("DOMContentLoaded", showLinkedForm);
+    window.addEventListener("hashchange", showLinkedForm);
   </script>
 </body>
 </html>

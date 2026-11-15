@@ -66,7 +66,7 @@
 {% endmacro %}
 {% if created is defined and created %}
 <p class="msg success" role="status">Created {{ created.movements | length }} movement{{ "s" if created.movements | length != 1 }} in the
-  <a href="/">ledger</a>{% if created.new_people %}, and added {{ created.new_people | join(", ") }} to <a href="/debt">People</a>{% endif %}.</p>
+  <a href="/ledger">ledger</a>{% if created.new_people %}, and added {{ created.new_people | join(", ") }} to <a href="/debt">People</a>{% endif %}.</p>
 {% endif %}
 <form id="split-form" class="stack split" hx-post="/split" hx-target="#split" data-split-form data-max-others="{{ max_others }}">
   <datalist id="split-people">{% for p in people_names %}<option value="{{ p }}">{% endfor %}</datalist>

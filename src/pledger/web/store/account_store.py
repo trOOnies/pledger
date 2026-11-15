@@ -231,11 +231,13 @@ class AccountStore(MovementStore):
         debit: str = "",
         credit: str = "",
         result_type: str = "",
+        employment: bool = False,
     ) -> None:
         """
         Validate a new base movement and add it to the base movements YAML: gains
         and losses under their result type, transfers in the `transfer` section.
         A side set to one of the RESERVED names takes any such account (see SPECIAL_SIDES).
+        A gain or loss can be tagged `employment` (see MovementBase).
         """
         snapshot = self.load()
         name = _check_name(name, snapshot.base_movements, "base movement")
@@ -267,11 +269,15 @@ class AccountStore(MovementStore):
         if debit and debit not in SPECIAL_SIDES and debit == credit:
             raise ValueError("Debit and credit accounts must be different")
 
+        if employment and move_type == MovementType.TRANSFER:
+            raise ValueError("Only gains and losses can be tagged employment")
         fields = {"description": description}
         if debit:
             fields["debit"] = debit
         if credit:
             fields["credit"] = credit
+        if employment:
+            fields["employment"] = True
         self._add_yaml_entry(self.settings.base_movements_path, section, name, fields)
 
     def add_person(self, name: str, amount: str | float = "", expected: str = "") -> None:

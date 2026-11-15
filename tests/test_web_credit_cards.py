@@ -103,7 +103,7 @@ class TestCreditCards:
         assert client.post("/api/movements", json=body).status_code == 422
         # The Ledger tab links to them in the Credit Cards tab
         LedgerStore(paying).freeze_ids()
-        assert 'href="/credit-cards?month=2026-02#movement-L-8" title="Added, edited and deleted from the Credit Cards tab"' in client.get("/").text
+        assert 'href="/credit-cards?month=2026-02#movement-L-8" title="Added, edited and deleted from the Credit Cards tab"' in client.get("/ledger").text
 
     def test_edit_and_delete_card_payment(self, paying):
         client = TestClient(create_app(paying))
@@ -179,7 +179,7 @@ class TestCreditCards:
         r = client.get("/credit-cards", params={"month": ""})
         movements = r.text.split('data-sortable="credit-card-movements"')[1].split("</table>")[0]
         assert movement_ids(movements)[-1].startswith("A-")  # the ids of the Ledger tab, even filtered
-        assert set(movement_ids(movements)) <= set(movement_ids(client.get("/", params={"initial": True}).text))
+        assert set(movement_ids(movements)) <= set(movement_ids(client.get("/ledger", params={"initial": True}).text))
         # With the initial ones, but not the ones of other accounts
         assert "<h2>Movements (includes Charges) <small>4, all time</small></h2>" in r.text
         assert movements.count("<tr") == 5 and "Initial (L)" in movements and "Salary" not in movements
@@ -299,7 +299,7 @@ class TestInstallments:
 
     def test_from_the_form(self, settings, store):
         client = TestClient(create_app(settings))
-        form = client.get("/").text.split('id="movement-form"')[1].split("</form>")[0]
+        form = client.get("/ledger").text.split('id="movement-form"')[1].split("</form>")[0]
         assert """data-credit-cards='["Vi", "MM"]'""" in form
         assert '<label data-installments hidden>' in form and 'name="installments"' in form
         body = {"move_date": "2026-01-31", "move_type": "loss", "base_movement": "Food", "acc_debit": "Eq",

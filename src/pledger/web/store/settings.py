@@ -53,6 +53,7 @@ class Settings:
     trips_path: Path | None = None  # missing: no trips yet (created when adding one)
     trip_items_path: Path | None = None  # missing: no planned expenses yet (created when adding one)
     carts_path: Path | None = None  # missing: no carts yet (created when adding one)
+    dashboard_path: Path | None = None  # None: the dashboard isn't kept (only while running); missing: its default one
     currency: str = "$"
     allowed_hosts: tuple[str, ...] | None = LOCAL_HOSTS  # None: any host
 
@@ -83,6 +84,7 @@ class Settings:
             trips_path=Path(os.environ.get("PLEDGER_TRIPS", "info/trips.csv")),
             trip_items_path=Path(os.environ.get("PLEDGER_TRIP_ITEMS", "info/trip_items.csv")),
             carts_path=Path(os.environ.get("PLEDGER_CARTS", "info/carts.csv")),
+            dashboard_path=Path(os.environ.get("PLEDGER_DASHBOARD", "info/dashboard.yaml")),
             currency=os.environ.get("PLEDGER_CURRENCY", "$"),
             allowed_hosts=allowed_hosts(os.environ.get("PLEDGER_ALLOWED_HOSTS", "")),
         )

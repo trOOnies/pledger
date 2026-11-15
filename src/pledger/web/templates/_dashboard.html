@@ -1,0 +1,101 @@
+{# The slots of the Dashboard tab (see views.build_dashboard): the number cards, then the plots.
+   A free slot is a dotted + button opening the picker of its kind (see dashboard.html); a used
+   one has its widget, with an x that frees it and, in Rearrange mode, arrows that move it. #}
+{% from "_line.html" import line_chart, column_chart with context %}
+{% macro tools(kind, w, slot) %}
+<div class="widget-tools">
+  <button type="button" class="icon widget-move" title="Move to the previous slot" aria-label="Move {{ w.title }} to the previous slot"
+    {% if slot == 0 %}disabled{% endif %}
+    hx-post="/dashboard/move" hx-vals='{{ {"kind": kind, "source": slot, "target": slot - 1} | tojson }}'>&#8592;</button>
+  <button type="button" class="icon widget-move" title="Move to the next slot" aria-label="Move {{ w.title }} to the next slot"
+    {% if slot == slot_counts[kind] - 1 %}disabled{% endif %}
+    hx-post="/dashboard/move" hx-vals='{{ {"kind": kind, "source": slot, "target": slot + 1} | tojson }}'>&#8594;</button>
+  <button type="button" class="icon widget-remove" title="Free this slot" aria-label="Remove {{ w.title }} from the dashboard"
+    hx-post="/dashboard/clear" hx-vals='{{ {"kind": kind, "slot": slot} | tojson }}'>&times;</button>
+</div>
+{% endmacro %}
+{% macro free(kind, slot) %}
+<button type="button" class="widget-free" data-kind="{{ kind }}" data-slot="{{ slot }}"
+  title="Add a {{ 'card' if kind == 'cards' else 'plot' }} here" aria-label="Add a {{ 'card' if kind == 'cards' else 'plot' }} in slot {{ slot + 1 }}">
+  <span aria-hidden="true">+</span>
+</button>
+{% endmacro %}
+
+<div class="widget-grid card-slots" data-kind="cards">
+  {% for w in slots.cards %}
+  {% set slot = loop.index0 %}
+  {% if w %}
+  <article class="widget card-widget" data-kind="cards" data-slot="{{ slot }}" data-widget="{{ w.key }}" title="{{ w.description }}">
+    <a class="label" href="{{ w.href }}">{{ w.title }}</a>
+    {% if w.value is none %}
+    <span class="num muted">-</span>
+    {% elif w.unit == "money" %}
+    <span class="num money {{ w.tone or '' }}">{{ w.value | money }}</span>
+    {% elif w.unit == "percent" %}
+    <span class="num {{ w.tone or '' }}">{{ w.value | signed_percent }}</span>
+    {% else %}
+    <span class="num {{ w.tone or '' }}">{{ "%.1f" | format(w.value) }}</span>
+    {% endif %}
+    <span class="note muted">{{ w.note }}</span>
+    {{ tools("cards", w, slot) }}
+  </article>
+  {% else %}
+  {{ free("cards", slot) }}
+  {% endif %}
+  {% endfor %}
+</div>
+
+<div class="widget-grid plot-slots" data-kind="plots">
+  {% for w in slots.plots %}
+  {% set slot = loop.index0 %}
+  {% if w %}
+  <article class="widget plot-widget panel" data-kind="plots" data-slot="{{ slot }}" data-widget="{{ w.key }}">
+    <h2><a href="{{ w.href }}">{{ w.title }}</a> <small>{{ w.description }}</small></h2>
+    {% set chart = w.chart %}
+    {% if not chart %}
+    <p class="muted">Nothing to plot yet.</p>
+    {% elif w.key == "equity-over-time" %}
+    {% set ns = namespace(points=[]) %}
+    {% for p in chart.points %}
+      {% set ns.points = ns.points + [{
+        "x": p.x, "y": p.y, "label": p.date, "change": p.change,
+        "value_text": p.value | money,
+        "change_text": ("+" if p.change >= 0 else "") ~ (p.change | money) ~ " that day",
+      }] %}
+    {% endfor %}
+    {{ line_chart(chart, ns.points, "Equity from " ~ w.series[0].date ~ " to " ~ chart.last.date ~ ", ending at " ~ (chart.last.value | money)) }}
+    {% elif w.key in ("monthly-gains", "monthly-losses", "monthly-profit") %}
+    {% set ns = namespace(points=[]) %}
+    {% for c in chart.columns %}
+      {% set ns.points = ns.points + [{"x": c.x, "y": c.y, "label": c.month, "value_text": c.value | money, "change_text": ""}] %}
+    {% endfor %}
+    {{ column_chart(chart, ns.points, w.title ~ " from " ~ w.series[0].month ~ " to " ~ w.series[-1].month, series=2 if w.key == "monthly-losses" else 1) }}
+    {% elif w.key == "months-of-expenses" %}
+    {% set ns = namespace(points=[]) %}
+    {% for c in chart.columns %}
+      {% set r = w.series[loop.index0] %}
+      {% set ns.points = ns.points + [{
+        "x": c.x, "y": c.y, "label": r.month,
+        "value_text": ("%.1f months" | format(r.months)) if r.months is not none else "No expenses",
+        "change_text": (r.equity | money) ~ " ÷ " ~ (r.monthly | money) ~ " a month",
+      }] %}
+    {% endfor %}
+    {{ column_chart(chart, ns.points, "Equity in months of expenses, from " ~ w.series[0].month ~ " to " ~ w.series[-1].month, money=False) }}
+    {% else %}
+    {% set ns = namespace(points=[]) %}
+    {% for p in chart.points %}
+      {% set ns.points = ns.points + [{
+        "x": p.x, "y": p.y, "label": p.month,
+        "value_text": "%.1f%%" | format(100 * p.value),
+        "change_text": (p.amount | money) ~ " / " ~ (p.equity | money),
+      }] %}
+    {% endfor %}
+    {{ line_chart(chart, ns.points, w.title ~ ", ending at " ~ ("%.1f" | format(100 * chart.last.value)) ~ "%", money=False, series=1 if w.key == "liquidity-ratio" else 2) }}
+    {% endif %}
+    {{ tools("plots", w, slot) }}
+  </article>
+  {% else %}
+  {{ free("plots", slot) }}
+  {% endif %}
+  {% endfor %}
+</div>

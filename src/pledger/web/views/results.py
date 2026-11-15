@@ -178,11 +178,21 @@ def build_results(
         "relative": relative,
         "equity": equity,
         "equity_series": series,
-        "expenses": expense_months(snapshot, month, initial, expense_types),
+        "expenses": expense_months(snapshot, month, expense_types),
     }
 
 
 EXPENSES_DAYS = 365  # the expenses covered by equity are the average of the losses of this many days
+
+
+def is_expense(snapshot: Snapshot, base) -> bool:
+    """
+    Whether the losses of a base movement count as expenses, the ones that equity covers: not
+    the initial ones (they set the initial amounts of the accounts), not the internal ones
+    (foreign currency, investments, corrections...) and not those relying on having a job
+    (tagged employment, like the taxes taken from the salary), which would stop with it.
+    """
+    return not base.internal and not base.employment and base.name not in snapshot.initial_base_names
 
 
 def equity_metrics(snapshot: Snapshot, month: str = "") -> dict:
@@ -195,8 +205,7 @@ def equity_metrics(snapshot: Snapshot, month: str = "") -> dict:
     end: the end of the month (up to today), else the last date of the ledger. The real
     change deflates both by the CPI of the base currency at their dates (None without one).
     The expenses are the average monthly losses of the EXPENSES_DAYS up to the end of the
-    period, of the non-internal base movements but the deductions of the salary, which
-    would stop with it.
+    period that count as expenses (see is_expense).
     """
     none = {"equity_change": None, "equity_real_change": None, "months_covered": None, "monthly_expenses": None}
     dates = snapshot.all_rows.move_date
@@ -206,7 +215,6 @@ def equity_metrics(snapshot: Snapshot, month: str = "") -> dict:
     start = f"{month}-01" if month else dates.min()
     end = max(min(month_end(month), today), start) if month else dates.max()
     initial = snapshot.initial_base_names
-    deductions = set(snapshot.work.deductions)
     start_equity = end_equity = expenses = 0.0
     window = (dt.date.fromisoformat(end) - dt.timedelta(days=EXPENSES_DAYS - 1)).isoformat()
     window = max(window, dates.min())
@@ -217,10 +225,7 @@ def equity_metrics(snapshot: Snapshot, month: str = "") -> dict:
         end_equity += sign * move.amount
         if move.move_date < start or move.move_base.name in initial:
             start_equity += sign * move.amount
-        if (
-            sign < 0 and move.move_date >= window and not move.move_base.internal
-            and move.move_base.name not in deductions
-        ):
+        if sign < 0 and move.move_date >= window and is_expense(snapshot, move.move_base):
             expenses += move.amount
     metrics = dict(none)
     if start_equity:
@@ -241,28 +246,30 @@ def equity_metrics(snapshot: Snapshot, month: str = "") -> dict:
     return metrics
 
 
-def loss_result_types(snapshot: Snapshot, initial: bool = False) -> list:
-    """The result types with loss base movements, in order: the initial one only with `initial`."""
-    initial_rt = snapshot.base_movements[INITIAL_GAIN].result_type
+def loss_result_types(snapshot: Snapshot) -> list:
+    """The result types with loss base movements that count as expenses (see is_expense), in order."""
     return [
         rt for rt in (snapshot.result_types[i] for i in sorted(snapshot.result_types))
-        if (initial or rt is not initial_rt)
-        and any(b.result_type is rt and b.move_type == MovementType.LOSS for b in snapshot.base_movements.values())
+        if any(
+            b.result_type is rt and b.move_type == MovementType.LOSS and b.name not in snapshot.initial_base_names
+            and not b.employment
+            for b in snapshot.base_movements.values()
+        )
     ]
 
 
-def expense_months(
-    snapshot: Snapshot, month: str = "", initial: bool = False, selected: list[str] | None = None,
-) -> dict:
+def expense_months(snapshot: Snapshot, month: str = "", selected: list[str] | None = None) -> dict:
     """
     Equity in months of expenses at the end of each month of the selection (`month`, else
     every month of the ledger): its equity then over the average monthly losses of the
     `selected` loss result types (their names; the non-internal ones by default), each the
-    losses of its base movements in the EXPENSES_DAYS up to then, like equity_metrics.
+    losses of its base movements in the EXPENSES_DAYS up to then, like equity_metrics. The
+    initial movements and the ones tagged employment never count (see is_expense); the
+    internal ones only if their result type is ticked.
     The `chart` draws those months, and the `raw_chart` the averages themselves, stacked
     by result type. A month without expenses has no months (None), drawn at 0.
     """
-    types = loss_result_types(snapshot, initial)
+    types = loss_result_types(snapshot)
     if selected is None:
         selected = [rt.name for rt in types if not rt.internal]
     chosen = [rt for rt in types if rt.name in set(selected)]
@@ -285,7 +292,11 @@ def expense_months(
         date = str(move.move_date)
         equity[date] = equity.get(date, 0.0) + sign * move.amount
         rt = move.move_base.result_type
-        if sign < 0 and rt is not None and by_rt.get(rt.name) is rt:
+        base = move.move_base
+        if (
+            sign < 0 and rt is not None and by_rt.get(rt.name) is rt
+            and not base.employment and base.name not in snapshot.initial_base_names
+        ):
             losses[rt.name][date] = losses[rt.name].get(date, 0.0) + move.amount
     days = sorted(equity)
     equity_upto = list(accumulate(equity[d] for d in days))

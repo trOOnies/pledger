@@ -197,7 +197,7 @@ class TestConversions:
         filter_form = text.split('id="conversion-filter"')[1]
         assert 'name="initial" value="true" checked' in filter_form
         row = text.split('id="movement-A-Bk"')[1].split("</tr>")[0]
-        assert "/?month=2025-12&amp;initial=true#movement-A-Bk" in row  # to the Ledger tab, with them
+        assert "/ledger?month=2025-12&amp;initial=true#movement-A-Bk" in row  # to the Ledger tab, with them
         assert "hx-post" not in row and "hx-get" not in row  # generated: never edited or deleted here
         assert 'id="movement-A-Bk"' in conv_client.get("/currencies", params={"initial": True}).text
 
@@ -290,7 +290,7 @@ class TestConversions:
         LedgerStore(conv).freeze_ids()
         currencies = conv_client.get("/currencies").text
         assert movement_ids(currencies.split('data-sortable="conversions"')[1]) == ["C-1"]
-        ledger = conv_client.get("/", params={"initial": True}).text
+        ledger = conv_client.get("/ledger", params={"initial": True}).text
         assert "C-1" in movement_ids(ledger)
         # The circles link to the same row, or to the row they are generated from
         assert 'href="/currencies#movement-C-1"' in ledger and '<tr id="movement-C-1">' in currencies
@@ -478,13 +478,13 @@ class TestConversions:
         assert fields(sold="ARS", bought="ARS", changed="bought")[:2] == ("USD", "ARS")
 
     def test_not_in_the_ledger_tab(self, conv, conv_client):
-        form = conv_client.get("/").text.split('id="movement-form"')[1].split("</form>")[0]
+        form = conv_client.get("/ledger").text.split('id="movement-form"')[1].split("</form>")[0]
         assert "Foreign currency - Bought" not in form and "Foreign currency - Sold" not in form
         with pytest.raises(ValueError, match="are added from the Currencies tab"):
             LedgerStore(conv).add("2026-01-06", "Foreign currency - Bought", "Bk", "Ca", "100")
 
     def test_ledger_tab_links_them_to_the_currencies_tab(self, conv_client):
-        r = conv_client.get("/")
+        r = conv_client.get("/ledger")
         assert '<a class="source" href="/currencies" title="Added, edited and deleted from the Currencies tab"' in r.text
         assert "🔵</a>" in r.text
         assert r.text.count('hx-post="/movements/') == 4  # only the CSV rows
@@ -494,10 +494,10 @@ class TestConversions:
 
     def test_ids_link_between_the_ledger_and_currencies_tabs(self, conv, conv_client):
         LedgerStore(conv).freeze_ids()
-        ledger = conv_client.get("/").text
+        ledger = conv_client.get("/ledger").text
         assert '<a class="id-link" href="/currencies#movement-C-1"' in ledger and 'id="movement-C-1"' in ledger
         currencies = conv_client.get("/currencies").text
-        assert '<a class="id-link" href="/?month=2026-01#movement-C-1"' in currencies
+        assert '<a class="id-link" href="/ledger?month=2026-01#movement-C-1"' in currencies
         assert 'id="movement-C-1"' in currencies
 
     def test_currencies_tab_lists_adds_and_deletes_them(self, conv, conv_client):

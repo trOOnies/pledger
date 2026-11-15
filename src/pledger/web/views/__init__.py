@@ -74,6 +74,12 @@ from pledger.web.views.currencies import (
     missing_weeks,
     value_series,
 )
+from pledger.web.views.dashboard import (
+    WIDGETS,
+    build_dashboard,
+    new_movement_buttons,
+    valid_dashboard,
+)
 from pledger.web.views.debt import (
     CREDITOR_KIND_EMOJIS,
     CREDITOR_KIND_LABELS,
@@ -155,6 +161,7 @@ __all__ = [
     "MOVEMENT_SOURCES",
     "NO_TYPE",
     "UNASSIGNED",
+    "WIDGETS",
     "account_editing",
     "account_fields",
     "account_form",
@@ -176,6 +183,7 @@ __all__ = [
     "build_conversions",
     "build_credit_cards",
     "build_currencies",
+    "build_dashboard",
     "build_debts",
     "build_goals",
     "build_interest",
@@ -230,6 +238,7 @@ __all__ = [
     "multi_line_chart",
     "new_cart_form",
     "new_investment_fields",
+    "new_movement_buttons",
     "nice_ticks",
     "over_time_charts",
     "owed_charts",
@@ -249,6 +258,7 @@ __all__ = [
     "source_link",
     "stacked_chart",
     "time_axis",
+    "valid_dashboard",
     "value_series",
     "waterfall_chart",
     "with_real",

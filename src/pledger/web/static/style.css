@@ -397,6 +397,7 @@ table[data-sortable] th[aria-sort="descending"]::after { content: " ▼"; opacit
 .badge.transfer { background: var(--transfer-bg); color: var(--transfer); }
 /* An internal result type or base movement, set by pledger itself */
 .badge.internal { background: var(--transfer-bg); color: var(--muted); font-weight: normal; text-transform: none; letter-spacing: 0; vertical-align: 1px; }
+.badge.employment { background: color-mix(in srgb, var(--series-4) 22%, transparent); color: var(--text); font-weight: normal; text-transform: none; letter-spacing: 0; vertical-align: 1px; }
 
 .stack { display: grid; gap: .75rem; }
 .stack label, .pair label { display: grid; gap: .25rem; font-size: .8rem; color: var(--muted); }
@@ -448,6 +449,7 @@ button.icon {
 button.icon:hover { color: var(--loss); }
 button.icon.edit:hover { color: var(--accent); }
 .quit-done { max-width: 520px; margin: 3rem auto; text-align: center; }
+.quit-done img { display: block; margin: .5rem auto 1rem; }
 /* The head of the movement form, with its Cancel button while editing a movement */
 form.stack > h2 { margin: 0; }
 .form-head { display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
@@ -707,3 +709,98 @@ td.budget-bar .bar-track { display: block; }
 .dialog-actions button.secondary:hover { background: var(--bg); }
 @keyframes dialog-in { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .dialog[open] { animation: none; } }
+
+/* A form reached by a link to it (e.g. from the New movement buttons of the Dashboard), highlighted for a moment */
+form[id] { scroll-margin-top: 1rem; }
+form.linked { animation: linked-form 1.8s ease-out; border-radius: 6px; }
+@keyframes linked-form {
+  from { box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 45%, transparent); }
+  to { box-shadow: 0 0 0 4px transparent; }
+}
+
+/* The Dashboard tab: the New movement buttons on the side (on top, narrower), and the slots */
+.dashboard { display: grid; grid-template-columns: clamp(220px, 16vw, 300px) minmax(0, 1fr); gap: 1rem; align-items: start; }
+.new-movements { position: sticky; top: 1rem; }
+.new-movements h2 { margin-top: 0; }
+.new-movement-buttons { display: grid; gap: .4rem; }
+a.new-movement {
+  display: flex; align-items: center; gap: .6rem; padding: .5rem .7rem;
+  border: 1px solid var(--border); border-radius: 6px; color: var(--text); text-decoration: none;
+  background: var(--surface);
+}
+a.new-movement:hover, a.new-movement:focus-visible { border-color: var(--accent); background: var(--bg); }
+a.new-movement .emoji { font-size: 1.15rem; }
+a.new-movement small { display: block; font-size: .72rem; }
+.dashboard-slots { display: grid; gap: .75rem; min-width: 0; }
+.dashboard-slots > .panel-head { margin: 0; }
+#dashboard { display: grid; gap: 1rem; }
+.widget-grid { display: grid; gap: 1rem; }
+.card-slots { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.plot-slots { grid-template-columns: repeat(auto-fill, minmax(min(100%, 560px), 1fr)); }
+.widget { position: relative; min-width: 0; }
+.card-widget, .card-slots .widget-free { min-height: 6.5rem; }
+.plot-widget, .plot-slots .widget-free { min-height: 22rem; }
+.card-widget {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: .75rem 1rem; display: flex; flex-direction: column; gap: .15rem;
+}
+.card-widget .label { color: var(--muted); font-size: .8rem; text-decoration: none; padding-right: 1.5rem; }
+.card-widget .label:hover { color: var(--accent); }
+.card-widget .num { font-size: 1.35rem; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; text-align: left; }
+.card-widget .note { font-size: .75rem; margin-top: auto; }
+.plot-widget h2 { margin-top: 0; padding-right: 2rem; font-size: 1rem; }
+.plot-widget h2 a { color: inherit; text-decoration: none; }
+.plot-widget h2 a:hover { color: var(--accent); }
+.plot-widget .line-chart { grid-template-rows: 220px 1.75rem; }
+
+/* A free slot: dotted, with a + to pick what goes in it */
+button.widget-free {
+  display: flex; align-items: center; justify-content: center; width: 100%; padding: 0;
+  border: 2px dashed var(--border); border-radius: var(--radius); background: transparent;
+  color: var(--muted); font-size: 2rem; font-weight: 300; cursor: pointer;
+}
+button.widget-free:hover, button.widget-free:focus-visible { border-color: var(--accent); color: var(--accent); background: var(--surface); }
+
+/* The x of a widget (on hover, always in Rearrange mode) and its arrows (only in Rearrange mode) */
+.widget-tools { position: absolute; top: .35rem; right: .35rem; display: flex; gap: .1rem; }
+.widget-tools button.icon { padding: .15rem .3rem; border-radius: 4px; }
+.widget-tools button.icon:disabled { opacity: .3; cursor: default; }
+.widget-tools button.widget-move:hover:not(:disabled) { color: var(--accent); }
+.widget-remove { opacity: 0; }
+.widget:hover .widget-remove, .widget:focus-within .widget-remove, .rearranging .widget-remove { opacity: 1; }
+.widget-move { display: none; }
+.rearranging .widget-move { display: inline-block; }
+.rearranging .widget-tools { background: var(--surface); border-radius: 6px; }
+.rearranging .widget { outline: 2px dashed color-mix(in srgb, var(--accent) 60%, transparent); outline-offset: 2px; cursor: grab; }
+.rearranging .widget a { cursor: grab; }
+.rearranging .widget .line-chart { pointer-events: none; }
+.rearranging .widget.dragging { opacity: .4; }
+.rearranging .drop-over { outline: 2px solid var(--accent); outline-offset: 2px; background: color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+#rearrange[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+
+/* The picker of a free slot */
+/* Its groups side by side when there is room; the dialog itself scrolls if the window is too short */
+.widget-dialog { width: min(760px, calc(100vw - 2rem)); max-height: calc(100vh - 2rem); overflow: auto; }
+.widget-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 1rem; align-items: start; }
+.widget-options[hidden] { display: none; }
+.widget-group { display: grid; gap: .4rem; margin: 0; padding: 0; border: none; min-width: 0; }
+.widget-group legend { padding: 0; margin-bottom: .4rem; font-size: .75rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+button.widget-option {
+  display: flex; flex-direction: column; align-items: flex-start; gap: .1rem; text-align: left;
+  padding: .5rem .75rem; background: var(--surface); color: var(--text); border: 1px solid var(--border);
+  border-radius: 6px; font-weight: normal; cursor: pointer;
+}
+button.widget-option:hover:not(:disabled), button.widget-option:focus-visible { border-color: var(--accent); background: var(--bg); }
+button.widget-option:disabled { opacity: .5; cursor: not-allowed; }
+
+@media (max-width: 1200px) {
+  .dashboard { grid-template-columns: minmax(0, 1fr); }
+  .new-movements { position: static; }
+  .new-movement-buttons { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+}
+/* Half of a 1920px window: two cards a row, so that large amounts fit, and shorter free plot slots */
+@media (max-width: 900px) {
+  .card-slots { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .plot-slots .widget-free { min-height: 8rem; }
+}
+@media (prefers-reduced-motion: reduce) { form.linked { animation: none; } }

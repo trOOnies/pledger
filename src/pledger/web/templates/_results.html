@@ -10,7 +10,7 @@
     <span class="label">Equity change <small>real, {{ period }}</small></span>
     <span class="num {{ 'gain' if equity_real_change and equity_real_change > 0 else 'loss' if equity_real_change and equity_real_change < 0 }}">{{ equity_real_change | signed_percent }}</span>
   </div>
-  <div class="card" title="{% if monthly_expenses %}Equity at the end of the period over the average monthly expenses of the year up to then ({{ monthly_expenses | money }}): the losses of the non-internal base movements, but the deductions of the salary{% else %}No expenses in the year up to the end of the period{% endif %}">
+  <div class="card" title="{% if monthly_expenses %}How many months your equity at the end of the period would last, spending your average monthly expenses of the year up to then ({{ monthly_expenses | money }}). Expenses are your losses, but the initial ones, the internal ones and the ones tagged Employment, like the taxes taken from your salary, which would stop with your job{% else %}No expenses in the year up to the end of the period{% endif %}">
     <span class="label">Equity in months of expenses <small>{{ ("end of " ~ month) if month else "now" }}</small></span>
     <span class="num {{ 'loss' if months_covered is not none and months_covered < 0 }}">{% if months_covered is none %}-{% else %}{{ "%.1f" | format(months_covered) }} months{% endif %}</span>
   </div>

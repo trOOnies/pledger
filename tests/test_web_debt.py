@@ -184,7 +184,7 @@ class TestRemainingAsDifference:
         assert "Difference (G)" in debt and f'hx-post="/debt/movements/{index}/delete"' in debt
         assert f"/debt/movements/{index}/edit" not in debt  # deleted only
         fp = row_fingerprint(rows(settings).iloc[index])
-        ledger = client.get("/", params={"month": ""}).text
+        ledger = client.get("/ledger", params={"month": ""}).text
         assert "A Difference added with a debt movement" in ledger
         r = client.post(f"/debt/movements/{index}/delete", data={"fingerprint": fp})
         assert r.status_code == 200 and r.headers["HX-Trigger"] == "debt-changed, services-changed, work-changed"
@@ -195,7 +195,7 @@ class TestRemainingAsDifference:
         store.add_debt_movement("2026-02-01", "Debt - Incurred", "Ca", "De", "100", "Dad")
         store.add_debt_movement("2026-02-05", "Debt - Paid", "De", "Ca", "90", "Dad", remaining_as_difference=True)
         index = len(rows(settings)) - 1
-        assert f'hx-post="/movements/{index}/delete"' in client.get("/", params={"month": ""}).text
+        assert f'hx-post="/movements/{index}/delete"' in client.get("/ledger", params={"month": ""}).text
         fp = row_fingerprint(rows(settings).iloc[index])
         assert client.post(f"/movements/{index}/delete", data={"fingerprint": fp}).status_code == 200
         assert self.balance(settings) == pytest.approx(10)
@@ -204,7 +204,7 @@ class TestRemainingAsDifference:
         with settings.ledger_path.open("a", encoding="utf-8") as f:
             f.write("2026-02-05;Difference (G);Ca;5.00;Eq;\n")
         index = len(rows(settings)) - 1
-        ledger = client.get("/", params={"month": ""}).text
+        ledger = client.get("/ledger", params={"month": ""}).text
         assert f'hx-post="/movements/{index}/delete"' in ledger
         assert "A Difference added with a debt movement" not in ledger
         fp = row_fingerprint(rows(settings).iloc[index])
@@ -391,7 +391,7 @@ class TestDebtSides:
             f.write("2026-02-03;Debt - Paid;De;5;Ca;\n")
         LedgerStore(settings).freeze_ids()
         # To the Debt tab in the month of the movement, so it isn't filtered out
-        assert 'href="/debt?month=2026-02#movement-L-5" title="Added, edited and deleted from the People tab"' in client.get("/").text
+        assert 'href="/debt?month=2026-02#movement-L-5" title="Added, edited and deleted from the People tab"' in client.get("/ledger").text
         assert '<tr id="movement-L-5">' in client.get("/debt", params={"month": "2026-02"}).text
 
     def test_form_offers_only_debt_accounts(self, client):
@@ -492,7 +492,7 @@ class TestDebtPage:
         movements = r.text.split('data-sortable="debt-movements"')[1].split("</table>")[0]
         # With their ids, the same as in the Ledger tab
         assert movement_ids(movements) == ["L-6", "L-5", "A-Lo", "A-De"]
-        assert set(movement_ids(movements)) <= set(movement_ids(client.get("/", params={"initial": True}).text))
+        assert set(movement_ids(movements)) <= set(movement_ids(client.get("/ledger", params={"initial": True}).text))
         # The initial movements too, with the initial amounts of everyone: what we owe in De, what we are owed in Lo
         assert "<h2>Movements <small>4, all time</small></h2>" in r.text
         assert movements.index("2026-02-05") < movements.index("2026-01-05") < movements.index("Initial (L)")

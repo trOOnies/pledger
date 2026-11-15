@@ -111,7 +111,7 @@ class TestIds:
             f.write("2026-01-05;Food;Eq;1;Ca;\n")
         movements = client.get("/api/movements").json()
         assert [m["id"] for m in movements] == [None, "L-4", "L-3", "L-2", "L-1"]
-        assert 'title="Added to the CSV while pledger runs' in client.get("/").text
+        assert 'title="Added to the CSV while pledger runs' in client.get("/ledger").text
         # Adding a movement freezes it first; an id sent by the client is ignored
         body = {"move_date": "2026-01-06", "base_movement": "Food", "acc_debit": "Eq",
                 "acc_credit": "Ca", "amount": 2, "id": "L-1"}
@@ -186,12 +186,12 @@ class TestInternalBaseMovements:
         assert client.delete("/api/movements/4").status_code == 422
         assert len(rows(settings)) == 5
         # The ledger shows a lock instead of the delete button
-        index = client.get("/").text
+        index = client.get("/ledger").text
         assert index.count('aria-label="Delete movement"') == 4
         assert "cannot be deleted by hand" in index
         assert client.get("/api/base-movements").json()[-1] == {
             "name": "Adjust", "description": "Set by pledger", "type": "transfer",
-            "result_type": None, "debit": None, "credit": None, "internal": True,
+            "result_type": None, "debit": None, "credit": None, "internal": True, "employment": False,
         }
 
 
@@ -516,14 +516,14 @@ class TestInternalResultTypes:
 
     def test_are_hidden_by_default(self, client):
         assert all(m["base"] != "Initial (G)" for m in client.get("/api/movements").json())
-        r = client.get("/")
+        r = client.get("/ledger")
         assert "Initial (G)" not in r.text.split('id="view"')[1] and 'name="initial" value="true" >' in r.text
         assert "Initial (G)" not in client.get("/results", headers=HTMX).text  # the charts
 
     def test_can_be_shown_but_not_deleted(self, client):
         movements = client.get("/api/movements", params={"initial": True}).json()
         assert movements[-1]["base"] == "Initial (G)"  # the oldest
-        r = client.get("/", params={"initial": True})
+        r = client.get("/ledger", params={"initial": True})
         assert 'name="initial" value="true" checked>' in r.text
         assert r.text.count('hx-post="/movements/') == 4  # only the CSV rows
         assert "$100.50" in r.text  # Bk's initial movement
@@ -539,7 +539,7 @@ class TestInternalResultTypes:
             f.write("2026-01-05;Initial (G);Ca;5;Eq;\n")
         with pytest.raises(LedgerDataError, match=re.escape("cannot have movements of ['Initial (G)']")):
             LedgerStore(settings).load()
-        assert client.get("/").status_code == 500
+        assert client.get("/ledger").status_code == 500
 
     @pytest.mark.parametrize(
         ("old", "new", "missing"),
@@ -557,7 +557,7 @@ class TestInternalResultTypes:
         path.write_text(path.read_text().replace(old, new, 1))
         with pytest.raises(LedgerDataError, match=re.escape(f"base movement {missing!r} is required")):
             LedgerStore(settings).load()
-        r = client.get("/")
+        r = client.get("/ledger")
         assert r.status_code == 500 and f"{missing!r} is required" in r.text.replace("&#39;", "'")
 
     def test_cannot_get_new_base_movements(self, settings, client):

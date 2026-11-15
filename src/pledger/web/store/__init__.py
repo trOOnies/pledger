@@ -101,6 +101,11 @@ from pledger.web.store.conversions import (
     linked_conversion,
 )
 from pledger.web.store.currency_store import value_text
+from pledger.web.store.dashboard_store import (
+    DASHBOARD_SLOTS,
+    DEFAULT_DASHBOARD,
+    Dashboard,
+)
 from pledger.web.store.investments import (
     initial_prices,
     is_capital,
@@ -159,11 +164,13 @@ __all__ = [
     "CORRECTION_GAIN",
     "CORRECTION_LOSS",
     "CROSS_CONVERSION",
+    "DASHBOARD_SLOTS",
     "DEBT_BASES",
     "DEBT_BASE_ROLES",
     "DEBT_BASE_SIDES",
     "DEBT_INCURRED",
     "DEBT_PAID",
+    "DEFAULT_DASHBOARD",
     "DIFFERENCES",
     "DIFFERENCE_GAIN",
     "DIFFERENCE_LOSS",
@@ -212,6 +219,7 @@ __all__ = [
     "SERVICE_ID",
     "SERVICE_MONTH",
     "WORK_COLUMNS",
+    "Dashboard",
     "LedgerDataError",
     "LedgerStore",
     "Settings",

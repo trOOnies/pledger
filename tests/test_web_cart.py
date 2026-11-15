@@ -184,4 +184,4 @@ class TestPages:
         assert "Deleted the cart 1" in r.text and store.load_carts().empty
 
     def test_the_tab_is_in_the_menu(self, client):
-        assert 'href="/cart"' in client.get("/").text
+        assert 'href="/cart"' in client.get("/ledger").text

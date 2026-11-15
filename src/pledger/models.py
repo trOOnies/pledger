@@ -81,6 +81,7 @@ INTERNAL_DEBTS = {
 # entry) and its initial amount (that of its creditors, see Account.load_yaml).
 DEBT_ACCOUNT_KEYS = {"name", "long_name", "description", "is_liquid", "initial_date", "checks", "interest_frequency"}
 INTERNAL = "internal"
+EMPLOYMENT = "employment"  # the key of a base movement relying on being employed (see MovementBase)
 # The `after` of a result type in the base movements YAML: the name of the one right
 # before it, or one of these keywords, each used by exactly one result type: the first
 # and the last ones (see result_type_order).
@@ -1335,6 +1336,9 @@ class MovementBase:
     internal: bool = False  # set by pledger itself: cannot be picked or deleted by hand
     debit_special: str | None = None  # one of RESERVED: the debit side takes any such account
     credit_special: str | None = None  # one of RESERVED: the credit side takes any such account
+    # Its gains or losses rely on being employed (e.g. the salary and its deductions): left out
+    # of the expenses that equity covers (see the Results tab), as they stop with the job
+    employment: bool = False
 
     def __post_init__(self):
         self.move_type = MovementType.from_accounts(
@@ -1361,6 +1365,10 @@ class MovementBase:
         if self.result_type is not None and self.result_type.internal != self.internal:
             raise ValueError(
                 f"Base movement '{self.name}' must be internal if and only if its result type is"
+            )
+        if self.employment and (self.result_type is None or self.internal):
+            raise ValueError(
+                f"Base movement '{self.name}' can only be tagged employment if it is a non-internal gain or loss"
             )
 
     def side(self, ledger_side: LedgerSide) -> str | None:
@@ -1470,6 +1478,9 @@ class MovementBase:
                         f"Base movement {name!r} must not set 'internal': "
                         "list it under the top-level 'internal' key instead"
                     )
+                employment = base_move_d.get(EMPLOYMENT, False)
+                if not isinstance(employment, bool):
+                    raise ValueError(f"Base movement {name!r} must set {EMPLOYMENT!r} to true or false, not {employment!r}")  # noqa: TRY004 (a bad data value)
                 acc_debit = _coalesce_mt_account(accounts, move_type, base_move_d, LedgerSide.DEBIT)
                 acc_credit = _coalesce_mt_account(accounts, move_type, base_move_d, LedgerSide.CREDIT)
                 move_bases[name] = MovementBase(
@@ -1481,6 +1492,7 @@ class MovementBase:
                     internal=is_internal,
                     debit_special=_special_side(acc_debit, base_move_d.get("debit")),
                     credit_special=_special_side(acc_credit, base_move_d.get("credit")),
+                    employment=employment,
                 )
 
         return move_bases, result_types

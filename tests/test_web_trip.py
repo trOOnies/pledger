@@ -146,4 +146,4 @@ class TestTrips:
         r = client.post("/trip/trips/delete", data={"name": "Rome"}, headers=HTMX)
         assert "No trips yet" in r.text
         assert settings.ledger_path.read_bytes() == ledger
-        assert '<a href="/trip"' in client.get("/").text
+        assert '<a href="/trip"' in client.get("/ledger").text

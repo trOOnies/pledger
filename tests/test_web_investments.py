@@ -435,11 +435,11 @@ class TestInvestMovements:
         ]
         LedgerStore(client.app.state.store.settings).freeze_ids()
         assert movement_ids(client.get("/investments").text) == ["P-Br-T-2026-01-05", "I-1"]
-        assert {"I-1", "P-Br-T-2026-01-05"} <= set(movement_ids(client.get("/").text))
+        assert {"I-1", "P-Br-T-2026-01-05"} <= set(movement_ids(client.get("/ledger").text))
         assert 'hx-post="/investments/movements/0/delete"' in r.text
         assert r.text.count('aria-label="Delete movement"') == 1  # never the generated ones
         # The ledger shows them with a lock that leads to the Investments tab
-        index = client.get("/").text
+        index = client.get("/ledger").text
         assert 'href="/investments#movement-I-1" title="Added, edited and deleted from the Investments tab" aria-label="Added, edited and deleted from the Investments tab">🟢</a>' in index
         assert 'href="/investments#movement-P-Br-T-2026-01-05" title="Generated from the prices' in index
         assert '<tr id="movement-I-1">' in client.get("/investments").text

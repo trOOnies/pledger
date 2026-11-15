@@ -1,5 +1,7 @@
 {# Marks a result type or base movement set by pledger itself: it can't be picked by hand #}
 {% macro internal_badge() %}<span class="badge internal" title="Internal: set by pledger itself, it can't be picked by hand">Internal</span>{% endmacro %}
+{# Marks a gain or loss that relies on having a job (see MovementBase.employment) #}
+{% macro employment_badge() %}<span class="badge employment" title="Employment: it relies on having a job (like the salary and the taxes taken from it), so it isn't counted in the expenses that equity covers">Employment</span>{% endmacro %}
 <div class="layout setup">
   <div class="column">
   <section class="panel">
@@ -67,6 +69,9 @@
         <label>Description
           <input name="description" value="{{ values.base_description }}" required autocomplete="off">
         </label>
+        <label class="check" title="Employment: it relies on having a job (like the salary and the taxes taken from it), so it isn't counted in the expenses that equity covers">
+          <input type="checkbox" name="employment" value="true" {% if values.employment %}checked{% endif %}> Employment <span class="muted">(gains and losses only)</span>
+        </label>
         <button type="submit">Add base movement</button>
       </form>
     </details>
@@ -77,7 +82,7 @@
       <tbody>
       {% for b in bases %}
       <tr>
-        <td class="nowrap"><strong>{{ b.name }}</strong></td>
+        <td class="nowrap"><strong>{{ b.name }}</strong>{% if b.employment %} {{ employment_badge() }}{% endif %}</td>
         <td data-sort="{{ b.move_type.value }}"><span class="badge {{ b.move_type.value }}">{{ b.move_type.value[0] | upper }}</span> {{ b.move_type.value | capitalize }}</td>
         {% for acc, special in ((b.acc_debit, b.debit_special), (b.acc_credit, b.credit_special)) %}
         {% set special_label = sides.labels[special] if special %}

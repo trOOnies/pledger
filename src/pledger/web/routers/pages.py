@@ -34,6 +34,7 @@ from pledger.web.views import (
     build_accounts,
     build_credit_cards,
     build_currencies,
+    build_dashboard,
     build_debts,
     build_invest_movements,
     build_investments,
@@ -46,6 +47,7 @@ from pledger.web.views import (
     expense_months,
     invest_filter,
     months_of,
+    new_movement_buttons,
     price_rows,
     setup_context,
 )
@@ -54,7 +56,15 @@ router = APIRouter(tags=["pages"], default_response_class=HTMLResponse)
 
 
 @router.get("/")
-def index(
+def dashboard(request: Request, store: StoreDep):
+    """The Dashboard tab: the New movement buttons, and the number cards and plots in its slots."""
+    snapshot = store.load()
+    context = {**build_dashboard(snapshot, store.load_dashboard()), "new_movements": new_movement_buttons(snapshot)}
+    return templates.TemplateResponse(request, "dashboard.html", context)
+
+
+@router.get("/ledger")
+def ledger(
     request: Request, store: StoreDep, month: str | None = None, account: str = "",
     initial: bool = False, base: str = "", q: str = "", editable: bool = False,
 ):
@@ -65,7 +75,7 @@ def index(
         return remember_month(templates.TemplateResponse(request, "_view.html", view), month)
     form = render_form(request, snapshot, {}).body.decode()
     return remember_month(
-        templates.TemplateResponse(request, "index.html", {**view, "form": form}), month
+        templates.TemplateResponse(request, "ledger.html", {**view, "form": form}), month
     )
 
 
@@ -196,7 +206,7 @@ def results_expenses(
     """The Equity in months of expenses panel alone, as its filter changes."""
     snapshot = store.load()
     selected = (expense_types or []) if expenses_filtered else None
-    context = {"month": month, "expenses": expense_months(snapshot, month, initial, selected)}
+    context = {"month": month, "expenses": expense_months(snapshot, month, selected)}
     return templates.TemplateResponse(request, "_expenses.html", context)
 
 

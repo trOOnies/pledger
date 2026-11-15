@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · pledger{% endblock %}
+{% block content %}
+<div class="dashboard">
+  {# Fixed: each button goes to the tab, and the form, adding that kind of movement #}
+  <section class="panel new-movements" aria-labelledby="new-movements-title">
+    <h2 id="new-movements-title">New movement</h2>
+    <nav class="new-movement-buttons" aria-label="New movement">
+      {% for b in new_movements %}
+      <a class="new-movement" href="{{ b.href }}"><span class="emoji" aria-hidden="true">{{ b.emoji }}</span>
+        <span>{{ b.label }}<small class="muted">{{ b.tab }}</small></span></a>
+      {% endfor %}
+    </nav>
+  </section>
+
+  <section id="dashboard-slots" class="dashboard-slots" aria-labelledby="dashboard-title">
+    <div class="panel-head">
+      <h2 id="dashboard-title">Dashboard</h2>
+      <div class="panel-tools">
+        <span class="muted small rearrange-hint" hidden>Drag a card or plot to another slot, or use its arrows.</span>
+        <button type="button" id="rearrange" class="secondary compact" aria-pressed="false">Rearrange</button>
+      </div>
+    </div>
+    <div id="dashboard" hx-target="#dashboard" hx-swap="innerHTML">{% include "_dashboard.html" %}</div>
+  </section>
+</div>
+
+{# The picker of a free slot: the widgets of its kind, those already in the dashboard disabled #}
+<dialog id="widget-dialog" class="dialog widget-dialog" aria-labelledby="widget-dialog-title">
+  <form id="widget-form" hx-post="/dashboard/place" hx-target="#dashboard" hx-swap="innerHTML">
+    <div class="dialog-head"><h2 id="widget-dialog-title">Add a card</h2></div>
+    <input type="hidden" name="kind" value="">
+    <input type="hidden" name="slot" value="">
+    {% for kind, groups in options.items() %}
+    <div class="widget-options" data-options="{{ kind }}" hidden>
+      {% for g in groups %}
+      <fieldset class="widget-group">
+        <legend>{{ g.name }}</legend>
+        {% for o in g.options %}
+        <button type="submit" name="widget" value="{{ o.key }}" class="widget-option">
+          <strong>{{ o.title }}</strong><span class="muted small">{{ o.description }}</span>
+        </button>
+        {% endfor %}
+      </fieldset>
+      {% endfor %}
+    </div>
+    {% endfor %}
+    <div class="dialog-actions">
+      <button type="button" class="secondary" data-close-dialog>Cancel</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+  (() => {
+    const wrap = document.getElementById("dashboard-slots");
+    const button = document.getElementById("rearrange");
+    const hint = wrap.querySelector(".rearrange-hint");
+    const dialog = document.getElementById("widget-dialog");
+    const form = document.getElementById("widget-form");
+
+    // Rearrange mode: the widgets can be dragged, or moved with their arrows, to other slots
+    // of their kind. It is never kept: leaving the tab (or Escape) turns it off.
+    const rearranging = () => wrap.classList.contains("rearranging");
+    function setRearrange(on) {
+      wrap.classList.toggle("rearranging", on);
+      button.textContent = on ? "Done" : "Rearrange";
+      button.setAttribute("aria-pressed", String(on));
+      hint.hidden = !on;
+      wrap.querySelectorAll(".widget").forEach((w) => { w.draggable = on; });
+    }
+    button.addEventListener("click", () => setRearrange(!rearranging()));
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && rearranging() && !dialog.open) setRearrange(false);
+    });
+    // Also when the browser keeps the page to show it again on Back (bfcache)
+    window.addEventListener("pagehide", () => setRearrange(false));
+    window.addEventListener("pageshow", () => setRearrange(false));
+    document.addEventListener("htmx:afterSettle", (e) => {
+      if (wrap.contains(e.detail.elt)) setRearrange(rearranging());
+    });
+    // In Rearrange mode a click is for moving, not for following the links of the widgets
+    wrap.addEventListener("click", (e) => {
+      if (rearranging() && e.target.closest(".widget a")) e.preventDefault();
+    });
+
+    let dragged = null;
+    wrap.addEventListener("dragstart", (e) => {
+      const widget = e.target.closest?.(".widget");
+      if (!rearranging() || !widget) return e.preventDefault();
+      dragged = widget;
+      widget.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", widget.dataset.widget);  // Firefox drags nothing without data
+    });
+    wrap.addEventListener("dragend", () => {
+      dragged?.classList.remove("dragging");
+      dragged = null;
+      wrap.querySelectorAll(".drop-over").forEach((el) => el.classList.remove("drop-over"));
+    });
+    const dropTarget = (e) => {
+      const slot = e.target.closest?.(".widget, .widget-free");
+      return dragged && slot && slot !== dragged && slot.dataset.kind === dragged.dataset.kind ? slot : null;
+    };
+    wrap.addEventListener("dragover", (e) => {
+      const slot = dropTarget(e);
+      wrap.querySelectorAll(".drop-over").forEach((el) => { if (el !== slot) el.classList.remove("drop-over"); });
+      if (!slot) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      slot.classList.add("drop-over");
+    });
+    wrap.addEventListener("drop", (e) => {
+      const slot = dropTarget(e);
+      if (!slot) return;
+      e.preventDefault();
+      htmx.ajax("POST", "/dashboard/move", {
+        target: "#dashboard", swap: "innerHTML",
+        values: { kind: dragged.dataset.kind, source: dragged.dataset.slot, target: slot.dataset.slot },
+      });
+    });
+
+    // A free slot opens the picker of its kind
+    wrap.addEventListener("click", (e) => {
+      const free = e.target.closest(".widget-free");
+      if (!free) return;
+      const kind = free.dataset.kind;
+      form.elements.kind.value = kind;
+      form.elements.slot.value = free.dataset.slot;
+      document.getElementById("widget-dialog-title").textContent = kind === "cards" ? "Add a card" : "Add a plot";
+      const placed = new Set([...wrap.querySelectorAll(`.widget[data-kind="${kind}"]`)].map((w) => w.dataset.widget));
+      dialog.querySelectorAll("[data-options]").forEach((list) => { list.hidden = list.dataset.options !== kind; });
+      dialog.querySelectorAll(`[data-options="${kind}"] button`).forEach((b) => {
+        b.disabled = placed.has(b.value);
+        b.title = b.disabled ? "Already in the dashboard" : "";
+      });
+      dialog.showModal();
+      dialog.querySelector(`[data-options="${kind}"] button:not(:disabled)`)?.focus();
+    });
+    form.addEventListener("htmx:afterRequest", () => dialog.close());
+    dialog.querySelector("[data-close-dialog]").addEventListener("click", () => dialog.close());
+    dialog.addEventListener("click", (e) => { if (e.target === dialog) dialog.close(); });
+  })();
+</script>
+{% endblock %}

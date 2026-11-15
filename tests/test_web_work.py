@@ -355,7 +355,7 @@ class TestSalaries:
         assert [snapshot.ids[ix] for ix in snapshot.salary_rows.index] == [
             move_id for i in range(2, 6) for move_id in (f"W-2026-01-{i}", f"W-2026-01-{i}-{tax}")
         ]
-        r = TestClient(create_app(settings)).get("/")
+        r = TestClient(create_app(settings)).get("/ledger")
         # Each links to the row of its month in the Work tab
         assert r.text.count('href="/work#month-2026-01" title="Generated each week from the salary of the Work tab" aria-label="Generated each week from the salary of the Work tab">🟠</a>') == 8
         assert '<tr id="month-2026-01">' in TestClient(create_app(settings)).get("/work").text
@@ -490,7 +490,7 @@ class TestWorkLoan:
         index = len(snapshot.rows) - 1
         assert f'hx-post="/debt/movements/{index}/delete"' in loan
         # Linked from the Ledger tab to the Work tab
-        assert 'href="/work#movement-' in client.get("/", params={"month": ""}).text
+        assert 'href="/work#movement-' in client.get("/ledger", params={"month": ""}).text
         assert "Globex" not in client.get("/debt").text  # not in the People tab
         r = client.post("/work/collections", data={"company": "Dad", "move_date": "2026-02-05", "acc_debit": "Ca", "amount": "1"})
         assert "&#39;Dad&#39; is a person: their movements are in the debt accounts of the people" in r.text

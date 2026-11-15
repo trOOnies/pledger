@@ -33,7 +33,7 @@ class TestLedgerBalances:
         assert [(m["base"], m["credit_balance"]) for m in moves] == [("Withdraw", pytest.approx(901)), ("Salary", pytest.approx(1101))]
 
     def test_columns(self, client):
-        table = client.get("/").text.split('data-sortable="movements"')[1].split("</table>")[0]
+        table = client.get("/ledger").text.split('data-sortable="movements"')[1].split("</table>")[0]
         assert "Debit balance</th>" in table and "Credit balance</th>" in table
         assert '<td class="num money balance " data-sort="159.75">$159.75</td>' in table
 
@@ -69,11 +69,11 @@ class TestLedgerSearch:
         assert view["movements"][0]["credit_balance"] == pytest.approx(1060.75)  # of the whole ledger
 
     def test_page_and_api(self, client):
-        r = client.get("/", params={"q": "withdraw"})
+        r = client.get("/ledger", params={"q": "withdraw"})
         assert 'name="q" value="withdraw"' in r.text
         table = r.text.split('data-sortable="movements"')[1].split("</table>")[0]
         assert "Withdraw" in table and "Salary" not in table
-        partial = client.get("/", params={"q": "nothing like this"}, headers={"HX-Request": "true"})
+        partial = client.get("/ledger", params={"q": "nothing like this"}, headers={"HX-Request": "true"})
         assert "No movements." in partial.text
         assert [m["base"] for m in client.get("/api/movements", params={"q": "food"}).json()] == ["Food"]
 
@@ -82,7 +82,7 @@ class TestLedgerBaseFilter:
     def test_filter_by_base_movement(self, settings, client):
         moves = build_view(LedgerStore(settings).load(), base="Food")["movements"]
         assert [m["base"] for m in moves] == ["Food"]
-        r = client.get("/", params={"base": "Food"})
+        r = client.get("/ledger", params={"base": "Food"})
         assert '<option value="Food" selected>Food</option>' in r.text
         assert "<h2>Movements <small>1</small></h2>" in r.text
 
@@ -93,7 +93,7 @@ class TestCopyMovement:
         return LedgerStore(settings).load().rows.iloc[index]
 
     def test_editable_movements_have_the_button(self, client):
-        table = client.get("/").text.split('data-sortable="movements"')[1].split("</table>")[0]
+        table = client.get("/ledger").text.split('data-sortable="movements"')[1].split("</table>")[0]
         assert table.count('title="Copy"') == table.count('title="Edit"') == 4
         assert 'hx-get="/movements/2/copy"' in table
 
@@ -160,8 +160,8 @@ class TestEditableFilter:
             assert m["base"] == "Food" and m["debit_balance"] == everything[m["index"]]["debit_balance"]
 
     def test_the_tab_has_it(self, client):
-        assert 'name="editable" value="true" >' in client.get("/").text
-        assert 'name="editable" value="true" checked' in client.get("/", params={"editable": "true"}).text
+        assert 'name="editable" value="true" >' in client.get("/ledger").text
+        assert 'name="editable" value="true" checked' in client.get("/ledger", params={"editable": "true"}).text
 
 
 class TestAutoBaseMovements:
@@ -203,7 +203,7 @@ class TestAutoBaseMovements:
 
 class TestGroupedSelects:
     def test_filters_by_account_type_and_result_type(self, client):
-        filters = client.get("/").text.split('id="filters"')[1].split("</form>")[0]
+        filters = client.get("/ledger").text.split('id="filters"')[1].split("</form>")[0]
         accounts = filters.split('name="account"')[1].split("</select>")[0]
         groups = [g.split('"')[0] for g in accounts.split('<optgroup label="')[1:]]
         assert groups == [
@@ -217,7 +217,7 @@ class TestGroupedSelects:
         assert operative.index(">Card fee<") < operative.index(">Food<") < operative.index(">Salary<")
 
     def test_base_movement_field_by_result_type(self, client):
-        form = client.get("/").text.split('id="base-fields"')[1].split("</select>")[0]
+        form = client.get("/ledger").text.split('id="base-fields"')[1].split("</select>")[0]
         # The losses by result type, the first one picked by default
         assert '<optgroup label="Operative">' in form and "<option selected>Card fee</option>" in form
         gains = client.get("/form/bases", params={"move_type": "gain"}).text.split("</select>")[0]
