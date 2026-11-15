@@ -22,7 +22,6 @@ def list_base_movements(store: StoreDep):
             "debit": b.side(LedgerSide.DEBIT),
             "credit": b.side(LedgerSide.CREDIT),
             "internal": b.internal,
-            "employment": b.employment,
         }
         for b in store.load().base_movements.values()
     ]
@@ -33,7 +32,7 @@ def create_base_movement(store: StoreDep, base: BaseMovementIn):
     try:
         store.add_base_movement(
             base.name, base.type.value, base.description,
-            base.debit or "", base.credit or "", base.result_type or "", base.employment,
+            base.debit or "", base.credit or "", base.result_type or "",
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from None

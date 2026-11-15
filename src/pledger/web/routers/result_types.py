@@ -20,6 +20,7 @@ def list_result_types(store: StoreDep):
             "long_name": rt.long_name,
             "description": rt.description,
             "internal": rt.internal,
+            "employment": rt.employment,
         }
         for rt in (result_types[i] for i in sorted(result_types))
     ]
@@ -28,7 +29,7 @@ def list_result_types(store: StoreDep):
 @router.post("", status_code=201)
 def create_result_type(store: StoreDep, result_type: ResultTypeIn):
     try:
-        store.add_result_type(result_type.name, result_type.long_name, result_type.description)
+        store.add_result_type(result_type.name, result_type.long_name, result_type.description, result_type.employment)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from None
     return {"ok": True}

@@ -26,7 +26,7 @@ WIDGETS = {
         "month-losses": ("Losses this month", "The losses of this month, without the initial movements", "/results", "Results"),
         "month-profit": ("Profit this month", "Gains minus losses of this month, without the initial movements", "/results", "Results"),
         "month-equity-change": ("Equity change this month", "How much equity changed in this month, nominal", "/results", "Results"),
-        "monthly-expenses": ("Monthly expenses", "What you spent on average each month of the last year, without the initial, internal and Employment losses", "/results", "Results"),
+        "monthly-expenses": ("Monthly expenses", "What you spent on average each month of the last year, without the initial losses and those of internal and Employment result types", "/results", "Results"),
         "months-covered": ("Months of expenses", "How many months your equity would last, spending your monthly expenses", "/results", "Results"),
     },
     "plots": {

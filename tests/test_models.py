@@ -384,7 +384,8 @@ class TestMovementBase:
             ("  transfer:\n    Adjust:", "  transfer:\n    Move:", "Duplicated base movement name: 'Move'"),
             ("      after: LAST\n", "      after: Op\n", "'Gifts' and 'Init' are both after 'Op': the chain of result types must be linear"),
             ("      after: LAST\n", "      after: Gifts\n", r"must be after: LAST\. Values seen: \[\]"),
-            ("    Init:\n", "    Op:\n", r"both internal and not: \['Op'\]"),
+            ("    Init:\n", "    Op:\n", r"Result type 'Op' isn't internal: under the 'internal' key it only has the 'base_movements' internal to it, not \['after', 'description', 'long_name'\]"),
+            ("      after: LAST\n", "      after: LAST\n      employment: true\n", "Result type 'Init' is internal: it can't be tagged 'employment'"),
             ("        gain:\n", "        transfer:\n", "only include 'gain' and 'loss'"),
             ("  result_types:\n", "  types:\n", r"only has 'result_types' and 'transfer', not \['types'\]"),
         ],
@@ -399,6 +400,35 @@ class TestMovementBase:
         path.write_text(text + INTERNAL_YAML.replace(old, new, 1), encoding="utf-8")
         with pytest.raises(ValueError, match=message):
             MovementBase.load_yaml(str(path), accounts)
+
+    def test_load_yaml_internal_base_movements_of_a_regular_result_type(
+        self, tmp_path, accounts_yaml, base_movements_yaml, currencies_yaml
+    ):
+        accounts = Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml))
+        path = tmp_path / "result_types.yaml"
+        text = Path(base_movements_yaml).read_text(encoding="utf-8")
+        extension = "    Op:\n      base_movements:\n        loss:\n          Correction (L): A correction\n"
+        path.write_text(text + INTERNAL_YAML.replace("  transfer:\n", extension + "  transfer:\n", 1), encoding="utf-8")
+        bases, result_types = MovementBase.load_yaml(str(path), accounts)
+        correction = bases["Correction (L)"]
+        assert correction.internal and correction.result_type is result_types[1] and not result_types[1].internal
+        assert [rt.name for rt in result_types.values()].count("Op") == 1
+
+    def test_load_yaml_employment(self, tmp_path, accounts_yaml, base_movements_yaml, currencies_yaml):
+        accounts = Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml))
+        path = tmp_path / "result_types.yaml"
+        text = Path(base_movements_yaml).read_text(encoding="utf-8") + INTERNAL_YAML
+        path.write_text(text.replace("    long_name: Operative\n", "    long_name: Operative\n    employment: true\n", 1), encoding="utf-8")
+        _, result_types = MovementBase.load_yaml(str(path), accounts)
+        assert [rt.name for rt in result_types.values() if rt.employment] == ["Op"]
+        for old, new, message in (
+            ("    long_name: Operative\n", "    long_name: Operative\n    employment: maybe\n", "must set 'employment' to true or false"),
+            ("          description: Groceries\n", "          description: Groceries\n          employment: true\n",
+             "Base movement 'Food' must not set 'employment': set it on its result type instead"),
+        ):
+            path.write_text(text.replace(old, new, 1), encoding="utf-8")
+            with pytest.raises(ValueError, match=message):
+                MovementBase.load_yaml(str(path), accounts)
 
     def test_load_yaml_description_shorthand(
         self, tmp_path, accounts_yaml, base_movements_yaml, currencies_yaml
@@ -415,13 +445,13 @@ class TestMovementBase:
         assert food.result_type is result_types[1] and not food.internal
         assert (move.description, move.acc_debit, move.acc_credit) == ("Free transfer", None, None)
 
-    def test_internal_iff_its_result_type_is(self, accounts, result_types):
+    def test_internal_if_its_result_type_is(self, accounts, result_types):
         init = ResultType(1, "Init", "Initial", "", internal=True)
         assert MovementBase("Initial (L)", "", accounts["Eq"], None, init, internal=True)
-        with pytest.raises(ValueError, match="internal if and only if"):
+        with pytest.raises(ValueError, match="must be internal, as its result type is"):
             MovementBase("Initial (L)", "", accounts["Eq"], None, init)
-        with pytest.raises(ValueError, match="internal if and only if"):
-            MovementBase("Food", "", accounts["Eq"], None, result_types[1], internal=True)
+        # A regular result type may have internal base movements too
+        assert MovementBase("Correction (L)", "", accounts["Eq"], None, result_types[1], internal=True).internal
         with pytest.raises(ValueError, match="result type"):
             MovementBase("Initial (L)", "", accounts["Eq"], None, None, internal=True)
 

@@ -191,7 +191,7 @@ class TestInternalBaseMovements:
         assert "cannot be deleted by hand" in index
         assert client.get("/api/base-movements").json()[-1] == {
             "name": "Adjust", "description": "Set by pledger", "type": "transfer",
-            "result_type": None, "debit": None, "credit": None, "internal": True, "employment": False,
+            "result_type": None, "debit": None, "credit": None, "internal": True,
         }
 
 

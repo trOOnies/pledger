@@ -200,11 +200,11 @@ class AccountStore(MovementStore):
         self.add(snapshot.today.isoformat(), base_name, debit, credit, amount, comment, correction=True)
         return base_name, amount
 
-    def add_result_type(self, name: str, long_name: str, description: str) -> None:
+    def add_result_type(self, name: str, long_name: str, description: str, employment: bool = False) -> None:
         """
         Validate a new result type and add it to the base movements YAML, at the end of the
         chain of `after` (see result_type_order): right after the one before the LAST one,
-        which stays last.
+        which stays last. It can be tagged `employment` (see ResultType).
         """
         snapshot = self.load()
         existing = {rt.name: rt for rt in snapshot.result_types.values()}
@@ -221,6 +221,8 @@ class AccountStore(MovementStore):
             "long_name": long_name,
             "description": description,
         }
+        if employment:
+            fields["employment"] = True
         self._add_yaml_entry(self.settings.base_movements_path, ("result_types",), name, fields)
 
     def add_base_movement(
@@ -231,13 +233,11 @@ class AccountStore(MovementStore):
         debit: str = "",
         credit: str = "",
         result_type: str = "",
-        employment: bool = False,
     ) -> None:
         """
         Validate a new base movement and add it to the base movements YAML: gains
         and losses under their result type, transfers in the `transfer` section.
         A side set to one of the RESERVED names takes any such account (see SPECIAL_SIDES).
-        A gain or loss can be tagged `employment` (see MovementBase).
         """
         snapshot = self.load()
         name = _check_name(name, snapshot.base_movements, "base movement")
@@ -269,15 +269,11 @@ class AccountStore(MovementStore):
         if debit and debit not in SPECIAL_SIDES and debit == credit:
             raise ValueError("Debit and credit accounts must be different")
 
-        if employment and move_type == MovementType.TRANSFER:
-            raise ValueError("Only gains and losses can be tagged employment")
         fields = {"description": description}
         if debit:
             fields["debit"] = debit
         if credit:
             fields["credit"] = credit
-        if employment:
-            fields["employment"] = True
         self._add_yaml_entry(self.settings.base_movements_path, section, name, fields)
 
     def add_person(self, name: str, amount: str | float = "", expected: str = "") -> None:

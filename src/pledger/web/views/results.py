@@ -185,14 +185,19 @@ def build_results(
 EXPENSES_DAYS = 365  # the expenses covered by equity are the average of the losses of this many days
 
 
+def is_expense_type(rt) -> bool:
+    """
+    Whether the losses of a result type count as expenses by default, the ones that equity
+    covers: not those of an internal one (foreign currency, investments...) and not those of
+    one relying on having a job (tagged employment, like the salary and its taxes), which
+    would stop with it.
+    """
+    return rt is not None and not rt.internal and not rt.employment
+
+
 def is_expense(snapshot: Snapshot, base) -> bool:
-    """
-    Whether the losses of a base movement count as expenses, the ones that equity covers: not
-    the initial ones (they set the initial amounts of the accounts), not the internal ones
-    (foreign currency, investments, corrections...) and not those relying on having a job
-    (tagged employment, like the taxes taken from the salary), which would stop with it.
-    """
-    return not base.internal and not base.employment and base.name not in snapshot.initial_base_names
+    """Whether the losses of a base movement count as expenses: of such a result type, and never the initial ones."""
+    return is_expense_type(base.result_type) and base.name not in snapshot.initial_base_names
 
 
 def equity_metrics(snapshot: Snapshot, month: str = "") -> dict:
@@ -247,12 +252,14 @@ def equity_metrics(snapshot: Snapshot, month: str = "") -> dict:
 
 
 def loss_result_types(snapshot: Snapshot) -> list:
-    """The result types with loss base movements that count as expenses (see is_expense), in order."""
+    """
+    The result types with loss base movements that may count as expenses, in order: not the
+    ones tagged employment, nor the one of the initial movements.
+    """
     return [
         rt for rt in (snapshot.result_types[i] for i in sorted(snapshot.result_types))
-        if any(
+        if not rt.employment and any(
             b.result_type is rt and b.move_type == MovementType.LOSS and b.name not in snapshot.initial_base_names
-            and not b.employment
             for b in snapshot.base_movements.values()
         )
     ]
@@ -264,8 +271,8 @@ def expense_months(snapshot: Snapshot, month: str = "", selected: list[str] | No
     every month of the ledger): its equity then over the average monthly losses of the
     `selected` loss result types (their names; the non-internal ones by default), each the
     losses of its base movements in the EXPENSES_DAYS up to then, like equity_metrics. The
-    initial movements and the ones tagged employment never count (see is_expense); the
-    internal ones only if their result type is ticked.
+    initial movements and the result types tagged employment never count; the internal
+    ones only if ticked (see is_expense).
     The `chart` draws those months, and the `raw_chart` the averages themselves, stacked
     by result type. A month without expenses has no months (None), drawn at 0.
     """
@@ -293,10 +300,7 @@ def expense_months(snapshot: Snapshot, month: str = "", selected: list[str] | No
         equity[date] = equity.get(date, 0.0) + sign * move.amount
         rt = move.move_base.result_type
         base = move.move_base
-        if (
-            sign < 0 and rt is not None and by_rt.get(rt.name) is rt
-            and not base.employment and base.name not in snapshot.initial_base_names
-        ):
+        if sign < 0 and rt is not None and by_rt.get(rt.name) is rt and base.name not in snapshot.initial_base_names:
             losses[rt.name][date] = losses[rt.name].get(date, 0.0) + move.amount
     days = sorted(equity)
     equity_upto = list(accumulate(equity[d] for d in days))

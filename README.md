@@ -77,7 +77,7 @@ A FastAPI + HTMX UI, one tab per area:
 | 📋 **Ledger** | Lists, adds, edits and deletes movements, with the balances of their accounts right after each one, filtered by month, account and base movement, by whether it can be edited here, and by a search (every word in its id, date, base movement, accounts, comment or amount; `"quote"` a phrase). The **Debit** and **Credit** fields of every form, and the **Account** filter, group the accounts by type (and currency), and the **Base movement** filter and field group the base movements by result type, then the transfers. Its ⧉ button fills the form in with a movement, to add a similar one: nothing is saved until it is added, as a new movement. Conversions, debt movements and card payments are added in their own tabs instead. |
 | 🏦 **Accounts** | Balances (also in their currency, for the accounts in another one), total assets, liabilities and equity, a form to add accounts, edit the asset and liability ones (✎), the composition of assets and liabilities (by currency or by liquidity) and, at each month end, debt over equity and net liquidity (liquid assets minus liquid liabilities) over equity. |
 | 💱 **Currencies** | Balances per currency, the balance of each account in other currencies in its own currency, the daily CPI of the base currency, its monthly inflation, the nominal and real value of each other currency, and the share of each currency in the assets at each month end. The conversions are added (picking the currency sold and the one bought), edited and deleted here, filtered by currency and account, each with the account's balance in its own currency after it. |
-| 📊 **Results** | The nominal and real change of equity in the period and the months of expenses it covers (how long equity would last at the average monthly losses of the last year, leaving out the initial and internal ones and those tagged `employment`), gains, losses and profit by result type (also cumulative), a waterfall of the result by type (with its result statement as a table, both also as a share of the gains of the first result type, e.g. *Operative*), equity in months of expenses at each month end (of the loss result types picked, or their raw average monthly losses stacked) and equity over time. Result types and base movements are listed and added here, with a badge on those tagged Employment. |
+| 📊 **Results** | The nominal and real change of equity in the period and the months of expenses it covers (how long equity would last at the average monthly losses of the last year, leaving out the initial ones and those of the internal result types and of those tagged `employment`), gains, losses and profit by result type (also cumulative), a waterfall of the result by type (with its result statement as a table, both also as a share of the gains of the first result type, e.g. *Operative*), equity in months of expenses at each month end (of the loss result types picked, or their raw average monthly losses stacked) and equity over time. Result types and base movements are listed and added here, with a badge on the result types tagged Employment. |
 | 💼 **Work** | The company, job position and salary of each month, from gross to net through its deductions (taxes, contributions...), with a chart of both salaries (0 for the months without a job). Below, what each company owes in `Wo` (the net salaries it hasn't paid yet) and its movements; the salaries received are added (*Salary received*) and deleted here. |
 | 📈 **Investments** | The investments of the investment accounts with their price (amount over quantity), their composition by type or by account, the results of each one, the interest on money of regular accounts, and charts of the total invested and the total result. The broker fees of each investment are shown over its amount. The **Investment account**, **Investment** and **Base movement** filters narrow the movements down (an investment shows all its movements, whatever their accounts), each with the total of its account and the amount and quantity of its investment after it. The internal `Invest` movements are added, edited and deleted here, and so are new prices of the investments, from which their capital gains and losses are generated. |
 | 👥 **People** | Who we owe and who owes us among the people, in the debt and loan accounts of each currency, each in its currency and in all in the base one, with alerts and the movements of the month, each with what we owe whoever it names after it. The debt and loan movements of the people are added and edited here, in any currency, and new people added to `creditors.yaml`. (The `Debt` menu has People, Services and Credit Cards.) |
@@ -301,7 +301,7 @@ A correction is a movement dated today, in the ledger CSV, of one of these inter
 ```yaml
 internal:
   result_types:
-    Corr:   # or any other internal result type
+    Corr:   # or any other internal result type, or a regular one (see Base movements and internal movements)
       after: LAST   # the result type right before it, FIRST or LAST (see Result types)
       long_name: Corrections
       description: Results because of untracked movements that prompted balance corrections
@@ -410,29 +410,48 @@ shares of each item as numbers (1 or 0, or the percentages), and answers in cent
 ### Base movements and internal movements
 
 A base movement is a dict (`description` and optional fixed `debit`/`credit` accounts) or just
-its description. A gain or loss can also set `employment: true`: it relies on having a job, like
-the salary and the taxes taken from it. Its losses are then left out of the expenses whose months
-equity covers (the Results tab and the Dashboard), as they would stop with the job; the initial
-movements are never counted there either.
-
-```yaml
-Work - Income taxes:
-  description: Income taxes taken from the salary
-  credit: Wo
-  employment: true
-```
- A side set to `INVESTMENT`, `CREDIT CARD` or `FOREIGN CURRENCY` (reserved
+its description. A side set to `INVESTMENT`, `CREDIT CARD` or `FOREIGN CURRENCY` (reserved
 names) takes any investment, credit card or foreign currency account (in another currency, but
 the investment ones) instead of a fixed one, and the forms only offer those there. So do
 `DEBT ACCOUNT` and `LOAN ACCOUNT`, the debt or loan account of any currency, of the debt
 movements (see [Debt](#debt)). The Accounts
 tab marks the investment, credit card and debt accounts in its Special column.
 
+A result type can set `employment: true`: its gains and losses rely on having a job, like the
+salary and the taxes taken from it. Its losses are then left out of the expenses whose months equity
+covers (the Results tab and the Dashboard), as they would stop with the job; the initial movements
+are never counted there either.
+
+```yaml
+result_types:
+  W Taxes:
+    after: Taxes
+    long_name: Work Taxes
+    description: The taxes and tax returns of work
+    employment: true
+    base_movements:
+      loss:
+        Work - Income taxes:
+          description: Income taxes taken from the salary
+          credit: Wo
+```
+
 The top-level `internal` key mirrors the rest of the file: its `result_types`, sharing their ids
 with the other ones, next to a `transfer` section. Its base movements are reserved for pledger
 itself. They can't be picked for a new movement in the Ledger tab, their movements can't be deleted
 by hand (but those of the Investments, Debt and Credit Cards tabs, from there), and its result
-types can't get new base movements.
+types can't get new base movements. An entry of its `result_types` named like a regular result
+type only has `base_movements`: internal base movements of that regular one, like the corrections
+in `Rest` (they count as its losses, also as expenses):
+
+```yaml
+internal:
+  result_types:
+    Rest:   # a regular result type: only its internal base movements
+      base_movements:
+        loss:
+          Correction (L): Money correction against oneself
+```
 
 > [!NOTE]
 > **Exception: investments.** The base movements of the internal `Invest` result type (interest,

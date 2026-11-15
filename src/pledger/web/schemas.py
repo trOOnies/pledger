@@ -127,6 +127,7 @@ class ResultTypeIn(BaseModel):
     name: str
     long_name: str
     description: str
+    employment: bool = False  # its gains and losses rely on being employed (see ResultType)
 
 
 class BaseMovementIn(BaseModel):
@@ -136,4 +137,3 @@ class BaseMovementIn(BaseModel):
     debit: str | None = None
     credit: str | None = None
     result_type: str | None = None  # required for gains and losses
-    employment: bool = False  # a gain or loss relying on being employed (see MovementBase)

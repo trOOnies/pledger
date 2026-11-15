@@ -986,11 +986,12 @@ def create_result_type(
     name: Annotated[str, Form()],
     long_name: Annotated[str, Form()] = "",
     description: Annotated[str, Form()] = "",
+    employment: Annotated[bool, Form()] = False,
 ):
     try:
-        store.add_result_type(name, long_name, description)
+        store.add_result_type(name, long_name, description, employment)
     except ValueError as e:
-        values = {"rt_name": name, "rt_long_name": long_name, "rt_description": description}
+        values = {"rt_name": name, "rt_long_name": long_name, "rt_description": description, "rt_employment": employment}
         return render_setup(request, store, values, result_type_error=str(e))
     return render_setup(
         request, store, {}, result_type_success=f"Added result type {name.strip()}"
@@ -1007,14 +1008,13 @@ def create_base_movement(
     debit: Annotated[str, Form()] = "",
     credit: Annotated[str, Form()] = "",
     result_type: Annotated[str, Form()] = "",
-    employment: Annotated[bool, Form()] = False,
 ):
     try:
-        store.add_base_movement(name, move_type, description, debit, credit, result_type, employment)
+        store.add_base_movement(name, move_type, description, debit, credit, result_type)
     except ValueError as e:
         values = {
             "move_type": move_type, "base_name": name, "base_description": description,
-            "debit": debit, "credit": credit, "result_type": result_type, "employment": employment,
+            "debit": debit, "credit": credit, "result_type": result_type,
         }
         return render_setup(request, store, values, base_error=str(e))
     return render_setup(

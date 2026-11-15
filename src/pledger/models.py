@@ -81,7 +81,7 @@ INTERNAL_DEBTS = {
 # entry) and its initial amount (that of its creditors, see Account.load_yaml).
 DEBT_ACCOUNT_KEYS = {"name", "long_name", "description", "is_liquid", "initial_date", "checks", "interest_frequency"}
 INTERNAL = "internal"
-EMPLOYMENT = "employment"  # the key of a base movement relying on being employed (see MovementBase)
+EMPLOYMENT = "employment"  # the key of a result type relying on being employed (see ResultType)
 # The `after` of a result type in the base movements YAML: the name of the one right
 # before it, or one of these keywords, each used by exactly one result type: the first
 # and the last ones (see result_type_order).
@@ -1318,10 +1318,15 @@ class ResultType:
     long_name: str
     description: str
     internal: bool = False  # set by pledger itself, with ids of their own
+    # Its gains and losses rely on being employed (e.g. the salary and its taxes): left out of
+    # the expenses that equity covers (see the Results tab), as they would stop with the job
+    employment: bool = False
 
     def __post_init__(self):
         if self.id <= 0:
             raise ValueError(f"The ResultType id must be 1-indexed. Value seen: {self.id}")
+        if self.employment and self.internal:
+            raise ValueError(f"Result type {self.name!r} is internal: it can't be tagged {EMPLOYMENT!r}")
 
 
 @dataclass
@@ -1336,9 +1341,6 @@ class MovementBase:
     internal: bool = False  # set by pledger itself: cannot be picked or deleted by hand
     debit_special: str | None = None  # one of RESERVED: the debit side takes any such account
     credit_special: str | None = None  # one of RESERVED: the credit side takes any such account
-    # Its gains or losses rely on being employed (e.g. the salary and its deductions): left out
-    # of the expenses that equity covers (see the Results tab), as they stop with the job
-    employment: bool = False
 
     def __post_init__(self):
         self.move_type = MovementType.from_accounts(
@@ -1362,14 +1364,10 @@ class MovementBase:
                 f"Base movement '{self.name}' must have a result type if and only if "
                 f"it is a gain or a loss (it is a {self.move_type.value})"
             )
-        if self.result_type is not None and self.result_type.internal != self.internal:
-            raise ValueError(
-                f"Base movement '{self.name}' must be internal if and only if its result type is"
-            )
-        if self.employment and (self.result_type is None or self.internal):
-            raise ValueError(
-                f"Base movement '{self.name}' can only be tagged employment if it is a non-internal gain or loss"
-            )
+        # An internal result type only has internal base movements, but a regular one may have
+        # some too (listed under the `internal` key by its name, see load_yaml)
+        if self.result_type is not None and self.result_type.internal and not self.internal:
+            raise ValueError(f"Base movement '{self.name}' must be internal, as its result type is")
 
     def side(self, ledger_side: LedgerSide) -> str | None:
         """
@@ -1394,9 +1392,11 @@ class MovementBase:
 
         The top-level `internal` key has the same structure (its `result_types` next to
         a `transfer` dict): those base movements and result types are internal, reserved
-        for pledger itself. Each result type names the one right before it in its `after`
-        (see result_type_order): their ids, shared by internal and other ones, are their
-        positions in that chain, from 1 to N.
+        for pledger itself. An entry of its `result_types` named like a regular result type
+        only has `base_movements`: internal ones of that regular result type. Each result
+        type names the one right before it in its `after` (see result_type_order): their
+        ids, shared by internal and other ones, are their positions in that chain, from 1
+        to N. A regular result type can set `employment: true` (see ResultType).
         """
         data = _load_yaml(path)
         internal_data = dict(data.get(INTERNAL) or {})
@@ -1404,6 +1404,12 @@ class MovementBase:
         if unknown:
             raise ValueError(f"The base movements YAML {INTERNAL!r} key only has 'result_types' and 'transfer', not {unknown}")
         internal = dict(internal_data.get("result_types") or {})
+
+        def employment_of(name: str, rt_dict: dict) -> bool:
+            employment = rt_dict.get(EMPLOYMENT, False)
+            if not isinstance(employment, bool):
+                raise ValueError(f"Result type {name!r} must set {EMPLOYMENT!r} to true or false, not {employment!r}")  # noqa: TRY004 (a bad data value)
+            return employment
 
         def result_types_of(rt_dicts: dict, is_internal: bool) -> dict[int, ResultType]:
             return {
@@ -1413,6 +1419,7 @@ class MovementBase:
                     long_name=rt_dict["long_name"],
                     description=rt_dict["description"],
                     internal=is_internal,
+                    employment=employment_of(name, rt_dict),
                 )
                 for name, rt_dict in rt_dicts.items()
             }
@@ -1434,9 +1441,16 @@ class MovementBase:
             return sections
 
         internal_transfers = internal_data.get(MovementType.TRANSFER.value)
-        repeated = sorted(set(data["result_types"]) & set(internal))
-        if repeated:
-            raise ValueError(f"Result type names are both internal and not: {repeated}")
+        # The internal base movements of regular result types: only their base_movements
+        extending = {name: rt or {} for name, rt in internal.items() if name in data["result_types"]}
+        for name, rt_dict in extending.items():
+            other = sorted(set(rt_dict or {}) - {"base_movements"})
+            if other:
+                raise ValueError(
+                    f"Result type {name!r} isn't internal: under the {INTERNAL!r} key it only has "
+                    f"the 'base_movements' internal to it, not {other}"
+                )
+        internal = {name: rt for name, rt in internal.items() if name not in extending}
         all_rts = {**data["result_types"], **internal}
         for name, rt_dict in all_rts.items():
             if "id" in rt_dict:
@@ -1461,7 +1475,7 @@ class MovementBase:
         sections = [
             *((rt, mt, bms, False) for rt, mt, bms in sections_of(data["result_types"], result_types)),
             (None, MovementType.TRANSFER.value, data.get("transfer"), False),
-            *((rt, mt, bms, True) for rt, mt, bms in sections_of(internal, result_types)),
+            *((rt, mt, bms, True) for rt, mt, bms in sections_of({**internal, **extending}, result_types)),
             (None, MovementType.TRANSFER.value, internal_transfers, True),
         ]
 
@@ -1478,9 +1492,8 @@ class MovementBase:
                         f"Base movement {name!r} must not set 'internal': "
                         "list it under the top-level 'internal' key instead"
                     )
-                employment = base_move_d.get(EMPLOYMENT, False)
-                if not isinstance(employment, bool):
-                    raise ValueError(f"Base movement {name!r} must set {EMPLOYMENT!r} to true or false, not {employment!r}")  # noqa: TRY004 (a bad data value)
+                if EMPLOYMENT in base_move_d:
+                    raise ValueError(f"Base movement {name!r} must not set {EMPLOYMENT!r}: set it on its result type instead")
                 acc_debit = _coalesce_mt_account(accounts, move_type, base_move_d, LedgerSide.DEBIT)
                 acc_credit = _coalesce_mt_account(accounts, move_type, base_move_d, LedgerSide.CREDIT)
                 move_bases[name] = MovementBase(
@@ -1492,7 +1505,6 @@ class MovementBase:
                     internal=is_internal,
                     debit_special=_special_side(acc_debit, base_move_d.get("debit")),
                     credit_special=_special_side(acc_credit, base_move_d.get("credit")),
-                    employment=employment,
                 )
 
         return move_bases, result_types
