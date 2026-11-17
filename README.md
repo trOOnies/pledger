@@ -989,7 +989,7 @@ built_in:
 
 They are added, edited and deleted from the Credit Cards tab only (or
 `/api/credit-cards/payments`), picking the base movement, the card and the other account. The Ledger tab
-shows them with a 🔴 linking there. The **Credit card** filter shows only the movements of one card.
+shows them with a 🔴 linking there. The **Credit card** filter, next to the month one, shows the whole tab for one card (all but the statement closing dates).
 
 **Installments.** A movement of the Ledger tab crediting a credit card can be in **installments**
 (1 by default, up to 120), kept in an optional `installments` column of `ledger.csv`, added with the
