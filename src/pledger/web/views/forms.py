@@ -27,7 +27,7 @@ def by_group(snapshot: Snapshot, names: list[str]) -> dict[str, list[str]]:
         if group is None:
             return AccountType.EQUITY.value, "Equity"
         label = ACCOUNT_GROUPS[group][1]
-        if group.startswith("foreign_") or (group == "debt" and is_foreign(account)):
+        if group.startswith("foreign_") or (group in ("debt", "interest_bearing") and is_foreign(account)):
             label = f"{label} ({account.currency.name})"
         return group, label
 

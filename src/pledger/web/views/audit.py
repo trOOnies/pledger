@@ -8,7 +8,7 @@ from pledger.web.store import LEDGER_ID, Snapshot, _parse_number, stored_ids
 from pledger.web.views.common import ACCOUNT_GROUPS, account_group, ledger_link
 
 # The groups of the asset accounts: on the left of the audit form when wide enough, the rest on the right
-ASSET_GROUPS = {"assets", "foreign_assets", "investments"}
+ASSET_GROUPS = {"assets", "interest_bearing", "foreign_assets", "investments"}
 
 AUDITED_TYPES = [AccountType.ASSET, AccountType.LIABILITY]
 

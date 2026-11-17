@@ -43,6 +43,7 @@ MOVEMENT_SOURCES = {
 # Audit tabs: their emoji and label (see account_group).
 ACCOUNT_GROUPS = {
     "assets": ("🏦", "General assets"),
+    "interest_bearing": ("💰", "Interest-bearing accounts"),
     "foreign_assets": ("💱", "Foreign currency assets"),
     "investments": ("📈", "Investment accounts"),
     "liabilities": ("🧾", "General liabilities"),
@@ -59,8 +60,9 @@ DEBT_SOURCES = {CreditorKind.SERVICE: "service-payments", CreditorKind.COMPANY: 
 def account_group(account: Account) -> str | None:
     """
     The group of an asset or liability account (see ACCOUNT_GROUPS), None for an equity one.
-    The investment, debt and credit card accounts have their own, whatever their currency;
-    the rest are in another currency (see is_foreign) or general.
+    The investment, debt and credit card accounts have their own, whatever their currency,
+    and so do the other assets with interest on money (an interest_frequency); the rest are
+    in another currency (see is_foreign) or general.
     """
     if isinstance(account, InvestmentAccount):
         return "investments"
@@ -68,6 +70,8 @@ def account_group(account: Account) -> str | None:
         return "debt"
     if isinstance(account, CreditCardAccount):
         return "credit_cards"
+    if account.acc_type == AccountType.ASSET and account.interest_frequency is not None:
+        return "interest_bearing"
     if account.acc_type == AccountType.ASSET:
         return "foreign_assets" if is_foreign(account) else "assets"
     if account.acc_type == AccountType.LIABILITY:

@@ -7,7 +7,7 @@ from dataclasses import replace
 
 import pytest
 from fastapi.testclient import TestClient
-from helpers import CORRECTION_YAML, HTMX, INVEST_TRANSFERS_YAML, rows, with_built_in
+from helpers import CORRECTION_YAML, HTMX, INVEST_TRANSFERS_YAML, rows, with_built_in, with_interest_frequency
 
 from pledger.models import AuditEntry
 from pledger.web.app import create_app
@@ -138,6 +138,25 @@ class TestAudit:
             "debt": ["De", "Lo", "SeD", "SeL", "Wo", "DeD", "LoD"],
             "credit_cards": ["Vi"], "liabilities": ["Cc"],
         }
+
+    def test_interest_bearing_accounts_apart_like_in_the_accounts_tab(self, settings, client):
+        # The assets with interest on money, whatever their currency, out of the general and foreign ones
+        with_interest_frequency(settings, Ca="weekly", Bk="monthly")
+        r = client.get("/audit")
+        groups = re.findall(r'<h3 class="audit-group"><span aria-hidden="true">(.+?)</span> (.+?)</h3>', r.text)
+        assert groups[:2] == [("🏦", "General assets"), ("💰", "Interest-bearing accounts")]
+        names = {
+            g: re.findall(r'name="balance:(\w+)"', t.split("</table>")[0])
+            for g, t in re.findall(r'data-audit-group="(\w+)">(.*?)</table>', r.text, re.DOTALL)
+        }
+        assert names["interest_bearing"] == ["Ca", "Bk"] and "foreign_assets" not in names
+        assert "Ca" not in names["assets"]
+        accounts = client.get("/accounts").text
+        assert re.findall(r'<h3 class="account-group"><span aria-hidden="true">.+?</span> (.+?)</h3>', accounts)[:2] == [
+            "General assets", "Interest-bearing accounts",
+        ]
+        table = accounts.split('data-account-group="interest_bearing"')[1].split("</table>")[0]
+        assert "<strong>Ca</strong>" in table and "<strong>Bk</strong>" in table
 
     def test_net_zero_accounts_are_fixed_at_zero(self, client):
         fi = client.get("/audit").text.split('id="audit-Fi"')[1].split(">")[0]
