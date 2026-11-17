@@ -28,6 +28,7 @@ WIDGETS = {
         "month-equity-change": ("Equity change this month", "How much equity changed in this month, nominal", "/results", "Results"),
         "monthly-expenses": ("Monthly expenses", "What you spent on average each month of the last year, without the initial losses and those of internal and Employment result types", "/results", "Results"),
         "months-covered": ("Months of expenses", "How many months your equity would last, spending your monthly expenses", "/results", "Results"),
+        "liquidity-months": ("Net liquidity over Monthly expenses", "How many months your net liquidity (liquid assets minus liquid liabilities) would last, spending your monthly expenses", "/results", "Results"),
     },
     "plots": {
         "equity-over-time": ("Equity over time", "Equity at each entry date, all time", "/results", "Accounts"),
@@ -145,6 +146,12 @@ class _Widgets:
         elif key == "months-covered":
             value, unit, note = self.metrics()["months_covered"], "months", "that your equity would last"
             tone = "loss" if value is not None and value < 0 else None
+        elif key == "liquidity-months":
+            monthly = self.metrics()["monthly_expenses"]
+            unit, note = "months", "that your net liquidity would last"
+            if monthly:
+                value = self.balances()["net-liquidity"] / monthly
+                tone = "loss" if value < 0 else None
         return {"value": value, "unit": unit, "note": note, "tone": tone}
 
     def monthly_chart(self, key: str) -> dict:

@@ -39,7 +39,7 @@ class TestDashboard:
         cards = r.text.split('data-options="cards"')[1].split("</div>")[0]
         assert [re.findall(r'value="([\w-]+)"', g) for g in cards.split("<legend>")[1:]] == [
             ["assets", "liabilities", "equity", "net-liquidity"],
-            ["month-gains", "month-losses", "month-profit", "month-equity-change", "monthly-expenses", "months-covered"],
+            ["month-gains", "month-losses", "month-profit", "month-equity-change", "monthly-expenses", "months-covered", "liquidity-months"],
         ]
         plots = r.text.split('data-options="plots"')[1].split("</div>")[0]
         assert re.findall(r"<legend>(\w+)</legend>", plots) == ["Accounts", "Results"]
@@ -108,6 +108,21 @@ class TestDashboard:
                 assert r.status_code == 200 and slots(r.text, kind)[slot] == widget, widget
         r = client.get("/")
         assert 'class="line-chart"' in r.text and 'class="line-chart columns"' in r.text
+
+    def test_net_liquidity_over_monthly_expenses(self, client):
+        def card(key: str) -> str:
+            client.post("/dashboard/clear", data={"kind": "cards", "slot": 7})
+            r = client.post("/dashboard/place", data={"kind": "cards", "slot": 7, "widget": key})
+            return r.text.split(f'data-widget="{key}"')[1].split("</article>")[0]
+
+        def number(html: str) -> float:
+            return float(re.search(r'<span class="num[^"]*">([^<]+)</span>', html)[1].replace("$", "").replace(",", ""))
+
+        liquidity, monthly = number(card("net-liquidity")), number(card("monthly-expenses"))
+        html = card("liquidity-months")
+        assert '<a class="label" href="/results">Net liquidity over Monthly expenses</a>' in html
+        assert "that your net liquidity would last" in html
+        assert number(html) == pytest.approx(liquidity / monthly, abs=0.06)
 
     def test_kept_in_its_yaml(self, settings, tmp_path):
         path = tmp_path / "dashboard.yaml"
