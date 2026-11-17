@@ -192,14 +192,6 @@
 
   {% include "_closing_dates.html" %}
 
-  <form id="card-filter" class="filters" hx-get="/credit-cards" hx-target="#credit-cards-view" hx-include="#filters" hx-push-url="true" hx-trigger="change">
-    <label>Credit card
-      <select name="card">
-        <option value="">All credit cards</option>
-        {% for a in accounts %}<option {% if a.name == card %}selected{% endif %}>{{ a.name }}</option>{% endfor %}
-      </select>
-    </label>
-  </form>
   {{ account_movements(movements, "credit-card-movements", ("in " ~ month) if month else "all time", added_here="the card payments", edit="/credit-cards/payments/%d/edit", delete="/credit-cards/payments/%d/delete", form_id="card-payment-form", running=("Owed", "What we owe on its credit card right after it", "balance"), title="Movements (includes Charges)") }}
 
   {# The installments of the charges, by statement month (views.card_installments) #}

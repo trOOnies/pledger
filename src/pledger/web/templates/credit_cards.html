@@ -9,11 +9,18 @@
     initial amount (what you owe on it).</p>
 </div>
 {% else %}
-<form id="filters" class="filters" hx-get="/credit-cards" hx-target="#credit-cards-view" hx-include="#card-filter" hx-push-url="true" hx-trigger="change">
+{# Both filters are of the whole tab #}
+<form id="filters" class="filters" hx-get="/credit-cards" hx-target="#credit-cards-view" hx-push-url="true" hx-trigger="change">
   <label>Month
     <select name="month">
       <option value="">All time</option>
       {% for m in months %}<option value="{{ m }}" {% if m == month %}selected{% endif %}>{{ m }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Credit card
+    <select name="card">
+      <option value="">All credit cards</option>
+      {% for name in card_options %}<option {% if name == card %}selected{% endif %}>{{ name }}</option>{% endfor %}
     </select>
   </label>
 </form>
@@ -22,7 +29,7 @@
   <aside class="panel">
     {{ card_payment_form | safe }}
   </aside>
-  <section id="credit-cards-view" hx-get="/credit-cards" hx-include="#filters, #card-filter" hx-trigger="credit-cards-changed from:body">
+  <section id="credit-cards-view" hx-get="/credit-cards" hx-include="#filters" hx-trigger="credit-cards-changed from:body">
     {% include "_credit_cards.html" %}
   </section>
 </div>

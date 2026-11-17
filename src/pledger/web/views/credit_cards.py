@@ -44,10 +44,15 @@ def build_credit_cards(snapshot: Snapshot, month: str = "", card: str = "") -> d
     was charged to them in each month, up to `month`. A card in another currency also
     has its balance in that currency, in `own` (None for the others). With the statement
     closing dates of each card in the year of `month` (of today for all time).
+
+    With `card` (one of them, else ignored), all of it is of that card alone, but the
+    closing dates, of every card; `card_options` has every card to pick from.
     """
-    cards = [a for a in snapshot.accounts.values() if isinstance(a, CreditCardAccount)]
-    if card not in {a.name for a in cards}:
+    every = [a for a in snapshot.accounts.values() if isinstance(a, CreditCardAccount)]
+    if card not in {a.name for a in every}:
         card = ""
+    cards = [a for a in every if not card or a.name == card]
+    names = [a.name for a in cards]
     rows = snapshot.all_rows
     balances = snapshot.ledger(rows[rows.move_date.str[:7] <= month] if month else rows).balances()
     in_month = rows[~rows.base_movement.isin(snapshot.initial_base_names)]
@@ -78,16 +83,13 @@ def build_credit_cards(snapshot: Snapshot, month: str = "", card: str = "") -> d
         "paid": sum(a["paid"] for a in accounts),
         "composition": composition({a["name"]: a["balance"] for a in accounts}, ordered=True),
         "negative": [a for a in accounts if a["balance"] < 0 and not rounds_to_zero(a["balance"])],
-        # Of the card picked in the filter, else of every card
-        "movements": account_movements(
-            snapshot, [card] if card else [a.name for a in cards], month,
-            editable=snapshot.card_payment_base_movements(),
-        ),
+        "movements": account_movements(snapshot, names, month, editable=snapshot.card_payment_base_movements()),
         "card": card,
-        **card_installments(snapshot, [card] if card else [a.name for a in cards], month),
-        **owed_charts(snapshot, [a.name for a in cards], month),
-        **charged_chart(snapshot, [a.name for a in cards], month),
-        **paid_chart(snapshot, [a.name for a in cards], month),
+        "card_options": [a.name for a in every],
+        **card_installments(snapshot, names, month),
+        **owed_charts(snapshot, names, month),
+        **charged_chart(snapshot, names, month),
+        **paid_chart(snapshot, names, month),
         **closing_dates(snapshot, month[:4]),
     }
 

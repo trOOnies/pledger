@@ -133,8 +133,16 @@ class TestCreditCards:
         assert data["card"] == "MM" and data["movements"]
         assert all("MM" in (m["debit"], m["credit"]) for m in data["movements"])
         assert len(build_credit_cards(LedgerStore(settings).load(), "", "Nope")["movements"]) > len(data["movements"])
+        # Of the whole tab: every part but the closing dates is of that card alone
+        assert [a["name"] for a in data["accounts"]] == ["MM"] and data["card_options"] == ["Vi", "MM"]
+        assert all(i["card"] == "MM" for i in data["installments"])
+        assert [c["name"] for c in data["closing_cards"]] == ["Vi", "MM"]
+        every = build_credit_cards(LedgerStore(settings).load(), "", "")
+        assert data["owed"] == every["accounts"][1]["balance"] and len(every["accounts"]) == 2
         r = TestClient(create_app(settings)).get("/credit-cards", params={"month": "", "card": "Vi"})
-        assert '<form id="card-filter"' in r.text and "<option selected>Vi</option>" in r.text
+        filters = r.text.split('<form id="filters"')[1].split("</form>")[0]
+        assert '<select name="month">' in filters and "<option selected>Vi</option>" in filters
+        assert "card-filter" not in r.text and 'hx-include="#filters"' in r.text
 
     def test_card_surplus(self, paying):
         client = TestClient(create_app(paying))
