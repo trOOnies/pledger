@@ -5,7 +5,7 @@
     {% for name, (label, color) in buttons.items() %}
     <label class="{{ color }}" title="{{ name }}">
       <input type="radio" name="base_movement" value="{{ name }}" {% if name == base_movement %}checked{% endif %}
-        hx-get="/form/accounts" hx-target="#debt-account-fields" hx-swap="innerHTML">
+        hx-get="/form/accounts" hx-vals='{"people": true}' hx-target="#debt-account-fields" hx-swap="innerHTML">
       {{ label }}
     </label>
     {% endfor %}

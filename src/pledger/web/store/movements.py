@@ -117,6 +117,14 @@ def _debt_comment(snapshot: Snapshot, acc_debit: str, acc_credit: str, who: str,
             f"{who!r} is {KIND_ARTICLES[kind]}: their movements are in {where} ({KIND_TABS[kind]} tab), "
             f"not in {debts[0].name}"
         )
+    # A person's movement only goes through the debt accounts of the people, on either side
+    if found and found[0].kind == CreditorKind.PERSON:
+        others = [a.name for a in debts if a.kind != CreditorKind.PERSON]
+        if others:
+            raise ValueError(
+                f"{who!r} is a person: their movements can't be against {', '.join(others)}, "
+                "a debt account of the services or the companies"
+            )
     if debts and not any(who in a.creditors for a in debts):
         if found:
             expected = found[0].creditors[who].expected

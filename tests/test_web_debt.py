@@ -312,6 +312,12 @@ class TestDebtSides:
         # Only people, so not grouped, and only the debt accounts of the people
         assert '<optgroup label="People">' not in form and "<option >Dad</option>" in form.replace("<option>", "<option >")
         assert "<option >SeD</option>" not in form and "<option >Wo</option>" not in form
+        # Not either once another base movement is picked, on any side
+        assert 'hx-get="/form/accounts" hx-vals=\'{"people": true}\'' in form
+        picked = client.get("/form/accounts", params={"base_movement": "Loan - Given", "people": "true"}).text
+        assert "<option >Lo</option>" in picked and "<option >Ca</option>" in picked
+        assert not {"<option >SeD</option>", "<option >SeL</option>", "<option >Wo</option>"} & set(re.findall(r"<option >\w+</option>", picked))
+        assert "<option >SeL</option>" in client.get("/form/accounts", params={"base_movement": "Loan - Given"}).text
         assert 'hx-trigger="debt-changed from:body"' in r.text
         r = client.post("/debt/movements", data={
             "move_date": "2026-02-01", "base_movement": "Debt - Incurred", "acc_debit": "Ca", "acc_credit": "De",
@@ -604,6 +610,9 @@ class TestDebtKinds:
             store.add_debt_movement("2026-02-01", "Debt - Paid", "De", "Ca", "1", "Gas")
         with pytest.raises(ValueError, match=re.escape("'Dad' is a person: their movements are in the debt accounts of the people (People tab), not in SeD")):
             store.add_debt_movement("2026-02-01", "Debt - Paid", "SeD", "Ca", "1", "Dad")
+        # Nor on the other side of a person's movement
+        with pytest.raises(ValueError, match=re.escape("'Dad' is a person: their movements can't be against SeL, a debt account")):
+            store.add_debt_movement("2026-02-01", "Debt - Incurred", "SeL", "De", "1", "Dad")
         store.add_debt_movement("2026-02-01", "Debt - Paid", "SeD", "Ca", "1", "Gas")
         store.add_debt_movement("2026-02-01", "Loan - Collected", "Ca", "Wo", "1", "Globex")
         debts = {a.name: a for a in store.load().debt_accounts()}
@@ -962,6 +971,11 @@ class TestNewPerson:
         # Below the New debt movement form
         assert aside.index('id="debt-form"') < aside.index('id="person-form"')
         assert "<h2>New person</h2>" in aside and 'hx-trigger="person-added from:body"' in aside
+        # The expected roles in the colors of the Debt and Loan kinds
+        person = aside.split('id="person-form"')[1]
+        assert '<label class="liability" title="Only in the debt accounts' in person
+        assert '<label class="asset" title="Only in the loan accounts' in person
+        assert '<label title="Can be in the debt and the loan accounts">' in person
         r = client.post("/debt/people", data={"name": "Dad", "amount": "5"})
         assert 'class="msg error"' in r.text and 'value="Dad"' in r.text and 'value="5"' in r.text  # kept in the form
         r = client.post("/debt/people", data={"name": "Mum", "amount": "-20", "expected": "debtor"})

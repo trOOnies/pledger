@@ -61,6 +61,7 @@ from pledger.web.views import (
     debt_form_fields,
     invest_fields,
     invest_filter,
+    people_fields,
     setup_context,
     work_form,
 )
@@ -78,12 +79,14 @@ def form_bases(request: Request, store: StoreDep, move_type: str = ""):
 
 
 @router.get("/form/accounts")
-def form_accounts(request: Request, store: StoreDep, base_movement: str = ""):
+def form_accounts(request: Request, store: StoreDep, base_movement: str = "", people: bool = False):
+    """The account fields of a base movement; with `people`, those of the People tab (see views.people_fields)."""
     snapshot = store.load()
+    fields = account_fields(snapshot, base_movement)
     return templates.TemplateResponse(
         request,
         "_account_fields.html",
-        {"fields": account_fields(snapshot, base_movement), "values": {}},
+        {"fields": people_fields(snapshot, fields) if people else fields, "values": {}},
     )
 
 

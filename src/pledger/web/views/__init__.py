@@ -89,6 +89,7 @@ from pledger.web.views.debt import (
     debt_after,
     debt_difference,
     debt_form_fields,
+    people_fields,
 )
 from pledger.web.views.forms import (
     account_fields,
@@ -242,6 +243,7 @@ __all__ = [
     "nice_ticks",
     "over_time_charts",
     "owed_charts",
+    "people_fields",
     "percent",
     "price_rows",
     "ratio_series",

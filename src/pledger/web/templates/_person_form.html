@@ -15,12 +15,13 @@
   <div class="field">
     <span class="field-label" id="person-expected">Expected role</span>
     <div class="segmented types" role="radiogroup" aria-labelledby="person-expected">
-      {% for value, label, title in [
-        ("", "None", "Can be in the debt and the loan accounts"),
-        ("creditor", "Creditor", "Only in the debt accounts: we owe them"),
-        ("debtor", "Debtor", "Only in the loan accounts: they owe us"),
+      {# In the colors of the Debt (liability) and Loan (asset) kinds of the debt movement form #}
+      {% for value, label, title, color in [
+        ("", "None", "Can be in the debt and the loan accounts", ""),
+        ("creditor", "Creditor", "Only in the debt accounts: we owe them", "liability"),
+        ("debtor", "Debtor", "Only in the loan accounts: they owe us", "asset"),
       ] %}
-      <label title="{{ title }}">
+      <label {% if color %}class="{{ color }}" {% endif %}title="{{ title }}">
         <input type="radio" name="expected" value="{{ value }}" {% if value == (values.expected or "") %}checked{% endif %}>
         {{ label }}
       </label>
