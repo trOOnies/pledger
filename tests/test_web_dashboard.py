@@ -124,6 +124,14 @@ class TestDashboard:
         assert "that your net liquidity would last" in html
         assert number(html) == pytest.approx(liquidity / monthly, abs=0.06)
 
+    def test_months_of_expenses_hides_its_amounts(self, client):
+        # Its tooltip shows equity over the monthly expenses: amounts, masked when hidden
+        client.post("/dashboard/clear", data={"kind": "plots", "slot": 0})
+        r = client.post("/dashboard/place", data={"kind": "plots", "slot": 0, "widget": "months-of-expenses"})
+        plot = r.text.split('data-widget="months-of-expenses"')[1].split("</article>")[0]
+        assert '<div class="tip-change muted money"></div>' in plot
+        assert '<div class="tip-value "></div>' in plot  # months, not an amount
+
     def test_kept_in_its_yaml(self, settings, tmp_path):
         path = tmp_path / "dashboard.yaml"
         settings = replace(settings, dashboard_path=path)

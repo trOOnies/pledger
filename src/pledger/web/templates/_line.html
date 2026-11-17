@@ -40,8 +40,8 @@
 
 {# A column chart from views.column_chart, in the color of a categorical `series` slot. Each
    point of `points` adds its tooltip texts: `label`, `value_text` and `change_text`. With
-   `money`, the y axis and the values are amounts. #}
-{% macro column_chart(chart, points, aria, series=1, money=True) %}
+   `money`, the y axis and the values are amounts; with `change_money`, the change texts. #}
+{% macro column_chart(chart, points, aria, series=1, money=True, change_money=False) %}
 <div class="line-chart columns" data-points='{{ points | tojson }}' style="--line: var(--series-{{ series }})">
   <div class="y-axis" aria-hidden="true">
     {% for t in chart.y_ticks %}<span class="{{ 'money' if money }}" style="top: {{ t.y }}%">{{ t.label }}</span>{% endfor %}
@@ -58,7 +58,7 @@
     <div class="tooltip" aria-hidden="true">
       <div class="tip-date muted"></div>
       <div class="tip-value {{ 'money' if money }}"></div>
-      <div class="tip-change muted"></div>
+      <div class="tip-change muted {{ 'money' if change_money }}"></div>
     </div>
   </div>
   <div class="x-axis" aria-hidden="true">

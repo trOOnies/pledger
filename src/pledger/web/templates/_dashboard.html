@@ -80,7 +80,7 @@
         "change_text": (r.equity | money) ~ " ÷ " ~ (r.monthly | money) ~ " a month",
       }] %}
     {% endfor %}
-    {{ column_chart(chart, ns.points, "Equity in months of expenses, from " ~ w.series[0].month ~ " to " ~ w.series[-1].month, money=False) }}
+    {{ column_chart(chart, ns.points, "Equity in months of expenses, from " ~ w.series[0].month ~ " to " ~ w.series[-1].month, money=False, change_money=True) }}
     {% else %}
     {% set ns = namespace(points=[]) %}
     {% for p in chart.points %}

@@ -36,7 +36,7 @@
       <span class="num-lg {{ 'loss' if last.months is not none and last.months < 0 }}">{% if last.months is none %}-{% else %}{{ "%.1f" | format(last.months) }}{% endif %}</span>
       <span class="muted">months at the end of {{ last.month }}</span>
     </p>
-    {{ column_chart(expenses.chart, ns.points, "Equity in months of the expenses of the selected result types, from " ~ rows[0].month ~ " to " ~ last.month, series=1, money=False) }}
+    {{ column_chart(expenses.chart, ns.points, "Equity in months of the expenses of the selected result types, from " ~ rows[0].month ~ " to " ~ last.month, series=1, money=False, change_money=True) }}
     {% else %}
     <p class="muted">No expenses of the selected result types in this period.</p>
     {% endif %}
