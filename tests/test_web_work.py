@@ -155,7 +155,7 @@ class TestWork:
         assert '<td class="muted" colspan="2">No job</td>' in salaries
         assert "$1,500.50" in salaries
         # Gross, deductions (itemized on hover) and net
-        assert '<td class="num money " data-sort="300.5"\n            title="Tax: $300.50">$300.50</td>' in salaries
+        assert '<td class="num money " data-sort="300.5"\n            data-money-title title="Tax: $300.50">$300.50</td>' in salaries
         assert '<td class="num money" data-sort="1200.0">$1,200.00</td>' in salaries
         # Only the first and last months have a delete button
         assert salaries.count('aria-label="Delete') == 2

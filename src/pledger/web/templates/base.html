@@ -80,7 +80,7 @@
   <script>
     // Visibility toggle: replace every amount and comment (elements marked .money) with the
     // same fixed mask, keeping the real text aside until they are shown again. Nothing to
-    // hide in an empty comment.
+    // hide in an empty comment. Tooltips made of amounts (data-money-title) are masked too.
     const MONEY_MASK = "******";
     const visibility = document.getElementById("visibility");
     const moneyHidden = () => document.documentElement.classList.contains("hide-money");
@@ -98,6 +98,11 @@
 
     function maskMoney(root) {
       root.querySelectorAll(".money:not([data-masked])").forEach((el) => setMoney(el, el.textContent));
+      root.querySelectorAll("[data-money-title]:not([data-title-masked])").forEach((el) => {
+        el.dataset.titleValue = el.title;
+        el.title = MONEY_MASK;
+        el.dataset.titleMasked = "";
+      });
     }
 
     function unmaskMoney(root) {
@@ -105,6 +110,11 @@
         el.textContent = el.dataset.value;
         delete el.dataset.value;
         delete el.dataset.masked;
+      });
+      root.querySelectorAll("[data-money-title][data-title-masked]").forEach((el) => {
+        el.title = el.dataset.titleValue;
+        delete el.dataset.titleValue;
+        delete el.dataset.titleMasked;
       });
     }
 
@@ -421,8 +431,7 @@
         '<div class="panel quit-done"><img src="{{ url_for('static', path='favicon.svg') }}?v={{ static_version('favicon.svg') }}" alt="pledger" width="72" height="72">' +
         '<h2>pledger has stopped</h2>' +
         '<p class="muted">Everything is saved. You can close this tab; run <code>make serve</code> to start pledger again.</p></div>';
-      document.querySelector(".topbar nav").remove();
-      document.getElementById("quit").remove();
+      document.querySelector(".topbar").remove();
     });
 
     // Narrowing selects (data-narrows="<name>"), e.g. an investment account: picking an option

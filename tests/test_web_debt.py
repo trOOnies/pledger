@@ -971,6 +971,7 @@ class TestNewPerson:
         # Below the New debt movement form
         assert aside.index('id="debt-form"') < aside.index('id="person-form"')
         assert "<h2>New person</h2>" in aside and 'hx-trigger="person-added from:body"' in aside
+        assert 'data-expand-all="' not in r.text  # nothing folded in the bars of the people to expand
         # The expected roles in the colors of the Debt and Loan kinds
         person = aside.split('id="person-form"')[1]
         assert '<label class="liability" title="Only in the debt accounts' in person

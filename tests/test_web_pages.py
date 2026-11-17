@@ -443,6 +443,11 @@ class TestPages:
         assert card_labels(r.text) == ["Equity change", "Equity change", "Equity in months of expenses"]
         # From the initial 100.50 of Bk to 1,060.75; 50.25 of food in the 5 days from 2025-12-31 to 2026-01-04
         assert "+955.47%" in r.text and "3.5 months" in r.text
+        # The monthly expenses on the card, masked with the amounts, not in its tooltip, which can't be
+        card = r.text.split("Equity in months of expenses <small>")[0].rsplit('<div class="card"', 1)[1]
+        assert "$" not in card
+        monthly = f"${build_results(LedgerStore(settings).load())['monthly_expenses']:,.2f}"
+        assert re.search(r'months</span>\s*<span class="muted small">spending <span class="money">' + re.escape(monthly) + "</span> a month</span>", r.text)
         metrics = build_results(LedgerStore(settings).load())
         assert metrics["equity_change"] == pytest.approx(1060.75 / 100.5 - 1)
         assert metrics["monthly_expenses"] == pytest.approx(50.25 / (5 / (365.25 / 12)))

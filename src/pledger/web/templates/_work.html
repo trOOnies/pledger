@@ -105,7 +105,7 @@
           <td class="num money" data-sort="{{ m.gross }}">{{ m.gross | money }}</td>
           {% set itemized = m.deductions.items() | selectattr(1) | list %}
           <td class="num money {{ 'muted' if not itemized }}" data-sort="{{ m.total_deductions }}"
-            {% if itemized %}title="{% for n, d in itemized %}{{ n }}: {{ d | money }}{{ '&#10;' | safe if not loop.last }}{% endfor %}"{% endif %}>{{ m.total_deductions | money }}</td>
+            {% if itemized %}data-money-title title="{% for n, d in itemized %}{{ n }}: {{ d | money }}{{ '&#10;' | safe if not loop.last }}{% endfor %}"{% endif %}>{{ m.total_deductions | money }}</td>
           <td class="num money" data-sort="{{ m.net }}">{{ m.net | money }}</td>
           {% if row.unpaid %}
           <td class="nowrap hint warn" title="This month is over, but its payment hasn't been received">⚠ Not received</td>
