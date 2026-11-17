@@ -340,7 +340,7 @@ main { padding: 1rem 1.5rem 2rem; max-width: 1840px; width: 100%; margin: 0 auto
 .split-transfers { margin: 0 0 1rem; padding-left: 1.25rem; font-size: 1.05rem; line-height: 1.8; }
 .cart-total { margin: 0; display: flex; justify-content: space-between; align-items: baseline; }
 tr.selected > td { background: var(--accent-bg, rgba(127, 127, 127, .08)); }
-#view, #audit, #budget, #trip, #cart, .layout > .view, main > .view, #debt-view > .view, #credit-cards-view > .view, #services-view > .view {
+#view, #audit, #budget, #trip, #cart, #currency-overview, .layout > .view, main > .view, #debt-view > .view, #credit-cards-view > .view, #services-view > .view, #work-loan-view > .view {
   display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; min-width: 0;
 }
 
