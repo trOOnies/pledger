@@ -301,15 +301,15 @@
 {% endif %}
 <div class="layout">
   <aside class="column">
-    <section class="panel">
-      <h2>New investment</h2>
-      {{ new_investment_form | safe }}
-    </section>
     {% if invest_form %}
     <section class="panel">
       {{ invest_form | safe }}
     </section>
     {% endif %}
+    <section class="panel">
+      <h2>New investment</h2>
+      {{ new_investment_form | safe }}
+    </section>
   </aside>
   {% if invest_form %}
   <section id="invest-movements" hx-get="/investments/movements" hx-include="#invest-filter" hx-trigger="investments-changed from:body, prices-changed from:body">

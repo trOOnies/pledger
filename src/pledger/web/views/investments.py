@@ -319,16 +319,21 @@ def build_invest_movements(snapshot: Snapshot) -> list[dict]:
     the date of their price, and those of the interest CSV. The `index` of the ones of a
     CSV is their row in the CSV of their `source`. Their `account` is the
     investment account on a side, else, like for their results (e.g. broker fees),
-    the first one with an investment of their name, if any. Each one has the total amount
+    the first one with an investment of their name, else an interest-bearing account on
+    a side (one with an interest_frequency, e.g. of its interest on money), if any. Each one has the total amount
     of its investment account, and the amount and quantity of its investment, right after
     it, all the movements counted (see _apply_investments), or None without them.
     """
     holders = [a for a in snapshot.investment_accounts() if a.investments]
 
     def account_of(m: dict, investment: str) -> str | None:
+        sides = [snapshot.accounts[n] for n in (m["debit"], m["credit"])]
         return next(
-            (n for n in (m["debit"], m["credit"]) if isinstance(snapshot.accounts[n], InvestmentAccount)),
-            next((a.name for a in holders if investment and investment in a.investments), None),
+            (a.name for a in sides if isinstance(a, InvestmentAccount)),
+            next(
+                (a.name for a in holders if investment and investment in a.investments),
+                next((a.name for a in sides if a.interest_frequency is not None), None),
+            ),
         )
 
     # The capital gains and losses by the row of the investments CSV they come right before

@@ -31,6 +31,7 @@ from pledger.web.store import (
 from pledger.web.views import (
     build_invest_movements,
     build_investments,
+    invest_filter,
     investment_charts,
     price_rows,
 )
@@ -415,7 +416,8 @@ class TestInvestMovements:
     def test_investments_tab_lists_them(self, client):
         r = client.get("/investments")
         assert 'id="invest-form"' in r.text
-        assert r.text.index("<h2>New investment</h2>") < r.text.index("<h2>New investment movement</h2>")
+        # The movement form first, then the new investment one
+        assert r.text.index("<h2>New investment movement</h2>") < r.text.index("<h2>New investment</h2>")
         result = r.text.split("<h2>Total result <small>")[1].split("</section>")[0]
         assert "--line: var(--series-3)" in result  # green
         types = r.text.split('id="invest-form"')[1].split('class="segmented types"')[1].split("</div>")[0]
@@ -495,6 +497,12 @@ class TestInvestMovements:
         assert context["result_totals"]["interest"] == 4
         assert context["result_totals"]["total"] == 21
         assert [p["value"] for p in context["result_series"]] == [0, 13, 21]
+        # The interest-bearing accounts can be picked in the filter of the movements too
+        interest = [m for m in build_invest_movements(snapshot) if m["source"] == "interest"]
+        assert sorted(m["account"] for m in interest) == ["Bk", "Ca", "Ca"]
+        filtered = invest_filter(build_invest_movements(snapshot), account="Ca")
+        assert {"Bk", "Ca"} <= set(filtered["invest_accounts"]) and filtered["invest_account"] == "Ca"
+        assert [m["base"] for m in filtered["movements"]] == ["Interest on Money (G)", "Interest on Money (G)"]  # the dividends are of T, of Br
         r = client.get("/investments")
         assert "<h2>Interest on money <small>all time</small></h2>" in r.text
         assert 'data-sortable="interest-accounts"' in r.text and 'data-sortable="interest-over-time"' in r.text

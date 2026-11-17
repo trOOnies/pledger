@@ -7,7 +7,14 @@ from dataclasses import replace
 
 import pytest
 from fastapi.testclient import TestClient
-from helpers import CORRECTION_YAML, HTMX, INVEST_TRANSFERS_YAML, rows, with_built_in, with_interest_frequency
+from helpers import (
+    CORRECTION_YAML,
+    HTMX,
+    INVEST_TRANSFERS_YAML,
+    rows,
+    with_built_in,
+    with_interest_frequency,
+)
 
 from pledger.models import AuditEntry
 from pledger.web.app import create_app

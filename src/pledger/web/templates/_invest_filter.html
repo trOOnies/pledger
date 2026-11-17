@@ -4,7 +4,7 @@
 <form id="invest-filter" class="filters" hx-get="/investments/movements" hx-target="#invest-movements" hx-trigger="change"
   {% if oob %}hx-swap-oob="true"{% endif %}>
   <label>Investment account
-    <select name="account" title="The investment movements of the investments of one account">
+    <select name="account" title="The investment movements of the investments of one account, or of the interest on money of an interest-bearing one">
       <option value="">All accounts</option>
       {% for a in invest_accounts %}<option {% if a == invest_account %}selected{% endif %}>{{ a }}</option>{% endfor %}
     </select>
