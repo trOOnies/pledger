@@ -1,0 +1,76 @@
+{# The Data tab: exporting the data files as a zip and importing one back (routers.data, store.DataStore). #}
+{% macro size(bytes) %}{% if bytes is none %}<span class="muted">Missing</span>{% elif bytes < 1024 %}{{ bytes }} B{% elif bytes < 1024 * 1024 %}{{ "%.1f" | format(bytes / 1024) }} KB{% else %}{{ "%.1f" | format(bytes / 1024 / 1024) }} MB{% endif %}{% endmacro %}
+{% macro when(date) %}{% if date %}{{ date.strftime("%Y-%m-%d %H:%M") }}{% endif %}{% endmacro %}
+<div class="layout">
+  <aside class="column">
+    <section class="panel stack">
+      <h2>Export</h2>
+      <p class="muted small">Every data file in one zip, each one at its path in <code>info/</code>: a backup, or your data for pledger on another computer.</p>
+      <a class="button" href="/data/export" download>Export data</a>
+    </section>
+    <section class="panel">
+      <form class="stack" hx-post="/data/import" hx-target="#data" hx-encoding="multipart/form-data">
+        <h2>Import</h2>
+        {% if import_error %}<p class="msg error">{{ import_error }}</p>{% endif %}
+        <label>Zip exported from pledger
+          <input type="file" name="file" accept=".zip,application/zip" required>
+        </label>
+        <label class="check">
+          <input type="checkbox" name="confirm" value="true" required> Replace my data with that of the zip
+        </label>
+        <p class="muted small">It is only imported if it loads as a whole. Your current data is saved to a backup first, and the files that aren't in the zip are removed.</p>
+        <button type="submit">Import data</button>
+      </form>
+    </section>
+  </aside>
+  <div class="view stack">
+    {% if result %}
+    <div class="msg success">
+      Imported {{ result.imported | length }} file{{ 's' if result.imported | length != 1 }}.
+      Your previous data is in <code>{{ result.backup.name }}</code>: import it to undo this.
+      {% if result.removed %}<p class="small">Removed, as they weren't in the zip: {{ result.removed | join(", ") }}.</p>{% endif %}
+    </div>
+    {% if result.ignored %}<p class="msg warn">⚠ Left out of the zip, as they aren't data files of pledger: {{ result.ignored | join(", ") }}.</p>{% endif %}
+    {% endif %}
+    <section class="panel">
+      <h2>Data files <small>{{ files | rejectattr("size", "none") | list | length }}</small></h2>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>File</th><th>Path</th><th class="num">Size</th><th>Last changed</th></tr></thead>
+          <tbody>
+          {% for f in files %}
+          <tr>
+            <td class="nowrap">{% if f.size is not none %}<a href="/data/files/{{ f.name }}" download title="Download this file">{{ f.name }}</a>{% else %}<span class="muted">{{ f.name }}</span>{% endif %}</td>
+            <td class="muted small"><code>{{ f.path }}</code></td>
+            <td class="num">{{ size(f.size) }}</td>
+            <td class="nowrap muted">{{ when(f.modified) }}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <section class="panel">
+      <h2>Backups <small>{{ backups | length }}</small></h2>
+      {% if backups %}
+      <p class="muted small">Made before each import, in <code>{{ backups_folder }}</code>. Import one to go back to the data it has.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Backup</th><th class="num">Size</th><th>Made</th></tr></thead>
+          <tbody>
+          {% for b in backups %}
+          <tr>
+            <td class="nowrap"><a href="/data/backups/{{ b.name }}" download>{{ b.name }}</a></td>
+            <td class="num">{{ size(b.size) }}</td>
+            <td class="nowrap muted">{{ when(b.modified) }}</td>
+          </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="muted">None yet: one is made before each import, in <code>{{ backups_folder }}</code>.</p>
+      {% endif %}
+    </section>
+  </div>
+</div>

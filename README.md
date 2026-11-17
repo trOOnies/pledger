@@ -88,6 +88,7 @@ A FastAPI + HTMX UI, one tab per area:
 | ✈️ **Trip** | The planned expenses of a trip, in any currency, against what was spent on it in the ledger. See [Trip](#trip). |
 | 🧾 **Split** | Splits the tab of a get-together among you and up to 7 more, says who pays whom, settles what is paid now and creates the movements of your part, debts and loans included. See [Split](#split). |
 | 🔍 **Audit** | Fill in the balances you checked by hand, without seeing pledger's, then compare them with the actual ones and, if you want, add a correction for each difference. |
+| 📦 **Data** | Exports every data file in one zip, at its path in `info/`, and imports such a zip back, replacing the data with its own. It lists the data files (each one downloads on its own) and the backups of the imports. See [Your data files](#-your-data-files). |
 | ❓ **Help** | The concepts, explained for everyday users, in sections with an index and Previous and Next links. |
 
 A few things are shared across tabs:
@@ -174,6 +175,13 @@ Currencies tab warn about it, naming each currency and each of its past weeks wi
 one line, and the rest of the file is left byte-for-byte as it was. New accounts and base
 movements are inserted at the end of their section in the YAML files (gains and losses under
 their result type, transfers under `transfer`), leaving the rest of each file as it was.
+
+**Export and import.** The Data tab (or `GET /api/data/export`) downloads every data file in one zip, `pledger-<date>.zip`, each one at its path in `info/` (e.g. `movements/ledger.csv`), whatever its `PLEDGER_*` path: unzipped as `info/`, it is a working data folder. Importing one (in the tab, or `POST /api/data/import` with the zip as `file`) replaces the data with that of the zip, all of it:
+
+- It is only imported if it **loads as a whole**, as pledger would load it, in a folder of its own: else nothing changes, and the tab says what is wrong (e.g. an export from an older pledger, in a format this one no longer reads).
+- The current data is saved first, as an export, to `backups/before-import-<date and time>.zip` next to `accounts.yaml`. Importing that backup undoes the import. The tab lists the backups.
+- The data files missing from the zip are removed (the required ones of startup are created again, empty), so the data is exactly that of the zip. Its other entries, unknown, are left out, and a zip of the data folder itself (`info/accounts.yaml`...) works too.
+- Then, like on startup, the rows without an id get theirs and the missing months and weeks are added as `estimated`.
 
 **Every movement has an id that never changes**, shown in the Ledger tab and the API. The
 rows of the four CSVs of movements keep theirs in a last `id` column: `L-1`, `L-2`… in

@@ -106,6 +106,10 @@ from pledger.web.store.dashboard_store import (
     DEFAULT_DASHBOARD,
     Dashboard,
 )
+from pledger.web.store.data_store import (
+    DataFile,
+    ImportResult,
+)
 from pledger.web.store.investments import (
     initial_prices,
     is_capital,
@@ -220,6 +224,8 @@ __all__ = [
     "SERVICE_MONTH",
     "WORK_COLUMNS",
     "Dashboard",
+    "DataFile",
+    "ImportResult",
     "LedgerDataError",
     "LedgerStore",
     "Settings",

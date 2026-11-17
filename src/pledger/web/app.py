@@ -18,6 +18,7 @@ from pledger.web.routers import (
     credit_cards,
     currencies,
     dashboard,
+    data,
     debt,
     forms,
     investments,
@@ -106,6 +107,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(cart.router)
     app.include_router(split.router)
     app.include_router(dashboard.router)
+    app.include_router(data.router)
     # API
     app.include_router(accounts.router)
     app.include_router(result_types.router)
@@ -119,6 +121,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(credit_cards.router)
     app.include_router(summary.router)
     app.include_router(work.router)
+    app.include_router(data.api)
     app.include_router(server.router)
     return app
 

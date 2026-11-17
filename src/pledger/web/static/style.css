@@ -442,6 +442,12 @@ button[type="submit"] {
   background: var(--accent); color: var(--accent-text); border-color: var(--accent);
   font-weight: 600; cursor: pointer;
 }
+/* A link that looks like the submit buttons, e.g. the download of the Data tab's export */
+a.button {
+  display: block; text-align: center; text-decoration: none; padding: .4rem .5rem; border-radius: 6px;
+  background: var(--accent); color: var(--accent-text); border: 1px solid var(--accent); font-weight: 600;
+}
+a.button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 button.icon {
   width: auto; padding: 0 .4rem; border: none; background: none;
   color: var(--muted); cursor: pointer; font-size: 1.1rem; line-height: 1;

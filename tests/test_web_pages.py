@@ -50,8 +50,8 @@ class TestPages:
         # The section of the tab open stands out, and the tab in it
         assert [current for current, _, _ in sections] == ["", "", "current", ""]
         assert 'href="/services" aria-current="page"' in header and ">People</a>" in header
-        # Audit, Budget, Ledger, Help and the API aren't in a section
-        assert re.search(r'</div>\s*<a href="/audit" >Audit</a>\s*<a href="/budget" >Budget</a>\s*<a href="/ledger" >Ledger</a>\s*<a href="/help" >Help</a>\s*<a href="/docs" target="_blank" rel="noopener">API</a>\s*</nav>', header)
+        # Audit, Budget, Ledger, Data, Help and the API aren't in a section
+        assert re.search(r'</div>\s*<a href="/audit" >Audit</a>\s*<a href="/budget" >Budget</a>\s*<a href="/ledger" >Ledger</a>\s*<a href="/data" >Data</a>\s*<a href="/help" >Help</a>\s*<a href="/docs" target="_blank" rel="noopener">API</a>\s*</nav>', header)
 
     def test_comments_are_hidden_with_the_amounts(self, client):
         client.post("/movements", data={
