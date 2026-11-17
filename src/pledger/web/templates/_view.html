@@ -29,7 +29,7 @@
             <a class="source" href="{{ m.link }}" title="{{ title }}" aria-label="{{ title }}">{{ emoji }}</a>
             {% endif %}
             {# The balance corrections and the Differences are added from other tabs, but deleted here #}
-            {% if m.correction or not (m.source or m.internal) %}
+            {% if m.correction or not (m.source or m.built_in) %}
             {% if m.editable %}
             {{ copy_button("/movements/%d/copy" % m.index, m.fingerprint, "movement-form") }}
             {{ edit_button("/movements/%d/edit" % m.index, m.fingerprint, "movement-form") }}
@@ -40,7 +40,7 @@
               hx-confirm="Delete {{ m.date }} {{ m.base }} ({{ m.amount | money }})?"
               data-confirm-money="{{ m.amount | money }}"
               hx-swap="none">&times;</button>
-            {% elif m.internal and not m.source %}
+            {% elif m.built_in and not m.source %}
             <span class="source" title="Added by pledger itself; it cannot be deleted by hand" aria-label="Added by pledger itself">⚪</span>
             {% endif %}
           </td>

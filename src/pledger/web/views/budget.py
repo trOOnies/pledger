@@ -21,12 +21,12 @@ def budgets_of(rows: DataFrame, month: str) -> dict[str, float]:
 
 
 def spent_by_base(snapshot: Snapshot, month: str) -> dict[str, float]:
-    """What the non internal loss base movements add up to in `month`, in the base currency."""
+    """What the non-built-in loss base movements add up to in `month`, in the base currency."""
     rows = snapshot.all_rows
     moves = snapshot.ledger(rows[rows.move_date.str.startswith(month)]).movements
     spent: Counter = Counter()
     for m in moves:
-        if m.move_type == MovementType.LOSS and not m.move_base.internal:
+        if m.move_type == MovementType.LOSS and not m.move_base.built_in:
             spent[m.move_base.name] += m.amount
     return dict(spent)
 

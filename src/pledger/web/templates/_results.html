@@ -10,7 +10,7 @@
     <span class="label">Equity change <small>real, {{ period }}</small></span>
     <span class="num {{ 'gain' if equity_real_change and equity_real_change > 0 else 'loss' if equity_real_change and equity_real_change < 0 }}">{{ equity_real_change | signed_percent }}</span>
   </div>
-  <div class="card" title="{% if monthly_expenses %}How many months your equity at the end of the period would last, spending your average monthly expenses of the year up to then ({{ monthly_expenses | money }}). Expenses are your losses, but the initial ones and those of the internal result types and of the result types tagged Employment, like your work and its taxes, which would stop with your job{% else %}No expenses in the year up to the end of the period{% endif %}">
+  <div class="card" title="{% if monthly_expenses %}How many months your equity at the end of the period would last, spending your average monthly expenses of the year up to then ({{ monthly_expenses | money }}). Expenses are your losses, but the initial ones and those of the built-in result types and of the result types tagged Employment, like your work and its taxes, which would stop with your job{% else %}No expenses in the year up to the end of the period{% endif %}">
     <span class="label">Equity in months of expenses <small>{{ ("end of " ~ month) if month else "now" }}</small></span>
     <span class="num {{ 'loss' if months_covered is not none and months_covered < 0 }}">{% if months_covered is none %}-{% else %}{{ "%.1f" | format(months_covered) }} months{% endif %}</span>
   </div>
@@ -67,7 +67,7 @@
     <tbody>
     {% for r in statement %}
     <tr title="{{ r.description }}">
-      <td>{{ r.name }}{% if r.internal %} <span class="badge internal" title="Internal: set by pledger itself">Internal</span>{% endif %}</td>
+      <td>{{ r.name }}{% if r.built_in %} <span class="badge built-in" title="Built in: set by pledger itself">Built in</span>{% endif %}</td>
       <td class="num {{ money_class }} {{ 'muted' if not r.gains }}">{{ value(r.gains) }}</td>
       <td class="num {{ money_class }} {{ 'muted' if not r.losses else 'loss' }}">{{ value(r.losses) }}</td>
       <td class="num {{ money_class }} {{ 'gain' if r.net > 0 else 'loss' if r.net < 0 else 'muted' }}">{{ value(r.net) }}</td>

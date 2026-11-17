@@ -174,14 +174,14 @@ def movement_rows(snapshot: Snapshot, rows: DataFrame, ledger: Ledger) -> list[d
             "credit": move.acc_credit.name,
             "amount": move.amount,
             "comment": row.get("comment", ""),
-            "internal": move.move_base.internal,
+            "built_in": move.move_base.built_in,
             "invest": move.move_base.name in invest,  # added and deleted from the Investments tab
             "conversion": ix in conversions,  # added and deleted from the Currencies tab
             "salary": ix in salaries,  # generated from the Work tab
             "source": source(ix, move, row),  # a key of MOVEMENT_SOURCES, if not deletable here
             "cart": cart_of(row) if ix >= 0 else None,
             # Can be edited from the movement form of the Ledger tab
-            "editable": move.move_base.name in ledger_bases and not move.move_base.internal,
+            "editable": move.move_base.name in ledger_bases and not move.move_base.built_in,
             # Can be deleted from the Ledger tab, though added from another tab
             "correction": move.move_base.name in corrections or move.move_base.name in differences,
         }

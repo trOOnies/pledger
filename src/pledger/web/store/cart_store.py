@@ -189,11 +189,11 @@ class CartStore(MovementStore):
 def cart_accounts(snapshot: Snapshot) -> list[str]:
     """
     The accounts a cart can be paid from: the asset and liability accounts in the base
-    currency but the internal, investment and debt ones (credit cards included).
+    currency but the built-in, investment and debt ones (credit cards included).
     """
     return [
         a.name for a in snapshot.accounts.values()
-        if a.acc_type != AccountType.EQUITY and not a.internal and not is_foreign(a)
+        if a.acc_type != AccountType.EQUITY and not a.built_in and not is_foreign(a)
         and not isinstance(a, InvestmentAccount | DebtAccount)
     ]
 

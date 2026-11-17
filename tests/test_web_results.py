@@ -44,7 +44,7 @@ class TestExpenseMonths:
         first = dt.date.fromisoformat(snapshot.all_rows.move_date.min())
         return ((dt.date.fromisoformat(end) - first).days + 1) / AVERAGE_MONTH_DAYS
 
-    def test_the_loss_result_types_but_the_internal_ones_by_default(self, settings):
+    def test_the_loss_result_types_but_the_built_in_ones_by_default(self, settings):
         snapshot = LedgerStore(settings).load()
         assert [(f["name"], f["checked"]) for f in expense_months(snapshot)["filters"]] == [("Op", True)]
 

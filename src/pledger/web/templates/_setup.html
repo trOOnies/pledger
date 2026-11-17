@@ -1,5 +1,5 @@
 {# Marks a result type or base movement set by pledger itself: it can't be picked by hand #}
-{% macro internal_badge() %}<span class="badge internal" title="Internal: set by pledger itself, it can't be picked by hand">Internal</span>{% endmacro %}
+{% macro built_in_badge() %}<span class="badge built-in" title="Built in: set by pledger itself, it can't be picked by hand">Built in</span>{% endmacro %}
 {# Marks a result type whose gains and losses rely on having a job (see ResultType.employment) #}
 {% macro employment_badge() %}<span class="badge employment" title="Employment: its gains and losses rely on having a job (like the salary and the taxes taken from it), so its losses aren't counted in the expenses that equity covers">Employment</span>{% endmacro %}
 <div class="layout setup">
@@ -37,7 +37,7 @@
       <tr>
         <td class="num muted">{{ rt.id }}</td>
         <td class="nowrap"><strong>{{ rt.name }}</strong></td>
-        <td>{{ rt.long_name }}{% if rt.internal %} {{ internal_badge() }}{% endif %}{% if rt.employment %} {{ employment_badge() }}{% endif %}</td>
+        <td>{{ rt.long_name }}{% if rt.built_in %} {{ built_in_badge() }}{% endif %}{% if rt.employment %} {{ employment_badge() }}{% endif %}</td>
         <td class="num">{{ bases_per_result_type[rt.name] }}</td>
         <td class="muted">{{ rt.description }}</td>
       </tr>
@@ -75,14 +75,14 @@
         <button type="submit">Add base movement</button>
       </form>
     </details>
-    {# One table per result type (see setup_context), gains and losses together, then the transfers and the internal ones #}
+    {# One table per result type (see setup_context), gains and losses together, then the transfers and the built-in ones #}
     {% macro bases_table(key, bases) %}
     <table data-sortable="setup-bases-{{ key }}">
       <thead><tr><th>Name</th><th>Type</th><th>Debit</th><th>Credit</th><th>Description</th></tr></thead>
       <tbody>
       {% for b in bases %}
       <tr>
-        <td class="nowrap"><strong>{{ b.name }}</strong>{% if b.internal and b.result_type and not b.result_type.internal %} {{ internal_badge() }}{% endif %}</td>
+        <td class="nowrap"><strong>{{ b.name }}</strong>{% if b.built_in and b.result_type and not b.result_type.built_in %} {{ built_in_badge() }}{% endif %}</td>
         <td data-sort="{{ b.move_type.value }}"><span class="badge {{ b.move_type.value }}">{{ b.move_type.value[0] | upper }}</span> {{ b.move_type.value | capitalize }}</td>
         {% for acc, special in ((b.acc_debit, b.debit_special), (b.acc_credit, b.credit_special)) %}
         {% set special_label = sides.labels[special] if special %}
@@ -95,14 +95,14 @@
     </table>
     {% endmacro %}
     {% for g in bases_by_result_type %}
-    <h3 class="bases-group"><span class="rt-id" title="Result type id">{{ g.result_type.id }}</span> {{ g.result_type.long_name }}{% if g.result_type.internal %} {{ internal_badge() }}{% endif %}{% if g.result_type.employment %} {{ employment_badge() }}{% endif %}</h3>
+    <h3 class="bases-group"><span class="rt-id" title="Result type id">{{ g.result_type.id }}</span> {{ g.result_type.long_name }}{% if g.result_type.built_in %} {{ built_in_badge() }}{% endif %}{% if g.result_type.employment %} {{ employment_badge() }}{% endif %}</h3>
     <div class="table-wrap">{{ bases_table(g.result_type.name, g.bases) }}</div>
     {% endfor %}
-    {% for internal, title in ((false, "Transfers"), (true, "Internal transfers")) %}
-    {% set bases = transfer_bases | selectattr("internal", "equalto", internal) | list %}
+    {% for built_in, title in ((false, "Transfers"), (true, "Built-in transfers")) %}
+    {% set bases = transfer_bases | selectattr("built_in", "equalto", built_in) | list %}
     {% if bases %}
-    <h3 class="bases-group">{{ title }}{% if internal %} {{ internal_badge() }}{% endif %}</h3>
-    <div class="table-wrap">{{ bases_table("internal-transfer" if internal else "transfer", bases) }}</div>
+    <h3 class="bases-group">{{ title }}{% if built_in %} {{ built_in_badge() }}{% endif %}</h3>
+    <div class="table-wrap">{{ bases_table("built-in-transfer" if built_in else "transfer", bases) }}</div>
     {% endif %}
     {% endfor %}
   </section>

@@ -11,11 +11,11 @@ import yaml
 from pledger.enums import AccountType, CreditorKind, DebtRole, MovementType
 from pledger.models import (
     AFTER,
+    BUILT_IN,
+    BUILT_IN_DEBTS,
     CLOSING_DATES,
     CREDITOR_SECTIONS,
     INTEREST_FREQUENCY,
-    INTERNAL,
-    INTERNAL_DEBTS,
     SPECIAL_SIDES,
     CreditCardAccount,
     DebtAccount,
@@ -100,9 +100,9 @@ class AccountStore(MovementStore):
             raise ValueError(f"Unknown account: {name!r}")
         if account.acc_type not in {AccountType.ASSET, AccountType.LIABILITY}:
             raise ValueError(f"Only asset and liability accounts can be edited, not {name!r}")
-        if isinstance(account, DebtAccount) and account.name in INTERNAL_DEBTS:
+        if isinstance(account, DebtAccount) and account.name in BUILT_IN_DEBTS:
             raise ValueError(
-                f"The debt account {name!r} is internal, under the internal key of the accounts YAML: edit it there"
+                f"The debt account {name!r} is built-in, under the built_in key of the accounts YAML: edit it there"
             )
         if isinstance(account, DebtAccount):
             raise ValueError(  # noqa: TRY004 (a bad pick)
@@ -120,7 +120,7 @@ class AccountStore(MovementStore):
             path, section = self.settings.credit_cards_path, ()
         else:
             path = self.settings.accounts_path
-            section = (*((INTERNAL,) if account.internal else ()), account.acc_type.value)
+            section = (*((BUILT_IN,) if account.built_in else ()), account.acc_type.value)
 
         def update(entry: dict) -> dict:
             entry = {k: v for k, v in entry.items() if k not in {"initial_date", "checks", INTEREST_FREQUENCY}}
@@ -191,7 +191,7 @@ class AccountStore(MovementStore):
         base_name, amount = correction
         if base_name not in snapshot.correction_base_movements():
             raise ValueError(
-                f"Correcting balances needs {base_name!r}, an internal "
+                f"Correcting balances needs {base_name!r}, a built-in "
                 f"{'gain' if base_name == CORRECTION_GAIN else 'loss'} of the base movements YAML"
             )
         base = snapshot.base_movements[base_name]
@@ -254,8 +254,8 @@ class AccountStore(MovementStore):
                 raise ValueError("Gains and losses require a result type")
             if result_type not in result_types:
                 raise ValueError(f"Unknown result type: {result_type!r}")
-            if result_types[result_type].internal:
-                raise ValueError(f"Result type {result_type!r} is internal and cannot get new base movements")
+            if result_types[result_type].built_in:
+                raise ValueError(f"Result type {result_type!r} is built-in and cannot get new base movements")
             section = ("result_types", result_type, "base_movements", move_type.value)
         # Gains always credit equity and losses always debit it.
         if move_type == MovementType.GAIN:

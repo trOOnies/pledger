@@ -8,7 +8,7 @@ from dataclasses import replace
 
 import pytest
 from fastapi.testclient import TestClient
-from helpers import DEBT_YAML, HTMX, WORK_CSV, card_labels, with_internal, with_salaries
+from helpers import DEBT_YAML, HTMX, WORK_CSV, card_labels, with_built_in, with_salaries
 
 from pledger.web.app import create_app
 from pledger.web.store import (
@@ -394,7 +394,7 @@ class TestSalaries:
             ("Taxes", "The column 'Taxes' of the work CSV is not a base movement"),
             ("Gift", "The column 'Gift' of the work CSV must be a deduction of the salary"),  # a gain
             ("Card fee", "The column 'Card fee' of the work CSV must be a deduction"),  # credits Cc, then Ca
-            ("Initial (L)", "The column 'Initial \\(L\\)' of the work CSV must be a deduction"),  # internal
+            ("Initial (L)", "The column 'Initial \\(L\\)' of the work CSV must be a deduction"),  # built-in
         ],
     )
     def test_deductions_must_be_losses_out_of_the_salary(self, settings, column, error):
@@ -452,7 +452,7 @@ class TestWorkLoan:
         work = tmp_path / "work.csv"
         work.write_text(WORK_CSV, encoding="utf-8")
         settings = replace(with_salaries(settings), creditors_path=creditors, work_path=work)
-        with_internal(settings.base_movements_path, transfers=DEBT_YAML)
+        with_built_in(settings.base_movements_path, transfers=DEBT_YAML)
         return settings
 
     @pytest.fixture

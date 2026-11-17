@@ -14,8 +14,8 @@ from helpers import (
     card_labels,
     movement_ids,
     rows,
+    with_built_in,
     with_conversion_bases,
-    with_internal,
     with_salaries,
 )
 
@@ -42,7 +42,7 @@ class TestRemainingAsDifference:
     def settings(self, settings, tmp_path):
         path = tmp_path / "creditors.yaml"
         path.write_text("people:\n  Dad: 0\n  Mum: 0\n", encoding="utf-8")
-        with_internal(settings.base_movements_path, DIFFERENCE_YAML, DEBT_YAML)
+        with_built_in(settings.base_movements_path, DIFFERENCE_YAML, DEBT_YAML)
         return replace(settings, creditors_path=path)
 
     @pytest.fixture
@@ -118,7 +118,7 @@ class TestRemainingAsDifference:
         store = LedgerStore(settings)
         store.add_debt_movement("2026-02-01", "Debt - Incurred", "Ca", "De", "100", "Dad")
         before = len(rows(settings))
-        with pytest.raises(ValueError, match=re.escape("needs 'Difference (G)', an internal gain")):
+        with pytest.raises(ValueError, match=re.escape("needs 'Difference (G)', a built-in gain")):
             store.add_debt_movement("2026-02-05", "Debt - Paid", "De", "Ca", "90", "Dad", remaining_as_difference=True)
         assert len(rows(settings)) == before
         form = TestClient(create_app(settings)).get("/debt").text.split('id="debt-form"')[1].split("</form>")[0]
@@ -226,7 +226,7 @@ class TestDebtSides:
         path = tmp_path / "creditors.yaml"
         path.write_text("people:\n  Dad: 0\n", encoding="utf-8")
         path_yaml = settings.base_movements_path
-        with_internal(path_yaml, transfers=DEBT_YAML)
+        with_built_in(path_yaml, transfers=DEBT_YAML)
         return replace(settings, creditors_path=path)
 
     @pytest.fixture
@@ -386,7 +386,7 @@ class TestDebtSides:
         loan = client.get("/form/debt-bases", params={"debt_kind": "Loan"}).text
         assert loan.count('name="base_movement"') == 1 and 'value="Loan - Given" checked' in loan
 
-    def test_internal_ones_link_to_their_row_in_the_debt_tab(self, settings, client):
+    def test_built_in_ones_link_to_their_row_in_the_debt_tab(self, settings, client):
         with settings.ledger_path.open("a") as f:
             f.write("2026-02-03;Debt - Paid;De;5;Ca;\n")
         LedgerStore(settings).freeze_ids()
@@ -599,7 +599,7 @@ class TestDebtKinds:
             LedgerStore(settings).load()
 
     def test_each_kind_is_only_in_its_accounts(self, settings):
-        store = LedgerStore(with_internal(settings.base_movements_path, transfers=DEBT_YAML) or settings)
+        store = LedgerStore(with_built_in(settings.base_movements_path, transfers=DEBT_YAML) or settings)
         with pytest.raises(ValueError, match=re.escape("'Gas' is a service: their movements are in SeD (Services tab), not in De")):
             store.add_debt_movement("2026-02-01", "Debt - Paid", "De", "Ca", "1", "Gas")
         with pytest.raises(ValueError, match=re.escape("'Dad' is a person: their movements are in the debt accounts of the people (People tab), not in SeD")):
@@ -641,7 +641,7 @@ class TestDebtsAndLoans:
             "people:\n  Dad: 0\n  Ann:\n    amount: 0\n    expected: creditor\n  Bob:\n    amount: 0\n    expected: debtor\n",
             encoding="utf-8",
         )
-        with_internal(settings.base_movements_path, DIFFERENCE_YAML, DEBT_YAML)
+        with_built_in(settings.base_movements_path, DIFFERENCE_YAML, DEBT_YAML)
         return replace(settings, creditors_path=path)
 
     @pytest.fixture
@@ -713,7 +713,7 @@ class TestInOtherCurrencies:
         monkeypatch.setattr("pledger.web.store.common.today", lambda: dt.date(2026, 2, 10))
         path = tmp_path / "creditors.yaml"
         path.write_text("people:\n  Dad: 0\n", encoding="utf-8")
-        with_internal(revalued.base_movements_path, DIFFERENCE_YAML.replace("after: Gifts", "after: Expo"), DEBT_YAML)
+        with_built_in(revalued.base_movements_path, DIFFERENCE_YAML.replace("after: Gifts", "after: Expo"), DEBT_YAML)
         with_conversion_bases(revalued)
         (revalued.currencies_path.parent / "currencies.csv").write_text(
             "date;USD\n2026-01-01;1000\n2026-02-02;1200\n2026-02-09;1200\n", encoding="utf-8"
@@ -906,7 +906,7 @@ class TestNewPerson:
     def settings(self, settings, tmp_path):
         path = tmp_path / "creditors.yaml"
         path.write_text("# who we owe\npeople:\n  Dad: 0\nservices:\n  Gym: 0\n", encoding="utf-8")
-        with_internal(settings.base_movements_path, transfers=DEBT_YAML)
+        with_built_in(settings.base_movements_path, transfers=DEBT_YAML)
         return replace(settings, creditors_path=path)
 
     @pytest.fixture

@@ -261,7 +261,7 @@ def exchange_base_movement(snapshot: Snapshot, sold: str, bought: str) -> str:
         )
     name = CONVERSION_BOUGHT if sold == base else CONVERSION_SOLD
     if name not in snapshot.conversion_base_movements():
-        raise ValueError(f"No {name!r} base movement: add it as an internal transfer of the base movements YAML")
+        raise ValueError(f"No {name!r} base movement: add it as a built-in transfer of the base movements YAML")
     return name
 
 
@@ -282,7 +282,7 @@ def _check_conversion(snapshot: Snapshot, row) -> tuple[Account, float, float]:
         raise ValueError(f"Unknown base movement of a conversion: {row['base_movement']!r} ({date})")
     if base.name not in snapshot.conversion_base_movements():
         raise ValueError(
-            f"Conversions must be of {' or '.join(map(repr, sorted(CONVERSIONS)))} (internal transfers), "
+            f"Conversions must be of {' or '.join(map(repr, sorted(CONVERSIONS)))} (built-in transfers), "
             f"not {base.name!r} ({date})"
         )
     names = (row["acc_debit"], row["acc_credit"])

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pledger.enums import AccountCheck, AccountType, InterestFrequency
 from pledger.models import (
-    INTERNAL_DEBTS,
+    BUILT_IN_DEBTS,
     SPECIAL_LABELS,
     CreditCardAccount,
     DebtAccount,
@@ -94,8 +94,8 @@ def build_accounts(snapshot: Snapshot, month: str = "", values: dict | None = No
                 "own": own_balance(snapshot, a, month),
                 # The debt accounts are set in the currencies YAML, with their currency
                 "editable": a.acc_type in EDITABLE_ACCOUNT_TYPES and not isinstance(a, DebtAccount),
-                "internal": a.internal,
-                "debt": isinstance(a, DebtAccount) and a.name not in INTERNAL_DEBTS,  # of the currencies YAML
+                "built_in": a.built_in,
+                "debt": isinstance(a, DebtAccount) and a.name not in BUILT_IN_DEBTS,  # of the currencies YAML
             }
             for a in snapshot.accounts.values()
             if a.acc_type == t
@@ -155,13 +155,13 @@ def balance_groupings(snapshot: Snapshot, balances: dict[str, float]) -> dict:
     """
     Composition of the balances of assets and liabilities, grouped by currency (base
     first) or by liquidity, listing every group that has accounts. Accounts keep the
-    order they are defined in, and the internal ones are marked as such.
+    order they are defined in, and the built-in ones are marked as such.
     """
-    internal = {a.name for a in snapshot.accounts.values() if a.internal}
+    built_in = {a.name for a in snapshot.accounts.values() if a.built_in}
 
     def marked(rows: list[dict]) -> list[dict]:
         return [
-            {**r, "internal": r["name"] in internal, **{k: marked(r[k]) for k in ("children", "rest") if r.get(k)}}
+            {**r, "built_in": r["name"] in built_in, **{k: marked(r[k]) for k in ("children", "rest") if r.get(k)}}
             for r in rows
         ]
 

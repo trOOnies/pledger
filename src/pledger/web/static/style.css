@@ -395,8 +395,8 @@ table[data-sortable] th[aria-sort="descending"]::after { content: " ▼"; opacit
 .badge.gain { background: var(--gain-bg); color: var(--gain); }
 .badge.loss { background: var(--loss-bg); color: var(--loss); }
 .badge.transfer { background: var(--transfer-bg); color: var(--transfer); }
-/* An internal result type or base movement, set by pledger itself */
-.badge.internal { background: var(--transfer-bg); color: var(--muted); font-weight: normal; text-transform: none; letter-spacing: 0; vertical-align: 1px; }
+/* A built-in result type or base movement, set by pledger itself */
+.badge.built-in { background: var(--transfer-bg); color: var(--muted); font-weight: normal; text-transform: none; letter-spacing: 0; vertical-align: 1px; }
 .badge.employment { background: color-mix(in srgb, var(--series-4) 22%, transparent); color: var(--text); font-weight: normal; text-transform: none; letter-spacing: 0; vertical-align: 1px; }
 
 .stack { display: grid; gap: .75rem; }

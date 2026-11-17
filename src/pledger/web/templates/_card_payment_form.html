@@ -47,6 +47,6 @@
     <strong>surplus</strong> from the card back to an account.</p>
   {% else %}
   <p class="msg warn small">The Credit Cards tab needs these base movements, under <code>transfer</code> in the
-    <code>internal</code> section of the base movements YAML: {{ missing | join(", ") }}.</p>
+    <code>built_in</code> section of the base movements YAML: {{ missing | join(", ") }}.</p>
   {% endif %}
 </form>

@@ -693,8 +693,8 @@ class TestApi:
         result_types = client.get("/api/result-types").json()
         # Right before the LAST one, Init
         assert result_types[-2:] == [
-            {"id": 3, "name": "Tax", "long_name": "Taxes", "description": "d", "internal": False, "employment": True},
-            {"id": 4, "name": "Init", "long_name": "Initial", "description": "d", "internal": True, "employment": False},
+            {"id": 3, "name": "Tax", "long_name": "Taxes", "description": "d", "built_in": False, "employment": True},
+            {"id": 4, "name": "Init", "long_name": "Initial", "description": "d", "built_in": True, "employment": False},
         ]
 
 

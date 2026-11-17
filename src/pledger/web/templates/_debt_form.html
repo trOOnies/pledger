@@ -47,7 +47,7 @@
   </label>
   {% if not editing %}
   {% if difference_missing %}
-  <p class="msg warn small">Setting the remaining as a Difference needs these internal base movements, a gain and a
+  <p class="msg warn small">Setting the remaining as a Difference needs these built-in base movements, a gain and a
     loss, in the base movements YAML: {{ difference_missing | join(", ") }}.</p>
   {% else %}
   <label class="check" title="Settle what would remain with them after this movement, against equity, so their balance ends at 0.00">
@@ -66,6 +66,6 @@
   {% endif %}
   {% if missing %}
   <p class="msg warn small">The People tab needs these base movements, under <code>transfer</code> in the
-    <code>internal</code> section of the base movements YAML: {{ missing | join(", ") }}.</p>
+    <code>built_in</code> section of the base movements YAML: {{ missing | join(", ") }}.</p>
   {% endif %}
 </form>

@@ -12,9 +12,9 @@ from helpers import (
     CARD_PAYMENT_YAML,
     INVEST_TRANSFERS_YAML,
     INVEST_YAML,
+    with_built_in,
     with_conversion_bases,
     with_interest_frequency,
-    with_internal,
 )
 
 from pledger.enums import LedgerSide
@@ -31,7 +31,7 @@ def settings(revalued, tmp_path, monkeypatch):
     """With a broker, a USD and a EUR account, and a USD card. 1 USD is 1,000 and 1 EUR 1,200."""
     monkeypatch.setattr("pledger.web.store.common.today", lambda: dt.date(2026, 3, 11))
     settings = with_conversion_bases(revalued)
-    with_internal(
+    with_built_in(
         settings.base_movements_path, INVEST_YAML.replace("Dividends: d", f"{DIVIDENDS}: d").replace("after: Gifts", "after: Expo"),
         INVEST_TRANSFERS_YAML + CARD_PAYMENT_YAML,
     )
@@ -289,7 +289,7 @@ class TestCardsInOtherCurrencies:
 class TestMissingInterest:
     @pytest.fixture
     def settings(self, settings):
-        with_internal(settings.base_movements_path, (
+        with_built_in(settings.base_movements_path, (
             "    Interest:\n      after: Invest\n      long_name: I\n      description: d\n      base_movements:\n"
             "        gain:\n          Interest on Money (G): d\n        loss:\n          Interest on Money (L): d\n"
         ))
@@ -527,7 +527,7 @@ class TestBalanceAccounts:
         )
         return settings
 
-    def test_only_its_accounts_and_the_internal_ones(self, store):
+    def test_only_its_accounts_and_the_built_in_ones(self, store):
         store.add_investment_movement("2026-02-02", BOUGHT, "Br", "Ud", "10", investment="T", quantity="1")
         accounts = store.load().accounts
         assert accounts["Br"].interacts_with(accounts["Fi"]) and accounts["Br"].interacts_with(accounts["Eq"])

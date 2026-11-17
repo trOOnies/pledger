@@ -7,7 +7,7 @@ from dataclasses import replace
 
 import pytest
 from fastapi.testclient import TestClient
-from helpers import DEBT_YAML, HTMX, SERVICES_HEADER, card_labels, with_internal
+from helpers import DEBT_YAML, HTMX, SERVICES_HEADER, card_labels, with_built_in
 
 from pledger.enums import CreditorKind
 from pledger.web.app import create_app
@@ -109,7 +109,7 @@ class TestServices:
     @pytest.mark.parametrize(
         ("old", "new", "message"),
         [
-            ("    amount: 5\n    base_movement: Food\n", "    base_movement: Salary\n", "must be a loss, not internal, that may credit its debt account, SeD: not 'Salary' (Gas)"),
+            ("    amount: 5\n    base_movement: Food\n", "    base_movement: Salary\n", "must be a loss, not built-in, that may credit its debt account, SeD: not 'Salary' (Gas)"),
             ("    amount: 5\n    base_movement: Food\n", "    base_movement: Card fee\n", "not 'Card fee'"),
             ("    amount: 5\n    base_movement: Food\n", "    base_movement: Nope\n", "not 'Nope'"),
             ("    amount: 5\n    base_movement: Food\n", "    base_movement: 3\n", "'Gas' base_movement must be a name: 3"),
@@ -223,7 +223,7 @@ class TestServices:
 
     def test_payment_form(self, settings, client):
         assert "needs the base movement <em>Debt - Paid</em>" in client.get("/services/payment-form").text
-        with_internal(settings.base_movements_path, transfers=DEBT_YAML)
+        with_built_in(settings.base_movements_path, transfers=DEBT_YAML)
         r = client.get("/services")
         assert r.text.index('id="service-payment-form"') < r.text.index('id="service-form"')  # above New month
         form = r.text.split('id="service-payment-form"')[1].split("</form>")[0]
@@ -241,7 +241,7 @@ class TestServices:
         assert 'name="set_value" value="true" >' in r.text and "aria-disabled" not in r.text
 
     def test_pay_a_known_value(self, settings, client):
-        with_internal(settings.base_movements_path, transfers=DEBT_YAML)
+        with_built_in(settings.base_movements_path, transfers=DEBT_YAML)
         before = settings.services_path.read_text()
         r = client.post("/services/payments", data={
             "service": "Expenses", "month": "2026-02", "move_date": "2026-02-10", "acc_credit": "Ca", "amount": "25",
@@ -273,7 +273,7 @@ class TestServices:
         assert "is already known" in r.text
 
     def test_pay_an_unknown_value(self, settings, client):
-        with_internal(settings.base_movements_path, transfers=DEBT_YAML)
+        with_built_in(settings.base_movements_path, transfers=DEBT_YAML)
         settings.services_path.write_text(SERVICES_HEADER + "2025-12;100;;\n2026-01;100;30;50\n2026-02;estimated;30;\n")
         r = client.get("/services/payment-form", params={"service": "Rent", "month": "2026-02"})
         assert "estimated</span> at\n    <span class=\"money\">$103.00</span>" in r.text  # 100 with inflation

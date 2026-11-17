@@ -13,7 +13,7 @@
         hx-target="#expenses-panel" hx-swap="outerHTML" hx-trigger="change">
     <input type="hidden" name="expenses_filtered" value="true">
     {% for f in expenses.filters %}
-    <label class="check" title="{{ f.long_name }}{% if f.internal %} (internal){% endif %}: include its losses in the expenses">
+    <label class="check" title="{{ f.long_name }}{% if f.built_in %} (built-in){% endif %}: include its losses in the expenses">
       <input type="checkbox" name="expense_types" value="{{ f.name }}" {% if f.checked %}checked{% endif %}>
       <span class="swatch" style="background: var(--series-{{ f.slot }})"></span> {{ f.long_name }}
     </label>
@@ -56,7 +56,7 @@
   </div>
   {% if rows %}
   <p class="muted small">How many months your equity would last at each month end, spending the average monthly
-    expenses of the year up to then. Expenses are the losses of the result types ticked above (the non-internal ones
+    expenses of the year up to then. Expenses are the losses of the result types ticked above (the non-built-in ones
     by default), but never the initial movements. The result types tagged <strong>Employment</strong> (like your work
     and its taxes) aren't listed, as they would stop with your job. With the default ticks, the last month matches
     the card above.</p>

@@ -49,7 +49,7 @@ def by_group(snapshot: Snapshot, names: list[str]) -> dict[str, list[str]]:
 def bases_by_group(snapshot: Snapshot, names: list[str]) -> dict[str, list[str]]:
     """
     These base movements grouped by their result type, labelled with its long name, in the
-    order of the result types (see result_type_order), then the transfers and the internal
+    order of the result types (see result_type_order), then the transfers and the built-in
     transfers, each sorted alphabetically, like the Setup of the Results tab.
     """
     groups: dict[tuple[int, str], list[str]] = {}
@@ -59,7 +59,7 @@ def bases_by_group(snapshot: Snapshot, names: list[str]) -> dict[str, list[str]]
         if base.result_type is not None:
             key = base.result_type.id, base.result_type.long_name
         else:
-            key = (last + 1, "Internal transfers") if base.internal else (last, "Transfers")
+            key = (last + 1, "Built-in transfers") if base.built_in else (last, "Transfers")
         groups.setdefault(key, []).append(name)
     return {label: sorted(found, key=str.casefold) for (_, label), found in sorted(groups.items())}
 
@@ -147,13 +147,13 @@ def base_sides(snapshot: Snapshot, move_type: str) -> dict:
         # The special sides a new base movement can take: not those of the debt base movements, of the People tab
         "specials": {k: v for k, v in SPECIAL_LABELS.items() if k not in (DEBT_SIDE, LOAN_SIDE)},
         "labels": SPECIAL_LABELS,
-        # Gains and losses are filed under a (non-internal) result type; transfers have none.
+        # Gains and losses are filed under a (non-built-in) result type; transfers have none.
         "result_types": (
             []
             if move_type == MovementType.TRANSFER.value
             else [
                 snapshot.result_types[i] for i in sorted(snapshot.result_types)
-                if not snapshot.result_types[i].internal
+                if not snapshot.result_types[i].built_in
             ]
         ),
     }

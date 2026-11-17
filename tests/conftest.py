@@ -46,17 +46,17 @@ month;monthly_inflation
 2026-01;3.00%
 """
 
-# The mandatory internal accounts, first in every accounts YAML of the tests: in flow
+# The mandatory built-in accounts, first in every accounts YAML of the tests: in flow
 # style, so that replacing the lines of the other sections leaves them alone. The debt
 # accounts of the people are those of the currencies (see CURRENCIES_YAML).
-INTERNAL_ACCOUNTS_YAML = """\
-internal:
+BUILT_IN_ACCOUNTS_YAML = """\
+built_in:
   asset: {Fi: {description: Intermediary, initial_amount: 0, checks: [net_zero]}, SeL: {description: Services loans}, Wo: {description: Work loans}}
   liability: {SeD: {description: Services debts}}
   equity: {Eq: {description: Equity}}
 """
 
-ACCOUNTS_YAML = INTERNAL_ACCOUNTS_YAML + """\
+ACCOUNTS_YAML = BUILT_IN_ACCOUNTS_YAML + """\
 asset:
   Ca:
     description: Cash
@@ -132,7 +132,7 @@ def accounts(currencies) -> dict[str, Account]:
         "Ca": Account("Ca", "Cash", AccountType.ASSET, ars, 0.0, is_liquid=True),
         "Bk": Account("Bk", "Bank account", AccountType.ASSET, usd, 100.5, is_liquid=True),
         "Cc": Account("Cc", "Credit card", AccountType.LIABILITY, ars, 0.0),
-        "Eq": Account("Eq", "Equity", AccountType.EQUITY, ars, 0.0, internal=True),
+        "Eq": Account("Eq", "Equity", AccountType.EQUITY, ars, 0.0, built_in=True),
     }
 
 
@@ -188,17 +188,17 @@ def ledger_csv(tmp_path):
     return str(path)
 
 
-# The internal base movements required to load the ledger: an empty `transfer` section
-# and the `result_types` one, with Init last (see with_internal)
+# The built-in base movements required to load the ledger: an empty `transfer` section
+# and the `result_types` one, with Init last (see with_built_in)
 INITIAL_YAML = (
-    "internal:\n  transfer:\n  result_types:\n    Init:\n      after: LAST\n      long_name: Initial\n      description: d\n"
+    "built_in:\n  transfer:\n  result_types:\n    Init:\n      after: LAST\n      long_name: Initial\n      description: d\n"
     "      base_movements:\n        gain:\n          Initial (G): Initial balance\n"
     "        loss:\n          Initial (L): Initial balance\n"
 )
 
 
-# The internal base movements of the results of the accounts in other currencies,
-# required once one is revalued; appended to the internal `result_types` of INITIAL_YAML
+# The built-in base movements of the results of the accounts in other currencies,
+# required once one is revalued; appended to the built-in `result_types` of INITIAL_YAML
 RESULT_YAML = (
     "    Expo:\n      after: Gifts\n      long_name: Exposition\n      description: d\n"
     "      base_movements:\n        gain:\n          Foreign currency (G):\n            description: d\n"

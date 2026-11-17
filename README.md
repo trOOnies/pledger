@@ -36,7 +36,7 @@ web app.
   - [Cart](#cart)
   - [Trip](#trip)
   - [Split](#split)
-  - [Base movements and internal movements](#base-movements-and-internal-movements)
+  - [Base movements and built-in movements](#base-movements-and-built-in-movements)
   - [Currencies and inflation](#currencies-and-inflation)
   - [Investments](#investments)
   - [Debt](#debt)
@@ -77,9 +77,9 @@ A FastAPI + HTMX UI, one tab per area:
 | 📋 **Ledger** | Lists, adds, edits and deletes movements, with the balances of their accounts right after each one, filtered by month, account and base movement, by whether it can be edited here, and by a search (every word in its id, date, base movement, accounts, comment or amount; `"quote"` a phrase). The **Debit** and **Credit** fields of every form, and the **Account** filter, group the accounts by type (and currency), and the **Base movement** filter and field group the base movements by result type, then the transfers. Its ⧉ button fills the form in with a movement, to add a similar one: nothing is saved until it is added, as a new movement. Conversions, debt movements and card payments are added in their own tabs instead. |
 | 🏦 **Accounts** | Balances (also in their currency, for the accounts in another one), total assets, liabilities and equity, a form to add accounts, edit the asset and liability ones (✎), the composition of assets and liabilities (by currency or by liquidity) and, at each month end, debt over equity and net liquidity (liquid assets minus liquid liabilities) over equity. |
 | 💱 **Currencies** | Balances per currency, the balance of each account in other currencies in its own currency, the daily CPI of the base currency, its monthly inflation, the nominal and real value of each other currency, and the share of each currency in the assets at each month end. The conversions are added (picking the currency sold and the one bought), edited and deleted here, filtered by currency and account, each with the account's balance in its own currency after it. |
-| 📊 **Results** | The nominal and real change of equity in the period and the months of expenses it covers (how long equity would last at the average monthly losses of the last year, leaving out the initial ones and those of the internal result types and of those tagged `employment`), gains, losses and profit by result type (also cumulative), a waterfall of the result by type (with its result statement as a table, both also as a share of the gains of the first result type, e.g. *Operative*), equity in months of expenses at each month end (of the loss result types picked, or their raw average monthly losses stacked) and equity over time. Result types and base movements are listed and added here, with a badge on the result types tagged Employment. |
+| 📊 **Results** | The nominal and real change of equity in the period and the months of expenses it covers (how long equity would last at the average monthly losses of the last year, leaving out the initial ones and those of the built-in result types and of those tagged `employment`), gains, losses and profit by result type (also cumulative), a waterfall of the result by type (with its result statement as a table, both also as a share of the gains of the first result type, e.g. *Operative*), equity in months of expenses at each month end (of the loss result types picked, or their raw average monthly losses stacked) and equity over time. Result types and base movements are listed and added here, with a badge on the result types tagged Employment. |
 | 💼 **Work** | The company, job position and salary of each month, from gross to net through its deductions (taxes, contributions...), with a chart of both salaries (0 for the months without a job). Below, what each company owes in `Wo` (the net salaries it hasn't paid yet) and its movements; the salaries received are added (*Salary received*) and deleted here. |
-| 📈 **Investments** | The investments of the investment accounts with their price (amount over quantity), their composition by type or by account, the results of each one, the interest on money of regular accounts, and charts of the total invested and the total result. The broker fees of each investment are shown over its amount. The **Investment account**, **Investment** and **Base movement** filters narrow the movements down (an investment shows all its movements, whatever their accounts), each with the total of its account and the amount and quantity of its investment after it. The internal `Invest` movements are added, edited and deleted here, and so are new prices of the investments, from which their capital gains and losses are generated. |
+| 📈 **Investments** | The investments of the investment accounts with their price (amount over quantity), their composition by type or by account, the results of each one, the interest on money of regular accounts, and charts of the total invested and the total result. The broker fees of each investment are shown over its amount. The **Investment account**, **Investment** and **Base movement** filters narrow the movements down (an investment shows all its movements, whatever their accounts), each with the total of its account and the amount and quantity of its investment after it. The built-in `Invest` movements are added, edited and deleted here, and so are new prices of the investments, from which their capital gains and losses are generated. |
 | 👥 **People** | Who we owe and who owes us among the people, in the debt and loan accounts of each currency, each in its currency and in all in the base one, with alerts and the movements of the month, each with what we owe whoever it names after it. The debt and loan movements of the people are added and edited here, in any currency, and new people added to `creditors.yaml`. (The `Debt` menu has People, Services and Credit Cards.) |
 | 🧾 **Services** | The services, in their own debt accounts `SeD` and `SeL`, with their base movements and monthly values, what was owed to them this month and in all, and what we owe them now, with the table of monthly values and the movements of `SeD` and `SeL`. The monthly values and the payments (*New service payment*) are added here, and the payments deleted. |
 | 💳 **Credit Cards** | What we owe on each card (also in its currency, for a card in another one), what was charged and paid in the month, a chart of the monthly charges, the net owed over equity, and the movements of the month (charges included), each with what we owe on its card after it, and the installments of the statement of the month, made or still due. The card payments are added and edited here, and so are the statement closing dates of each card for each month. |
@@ -205,8 +205,8 @@ date). `prices.csv` has no ids.
 
 ### Accounts
 
-The top-level `internal` key has the same sections as the rest of the file, with exactly the
-five **internal accounts**, which pledger needs and no other section has:
+The top-level `built_in` key has the same sections as the rest of the file, with exactly the
+five **built-in accounts**, which pledger needs and no other section has:
 
 - `Fi` (asset): an intermediary between movements, like the conversions between two other
   currencies (see [Conversions](#conversions)). Usually with the `net_zero` check.
@@ -216,7 +216,7 @@ five **internal accounts**, which pledger needs and no other section has:
 - `Wo` (asset): the loan account of the companies of the work history, what they owe us of the
   salaries (see [Work](#work)).
 
-The **debt and loan accounts of the people** are internal too, but they are declared with their
+The **debt and loan accounts of the people** are built-in too, but they are declared with their
 currency, in `currencies.yaml` (see [Currencies and inflation](#currencies-and-inflation) and
 [Debt](#debt)).
 
@@ -248,7 +248,7 @@ asset:
     checks:
     - net_positive
 liability: null
-internal:
+built_in:
   asset:
     Fi:
       description: Ficticious balance as an intermediary between movements
@@ -277,7 +277,7 @@ revalue nothing until the first date of `currencies.csv` after it. Without a `pr
 the ledger starts on the date of its first movement.
 
 The Accounts tab groups their balances by currency or by liquidity. Its ✎ edits an asset or
-liability account in its YAML, the internal ones too (all but its name, type and currency).
+liability account in its YAML, the built-in ones too (all but its name, type and currency).
 
 ### Audit
 
@@ -296,12 +296,12 @@ is marked in its audit, with its movement; if you later delete it from the ledge
 deleted. The amounts of past audits stay closed until you open them, as seeing them could influence
 the balances you are filling in.
 
-A correction is a movement dated today, in the ledger CSV, of one of these internal base movements:
+A correction is a movement dated today, in the ledger CSV, of one of these built-in base movements:
 
 ```yaml
-internal:
+built_in:
   result_types:
-    Corr:   # or any other internal result type, or a regular one (see Base movements and internal movements)
+    Corr:   # or any other built-in result type, or a regular one (see Base movements and built-in movements)
       after: LAST   # the result type right before it, FIRST or LAST (see Result types)
       long_name: Corrections
       description: Results because of untracked movements that prompted balance corrections
@@ -347,7 +347,7 @@ move_date;base_movement;acc_debit;amount;acc_credit;comment;id;installments;cart
 2026-11-10;Basic - Fixed assets;Eq;90,000.00;Vi;Coto: Microwave;L-1337;3;1/2
 ```
 
-- A cart is paid from an asset or liability account in the base currency: not an internal, investment
+- A cart is paid from an asset or liability account in the base currency: not a built-in, investment
   or debt one. The base movement of each bag must take that account on its credit side.
 - Saving a cart adds or replaces all of its movements together, or none of them, and leaves the rest of
   the file as it was. Editing it keeps the line and ID of each product kept, appends the new ones and
@@ -407,7 +407,7 @@ The comments are the description and the item (or the item), and the description
 for the debts and loans, naming who they are about first. `POST /api/split` takes Step 1, with the
 shares of each item as numbers (1 or 0, or the percentages), and answers in cents, saving nothing.
 
-### Base movements and internal movements
+### Base movements and built-in movements
 
 A base movement is a dict (`description` and optional fixed `debit`/`credit` accounts) or just
 its description. A side set to `INVESTMENT`, `CREDIT CARD` or `FOREIGN CURRENCY` (reserved
@@ -436,40 +436,40 @@ result_types:
           credit: Wo
 ```
 
-The top-level `internal` key mirrors the rest of the file: its `result_types`, sharing their ids
+The top-level `built_in` key mirrors the rest of the file: its `result_types`, sharing their ids
 with the other ones, next to a `transfer` section. Its base movements are reserved for pledger
 itself. They can't be picked for a new movement in the Ledger tab, their movements can't be deleted
 by hand (but those of the Investments, Debt and Credit Cards tabs, from there), and its result
 types can't get new base movements. An entry of its `result_types` named like a regular result
-type only has `base_movements`: internal base movements of that regular one, like the corrections
+type only has `base_movements`: built-in base movements of that regular one, like the corrections
 in `Rest` (they count as its losses, also as expenses):
 
 ```yaml
-internal:
+built_in:
   result_types:
-    Rest:   # a regular result type: only its internal base movements
+    Rest:   # a regular result type: only its built-in base movements
       base_movements:
         loss:
           Correction (L): Money correction against oneself
 ```
 
 > [!NOTE]
-> **Exception: investments.** The base movements of the internal `Invest` result type (interest,
-> broker fees...) and the internal transfers with an `INVESTMENT` side (buying and selling
+> **Exception: investments.** The base movements of the built-in `Invest` result type (interest,
+> broker fees...) and the built-in transfers with an `INVESTMENT` side (buying and selling
 > investments...) can't be added or deleted from the Ledger tab or `/api/movements`, but they can
 > from the Investments tab and `/api/investments/movements`. But for `Capital gains` and
 > `Capital losses`: those are generated from the prices (see [Investments](#investments)).
 > Their movements are kept in `movements/investment.csv` and `movements/interest.csv` (see
 > [Investments](#investments)), never in `ledger.csv`.
 
-The internal gain `Foreign currency (G)` and loss `Foreign currency (L)` are required in the same way
+The built-in gain `Foreign currency (G)` and loss `Foreign currency (L)` are required in the same way
 (their side may also be `FOREIGN CURRENCY`) once an account in another currency has to be revalued (see
 [Currencies and inflation](#currencies-and-inflation)). Their movements are generated, and
 can't be in `ledger.csv`, just like the initial ones below, but they aren't hidden. So are the
-internal gain `Capital gains` and loss `Capital losses` (their side may also be `INVESTMENT`) once
+built-in gain `Capital gains` and loss `Capital losses` (their side may also be `INVESTMENT`) once
 an investment has to be revalued at a new price (see [Investments](#investments)).
 
-The internal gain `Initial (G)` and loss `Initial (L)` are required (with no fixed debit or
+The built-in gain `Initial (G)` and loss `Initial (L)` are required (with no fixed debit or
 credit account, respectively). Every account with a non-zero initial amount gets one such
 movement against equity, on its initial date. That of an account in another currency is at the
 value of its currency on that date (the last one up to then, else its first one). These movements:
@@ -574,21 +574,21 @@ optional, and other columns are kept). The ledger gets it as a movement of
 `amount_base_currency`. They are added and deleted from the Currencies tab and
 `/api/conversions`, and the file is created with the first one.
 
-Conversions are of these internal transfers, for every other currency: `Foreign currency -
+Conversions are of these built-in transfers, for every other currency: `Foreign currency -
 Bought` debiting the account in the other currency, or `Foreign currency - Sold` crediting it.
 The Currencies tab picks it from the currency sold and the one bought, so they can't be added
 from the Ledger or Investments tabs.
 
 Selling one other currency for another (e.g. USC for USD), or moving one between two of its
 accounts (e.g. USD for USD), is a **cross conversion**, through the
-internal `Fi`: a `Foreign currency - Sold` of the currency sold into it, right followed by a
+built-in `Fi`: a `Foreign currency - Sold` of the currency sold into it, right followed by a
 `Foreign currency - Bought` of the one bought out of it, both of the amount sold at the value of
 its currency on that date (in `currencies.csv`, the last one up to then), so `Fi` is left as it
 was. The Currencies tab adds them from its form, and marks both rows with ⇄ and the ID of the
 other one; they are edited and deleted together. Two such rows added by hand count as one too.
 
 ```yaml
-internal:
+built_in:
   transfer:
     Foreign currency - Bought:
       description: Buying of foreign currency with base_currency
@@ -636,7 +636,7 @@ The type is one of `public_bond`, `private_bond`, `mutual_fund`, `etf`, `forex`,
 
 **Which accounts it moves money with.** The optional `balance_accounts` are the only regular
 accounts a movement of the investment account can have on its other side, in any CSV and tab.
-Without the key, it can be any of them; with an empty list, none. The internal accounts (`Fi`,
+Without the key, it can be any of them; with an empty list, none. The built-in accounts (`Fi`,
 `Eq` and the debt and loan accounts) and the other investment accounts are never left out, so they aren't listed, while
 credit cards are regular accounts. A movement in another currency that goes through `Fi` must
 still pick one of them: it is the account of the money that counts.
@@ -720,7 +720,7 @@ move_date;acc_debit;amount;comment
 ```
 
 Earned interest is an `Interest on Money (G)` movement debiting the account, and paid interest
-an `Interest on Money (L)` one crediting it, against equity: both internal base movements are
+an `Interest on Money (L)` one crediting it, against equity: both built-in base movements are
 required for the rows that use them. The Investments tab adds and deletes them like the other
 investment movements, totals them in their own section, by account (every account with an interest
 frequency, and only those) and month by month, and adds
@@ -761,10 +761,10 @@ creditor and role:
 | Services | `SeD` | `SeL` | [Services](#services) |
 | Companies | (none) | `Wo` | [Work](#work) |
 
-Every currency has the two debt accounts of the people, both internal, declared in
+Every currency has the two debt accounts of the people, both built-in, declared in
 `currencies.yaml` (see [Currencies and inflation](#currencies-and-inflation)). Below, `De` and `Lo`
 are those of the base currency, and `DeD` and `LoD` those of the USD. `SeD`, `SeL` and `Wo` are
-internal accounts of `accounts.yaml`, in the base currency (see [Accounts](#accounts)). They all
+built-in accounts of `accounts.yaml`, in the base currency (see [Accounts](#accounts)). They all
 share `creditors.yaml` (optional: without it, they have no creditors but the companies), which has
 up to two top-level sections, `people` and `services`, mapping who we have debts with to the initial
 amount: **positive if we owe them, negative if they owe us**. A name can only be in one section,
@@ -814,11 +814,11 @@ else its amount at the value of the currency on that date. A movement naming onl
 debt account is unassigned, and the People tab warns about it (e.g. a payment of the rent in `De`
 instead of `SeL`).
 
-The **debt movements** are those of four internal transfers, which the People, Services and Work
-tabs need under `transfer` in the `internal` section:
+The **debt movements** are those of four built-in transfers, which the People, Services and Work
+tabs need under `transfer` in the `built_in` section:
 
 ```yaml
-internal:
+built_in:
   transfer:
     Debt - Incurred:   # we owe more
       description: Debt incurred by oneself
@@ -846,7 +846,7 @@ Collected` from `Wo`): each tab lists the movements of its accounts and deletes 
 links them there.
 
 **Debts and loans in other currencies.** The form picks the debt or loan account of any currency
-(`DEBT ACCOUNT` and `LOAN ACCOUNT` take any of them, those of the services and companies too, see [Base movements](#base-movements-and-internal-movements)).
+(`DEBT ACCOUNT` and `LOAN ACCOUNT` take any of them, those of the services and companies too, see [Base movements](#base-movements-and-built-in-movements)).
 Its *Amount* is in the currency of the other account, and when the two accounts are in different
 currencies it also asks for the *Amount in* the currency of the debt account: the movement was
 **converted when it was made**, at the rate of those two amounts (e.g. paying a USD debt with
@@ -880,11 +880,11 @@ their balance now, after the movement, and the `Difference (G)` (what we owed th
 `Difference (L)` (what they owed us) it adds, in the same date and with the same comment, to leave
 them at 0.00 in that account (a debt account for a debt, a loan account for a loan) in all the
 ledger, in its currency. Both rows are added together, or none of them, and nothing is added
-if nothing remains. It needs these internal base movements of any internal result type but
+if nothing remains. It needs these built-in base movements of any built-in result type but
 `Invest`, against the equity account:
 
 ```yaml
-internal:
+built_in:
   result_types:
     Corr:
       after: LAST   # the result type right before it, FIRST or LAST (see Result types)
@@ -917,7 +917,7 @@ one of them (or of no one).
 Credit card accounts are the top-level keys of `credit_cards.yaml`. They are set like the
 accounts of `accounts.yaml`, with a `description`, an `initial_amount` and the optional
 `currency` and `initial_date`, but they aren't listed there. They are always liquid
-liabilities, and can't be investment or internal accounts.
+liabilities, and can't be investment or built-in accounts.
 
 ```yaml
 Vi:
@@ -973,11 +973,11 @@ is refused. When editing a payment, *Amount* is the one in the ledger, in the ba
 surplus works the same way.
 
 The **card payments** and **surpluses** (negative payments: money the card gives back) are
-those of two internal transfers, which the Credit Cards tab needs under `transfer` in the
-`internal` section:
+those of two built-in transfers, which the Credit Cards tab needs under `transfer` in the
+`built_in` section:
 
 ```yaml
-internal:
+built_in:
   transfer:
     Credit card - Payment:
       description: Payment of a credit card balance
@@ -1007,10 +1007,10 @@ the movements of the cards in the month picked, the initial ones included.
 
 The services (the `services` section of `creditors.yaml`) are how the charges that repeat are
 owed: **monthly values**, kept in `services.csv`, a row per month and a column per service, named
-after it. They have their own debt accounts, the internal `SeD` (what we owe them) and `SeL` (what
+after it. They have their own debt accounts, the built-in `SeD` (what we owe them) and `SeL` (what
 they owe us), of `accounts.yaml` (see [Accounts](#accounts)), and each service is owed its values in
 **its account**: `SeL` if it is expected to be a debtor (it charges in advance), else `SeD`. Each
-service has the base movement it is owed with in its `base_movement`: a loss (not internal) whose
+service has the base movement it is owed with in its `base_movement`: a loss (not built-in) whose
 credit side is free or its account. Several services can share one. A service without a
 `base_movement` has no column, and only counts the movements of `SeD` and `SeL` naming it.
 
@@ -1094,7 +1094,7 @@ with at least 4 of its days (the month of its Thursday), so a month has 4 or 5 w
 salary is split equally between them, to the cent (the cents left over go to the first weeks),
 as a `Work - Salary Main` movement on each Monday.
 
-- `Work - Salary Main` must be a gain debiting `Wo`, the internal loan account of the companies
+- `Work - Salary Main` must be a gain debiting `Wo`, the built-in loan account of the companies
   (see [Accounts](#accounts)), so that the company owes the salary until it's paid.
 - Its comment names the company first (e.g. `Galicia (GAL DS): week 2/5 of 2026-01`), so a debt
   account attributes it to the company (see [Debt](#debt)).
@@ -1105,7 +1105,7 @@ as a `Work - Salary Main` movement on each Monday.
 movement of its base movement on each Monday, next to the salary's. It credits the debit account
 of `Work - Salary Main`, `Wo`, so that the company owes the net salary.
 
-- The base movement of a deduction must be a non-internal loss with a fixed debit account
+- The base movement of a deduction must be a non-built-in loss with a fixed debit account
   (e.g. `Eq`), and no fixed credit account other than `Wo`.
 - Unlike the salary's, these base movements can still be used by hand in `ledger.csv`, e.g. for
   taxes paid outside of work. Don't record a deduction there too, or it counts twice.

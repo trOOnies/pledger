@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, Response
 
-from pledger.models import INTERMEDIARY, INTERNAL_DEBTS, WORK_LOAN, DebtAccount
+from pledger.models import BUILT_IN_DEBTS, INTERMEDIARY, WORK_LOAN, DebtAccount
 from pledger.web.dependencies import StoreDep
 from pledger.web.store import (
     CARD_SURPLUS,
@@ -794,7 +794,7 @@ def editable_account(store: LedgerStore, name: str):
     if account is None or account.acc_type not in EDITABLE_ACCOUNT_TYPES:
         raise HTTPException(status_code=404, detail=f"No asset or liability account {name!r}")
     if isinstance(account, DebtAccount):
-        where = "accounts" if name in INTERNAL_DEBTS else "currencies"
+        where = "accounts" if name in BUILT_IN_DEBTS else "currencies"
         raise HTTPException(status_code=422, detail=f"The debt account {name!r} is edited in the {where} YAML")
     return account
 

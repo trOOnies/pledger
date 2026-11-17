@@ -3,7 +3,7 @@
 
 import pytest
 import yaml
-from conftest import INTERNAL_ACCOUNTS_YAML
+from conftest import BUILT_IN_ACCOUNTS_YAML
 from helpers import HTMX
 
 from pledger.web.store import (
@@ -28,18 +28,18 @@ class TestEditAccounts:
         assert 'name="initial_date" value="2025-12-31"' in form and 'name="currency"' not in form  # the currency stays
         assert '<input value="USD" readonly' in form
 
-    def test_edit_an_internal_account(self, settings):
+    def test_edit_a_built_in_account(self, settings):
         path = settings.accounts_path
         block = (
-            "internal:\n  asset:\n    Fi:\n      description: Intermediary\n      initial_amount: 0\n"
+            "built_in:\n  asset:\n    Fi:\n      description: Intermediary\n      initial_amount: 0\n"
             "      checks:\n      - net_zero\n    SeL:\n      description: Services loans\n    Wo:\n      description: Work loans\n"
             "  liability:\n    SeD:\n      description: Services debts\n  equity:\n    Eq:\n      description: Equity\n"
         )
-        path.write_text(path.read_text().replace(INTERNAL_ACCOUNTS_YAML, block))
+        path.write_text(path.read_text().replace(BUILT_IN_ACCOUNTS_YAML, block))
         LedgerStore(settings).edit_account("Fi", "Between movements", "0", False, "", ["net_zero"])
-        assert "internal:\n  asset:\n    Fi:\n      description: Between movements\n" in path.read_text()
+        assert "built_in:\n  asset:\n    Fi:\n      description: Between movements\n" in path.read_text()
         fi = LedgerStore(settings).load().accounts["Fi"]
-        assert fi.internal and fi.description == "Between movements"
+        assert fi.built_in and fi.description == "Between movements"
 
     def test_debt_accounts_are_edited_in_the_currencies_yaml(self, settings, client):
         with pytest.raises(ValueError, match="'DeD' is the USD one of the currencies YAML: edit it there"):
@@ -47,12 +47,12 @@ class TestEditAccounts:
         assert client.get("/accounts/edit", params={"name": "De"}).status_code == 422
         rows = client.get("/accounts").text.split('<tr id="account-De">')[1].split("</tr>")[0]
         assert "Edit account De" not in rows and "debt or loan account of its currency" in rows
-        # Those of the services and the companies are under the internal key of the accounts YAML
-        with pytest.raises(ValueError, match="'SeD' is internal, under the internal key of the accounts YAML"):
+        # Those of the services and the companies are under the built_in key of the accounts YAML
+        with pytest.raises(ValueError, match="'SeD' is built-in, under the built_in key of the accounts YAML"):
             LedgerStore(settings).edit_account("SeD", "Mine", "", False)
         assert client.get("/accounts/edit", params={"name": "Wo"}).status_code == 422
         rows = client.get("/accounts").text.split('<tr id="account-Wo">')[1].split("</tr>")[0]
-        assert "Edit account Wo" not in rows and "under the internal key of the accounts file" in rows
+        assert "Edit account Wo" not in rows and "under the built_in key of the accounts file" in rows
 
     def test_edit_keeps_the_rest_of_the_file(self, settings, client):
         path = settings.accounts_path
@@ -67,7 +67,7 @@ class TestEditAccounts:
             "description": "My bank", "currency": "USD", "is_liquid": True, "initial_amount": 200.0,
             "color": "blue", "checks": ["net_positive"],
         }
-        assert path.read_text().startswith("# mine\n" + INTERNAL_ACCOUNTS_YAML + "asset:\n  Ca:\n") and "liability:\n  Cc:\n" in path.read_text()
+        assert path.read_text().startswith("# mine\n" + BUILT_IN_ACCOUNTS_YAML + "asset:\n  Ca:\n") and "liability:\n  Cc:\n" in path.read_text()
         assert LedgerStore(settings).load().accounts["Bk"].initial_amount == 200
 
     def test_invalid_edits_roll_back(self, settings, client):
@@ -114,10 +114,10 @@ class TestAccountFormSwaps:
         assert "Invalid interest frequency: &#39;daily&#39;" in r.text
 
 
-class TestInternalAccounts:
+class TestBuiltInAccounts:
     def test_are_marked_as_such(self, client):
         r = client.get("/accounts")
-        badge = '<span class="badge internal"'
+        badge = '<span class="badge built-in"'
         rows = {
             row.split("<strong>")[1].split("</strong>")[0]: badge in row.split("</td>")[0]
             for row in r.text.split('<tr id="account-')[1:]
@@ -129,4 +129,4 @@ class TestInternalAccounts:
         }
         # In the bars too
         bars = r.text.split('class="composition-pair"')[1].split("</section>")[0]
-        assert 'Fi <span class="badge internal"' in bars and 'Ca <span class="badge internal"' not in bars
+        assert 'Fi <span class="badge built-in"' in bars and 'Ca <span class="badge built-in"' not in bars

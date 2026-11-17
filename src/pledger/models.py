@@ -46,18 +46,18 @@ DEBT_SIDE = "DEBT ACCOUNT"
 LOAN_SIDE = "LOAN ACCOUNT"
 RESERVED = {INVESTMENT, CREDIT_CARD, FOREIGN_CURRENCY, DEBT_SIDE, LOAN_SIDE}
 
-# The internal accounts, mandatory, under the top-level `internal` key of the accounts
+# The built-in accounts, mandatory, under the top-level `built_in` key of the accounts
 # YAML: the intermediary between movements (in the base currency, e.g. of the
 # conversions between two other currencies), the equity (the only equity account), and
-# the debt accounts of the services and of the companies (see INTERNAL_DEBTS).
+# the debt accounts of the services and of the companies (see BUILT_IN_DEBTS).
 INTERMEDIARY, EQUITY_ACCOUNT = "Fi", "Eq"
 SERVICE_DEBT, SERVICE_LOAN, WORK_LOAN = "SeD", "SeL", "Wo"
-INTERNAL_ACCOUNTS = {
+BUILT_IN_ACCOUNTS = {
     INTERMEDIARY: AccountType.ASSET, EQUITY_ACCOUNT: AccountType.EQUITY,
     SERVICE_DEBT: AccountType.LIABILITY, SERVICE_LOAN: AccountType.ASSET, WORK_LOAN: AccountType.ASSET,
 }
 # The keys of each currency of the currencies YAML with its two debt accounts of the
-# people (see DebtAccount), internal too, both mandatory: the debts with other people
+# people (see DebtAccount), built-in too, both mandatory: the debts with other people
 # (what we owe them, a liability) and the loans to them (what they owe us, an asset). Each
 # one is the account of the role of the people in it (see Creditor.roles): creditors in
 # the debt account, debtors in the loan one.
@@ -66,12 +66,12 @@ ROLE_KEYS = {DebtRole.CREDITOR: DEBT_ACCOUNT_KEY, DebtRole.DEBTOR: LOAN_ACCOUNT_
 ROLE_TYPES = {DebtRole.CREDITOR: AccountType.LIABILITY, DebtRole.DEBTOR: AccountType.ASSET}
 # The special side taking any debt account of each role, of any currency
 ROLE_SIDES = {DebtRole.CREDITOR: DEBT_SIDE, DebtRole.DEBTOR: LOAN_SIDE}
-# The internal debt accounts of the accounts YAML, in the base currency, each with the
+# The built-in debt accounts of the accounts YAML, in the base currency, each with the
 # role and the kind of the creditors in it: the services, in SeD (the debts) and SeL (the
 # loans, of the ones charging in advance), and the companies of the work history, in Wo
 # (a loan account: they owe us the salaries). The people are in the debt accounts of the
 # currencies.
-INTERNAL_DEBTS = {
+BUILT_IN_DEBTS = {
     SERVICE_DEBT: (DebtRole.CREDITOR, CreditorKind.SERVICE),
     SERVICE_LOAN: (DebtRole.DEBTOR, CreditorKind.SERVICE),
     WORK_LOAN: (DebtRole.DEBTOR, CreditorKind.COMPANY),
@@ -80,7 +80,7 @@ INTERNAL_DEBTS = {
 # required, and the others are those of the accounts YAML, but its currency (that of the
 # entry) and its initial amount (that of its creditors, see Account.load_yaml).
 DEBT_ACCOUNT_KEYS = {"name", "long_name", "description", "is_liquid", "initial_date", "checks", "interest_frequency"}
-INTERNAL = "internal"
+BUILT_IN = "built_in"
 EMPLOYMENT = "employment"  # the key of a result type relying on being employed (see ResultType)
 # The `after` of a result type in the base movements YAML: the name of the one right
 # before it, or one of these keywords, each used by exactly one result type: the first
@@ -441,7 +441,7 @@ class Account:
     is_liquid: bool = False
     initial_date: dt.date | None = None  # None: the first date of the ledger
     checks: tuple[AccountCheck, ...] = ()  # on its daily balance in the ledger (see Ledger.check_accounts)
-    internal: bool = False  # one of the INTERNAL_ACCOUNTS
+    built_in: bool = False  # one of the BUILT_IN_ACCOUNTS
     # How often it is expected to have interest on money: None if it has none (see missing_interest)
     interest_frequency: InterestFrequency | None = None
 
@@ -510,15 +510,15 @@ class Account:
         week of the top-level `previous_month` of the YAML (see previous_month_of_yaml),
         if any: on its Monday. One with it must start after that week.
 
-        The top-level `internal` key has the same sections, with exactly the
-        INTERNAL_ACCOUNTS, which no other section has: the asset Fi, in the base
+        The top-level `built_in` key has the same sections, with exactly the
+        BUILT_IN_ACCOUNTS, which no other section has: the asset Fi, in the base
         currency, the equity Eq, the only equity account, and the debt accounts of the
-        services and the companies (see INTERNAL_DEBTS), in the base currency too.
+        services and the companies (see BUILT_IN_DEBTS), in the base currency too.
 
         Investment accounts are the asset accounts listed in the investments YAML
         (if given, see InvestmentAccount.config_from_dict). The debt accounts of the people
-        are those of the currencies (see Currency.debt_accounts), internal too, after the
-        internal ones, in the order of the currencies, the debts before the loans of each
+        are those of the currencies (see Currency.debt_accounts), built-in too, after the
+        built-in ones, in the order of the currencies, the debts before the loans of each
         one. All the debt accounts share the creditors of the creditors YAML (if given, see
         DebtAccount.creditors_from_dict and creditors_of), each of its kind. Neither sets an `initial_amount`: theirs comes from the initial amounts of their
         investments (their initial quantity at their initial price, of `initial_prices`:
@@ -538,24 +538,24 @@ class Account:
         previous_month = previous_month_of_yaml(data)
         week = initial_week(previous_month) if previous_month else None
         data.pop(PREVIOUS_MONTH, None)
-        internal_data = data.pop(INTERNAL, None) or {}
-        if not isinstance(internal_data, dict):
-            raise ValueError(f"The accounts YAML {INTERNAL!r} key must be a mapping of account types")  # noqa: TRY004 (a bad config value)
-        found = {name: t for t, at_accounts in internal_data.items() for name in (at_accounts or {})}
-        expected = {n: t.value for n, t in INTERNAL_ACCOUNTS.items()}
+        built_in_data = data.pop(BUILT_IN, None) or {}
+        if not isinstance(built_in_data, dict):
+            raise ValueError(f"The accounts YAML {BUILT_IN!r} key must be a mapping of account types")  # noqa: TRY004 (a bad config value)
+        found = {name: t for t, at_accounts in built_in_data.items() for name in (at_accounts or {})}
+        expected = {n: t.value for n, t in BUILT_IN_ACCOUNTS.items()}
         if found != expected:
             raise ValueError(
-                f"The accounts YAML {INTERNAL!r} key must have exactly the assets {INTERMEDIARY}, "
+                f"The accounts YAML {BUILT_IN!r} key must have exactly the assets {INTERMEDIARY}, "
                 f"{SERVICE_LOAN} and {WORK_LOAN}, the liability {SERVICE_DEBT} and the equity "
                 f"{EQUITY_ACCOUNT}: it has {found or 'none'}. The debt and loan accounts of the people are "
                 f"the {DEBT_ACCOUNT_KEY} and {LOAN_ACCOUNT_KEY} of each currency of the currencies YAML"
             )
         for t, at_accounts in data.items():
             if AccountType(t) == AccountType.EQUITY and at_accounts:
-                raise ValueError(f"The only equity account is the internal {EQUITY_ACCOUNT}: {sorted(at_accounts)}")
-            internal_names = sorted(set(at_accounts or {}) & set(INTERNAL_ACCOUNTS))
-            if internal_names:
-                raise ValueError(f"The accounts {internal_names} are internal: under the {INTERNAL!r} key only")
+                raise ValueError(f"The only equity account is the built-in {EQUITY_ACCOUNT}: {sorted(at_accounts)}")
+            built_in_names = sorted(set(at_accounts or {}) & set(BUILT_IN_ACCOUNTS))
+            if built_in_names:
+                raise ValueError(f"The accounts {built_in_names} are built-in: under the {BUILT_IN!r} key only")
         investments_data = (_load_yaml(investments_path) if investments_path else None) or {}
         creditors_data = (_load_yaml(creditors_path) if creditors_path else None) or {}
         creditors = DebtAccount.creditors_from_dict(creditors_data, companies)
@@ -565,10 +565,10 @@ class Account:
             (ROLE_TYPES[role], {entry["name"]: {**entry, "currency": c.name}}, DebtAccount, role)
             for c in currencies.values() for role, entry in c.debt_accounts.items()
         ]
-        debt_names = {n for _, section, _, _ in debt_sections for n in section} | set(INTERNAL_DEBTS)
-        both = sorted(set(investments_data) & (set(INTERNAL_ACCOUNTS) | debt_names))
+        debt_names = {n for _, section, _, _ in debt_sections for n in section} | set(BUILT_IN_DEBTS)
+        both = sorted(set(investments_data) & (set(BUILT_IN_ACCOUNTS) | debt_names))
         if both:
-            raise ValueError(f"The internal accounts cannot be investment accounts: {both}")
+            raise ValueError(f"The built-in accounts cannot be investment accounts: {both}")
 
         def currency_of(name: str, acc_d: dict) -> Currency:
             curr = acc_d.get("currency") or base_currency.name
@@ -590,7 +590,7 @@ class Account:
                     raise ValueError(f"Investment account {name!r} must not have an initial_amount")
                 return 0.0  # set from its investments
             if name in debt_names:
-                if name in INTERNAL_DEBTS and "initial_amount" in acc_d:
+                if name in BUILT_IN_DEBTS and "initial_amount" in acc_d:
                     raise ValueError(f"Debt account {name!r} must not have an initial_amount: it is that of its creditors")
                 return 0.0  # set from its creditors (see Currency._debt_entries)
             if acc_type == AccountType.EQUITY:
@@ -641,9 +641,9 @@ class Account:
                 raise ValueError(f"Account {name!r} has an unknown {INTEREST_FREQUENCY}: {value!r} (valid: {valid})") from None
 
         credit_cards_data = (_load_yaml(credit_cards_path) if credit_cards_path else None) or {}
-        special = sorted(set(credit_cards_data) & (set(investments_data) | set(INTERNAL_ACCOUNTS) | debt_names))
+        special = sorted(set(credit_cards_data) & (set(investments_data) | set(BUILT_IN_ACCOUNTS) | debt_names))
         if special:
-            raise ValueError(f"Credit card accounts cannot be investment or internal accounts: {special}")
+            raise ValueError(f"Credit card accounts cannot be investment or built-in accounts: {special}")
         for name, acc_d in credit_cards_data.items():
             if acc_d.get("is_liquid", True) is not True:
                 raise ValueError(f"Credit card account {name!r} is always liquid: is_liquid must be true or missing")
@@ -651,7 +651,7 @@ class Account:
         accounts = {}
         sections = [
             *((AccountType(t), at_accounts, Account, None) for t, at_accounts in data.items()),
-            *((AccountType(t), at_accounts, Account, None) for t, at_accounts in internal_data.items()),
+            *((AccountType(t), at_accounts, Account, None) for t, at_accounts in built_in_data.items()),
             *debt_sections,
             (AccountType.LIABILITY, credit_cards_data, CreditCardAccount, None),
         ]
@@ -671,12 +671,12 @@ class Account:
                     "initial_date": initial_date_of(name, acc_d),
                     "checks": checks_of(name, acc_d),
                     "interest_frequency": interest_frequency_of(name, acc_d),
-                    "internal": name in INTERNAL_ACCOUNTS or acc_cls is DebtAccount,
+                    "built_in": name in BUILT_IN_ACCOUNTS or acc_cls is DebtAccount,
                 }
                 if acc_cls is CreditCardAccount:
                     fields[CLOSING_DATES] = acc_d.get(CLOSING_DATES)
-                if (name == INTERMEDIARY or name in INTERNAL_DEBTS) and not fields["currency"].is_base_currency:
-                    raise ValueError(f"The internal account {name!r} must be in the base currency")
+                if (name == INTERMEDIARY or name in BUILT_IN_DEBTS) and not fields["currency"].is_base_currency:
+                    raise ValueError(f"The built-in account {name!r} must be in the base currency")
                 if name in investments_data:
                     investments, balance_accounts = InvestmentAccount.config_from_dict(
                         name, investments_data[name], (initial_prices or {}).get(name, {})
@@ -685,8 +685,8 @@ class Account:
                     accounts[name] = InvestmentAccount(
                         **fields, investments=investments, balance_accounts=balance_accounts
                     )
-                elif acc_cls is DebtAccount or name in INTERNAL_DEBTS:
-                    role, kind = INTERNAL_DEBTS.get(name, (role, CreditorKind.PERSON))
+                elif acc_cls is DebtAccount or name in BUILT_IN_DEBTS:
+                    role, kind = BUILT_IN_DEBTS.get(name, (role, CreditorKind.PERSON))
                     own = creditors_of(creditors, role, kind, with_amounts=fields["currency"].is_base_currency)
                     accounts[name] = DebtAccount(**fields, role=role, creditors=own, kind=kind)
                     accounts[name].initial_amount = accounts[name].balance_of(sum(c.amount for c in own.values()))
@@ -894,10 +894,10 @@ class InvestmentAccount(Account):
         """
         Whether a movement can have this account on its other side: one of its
         `balance_accounts`, if it has them. They only limit the regular accounts: the
-        internal ones and the other investment accounts are never left out.
+        built-in ones and the other investment accounts are never left out.
         """
         return (
-            self.balance_accounts is None or account.internal or isinstance(account, InvestmentAccount)
+            self.balance_accounts is None or account.built_in or isinstance(account, InvestmentAccount)
             or account.name in self.balance_accounts
         )
 
@@ -908,7 +908,7 @@ class InvestmentAccount(Account):
             what = f"Investment account {self.name!r} {BALANCE_ACCOUNTS}"
             if account is None:
                 raise ValueError(f"{what} has an unknown account: {name!r}")
-            if account.internal or isinstance(account, InvestmentAccount):
+            if account.built_in or isinstance(account, InvestmentAccount):
                 raise ValueError(f"{what} only lists regular accounts, not {name!r}: that one is never left out")
 
     def _checked_quantity(self, name: str, quantity: float) -> float:
@@ -1132,7 +1132,7 @@ class DebtAccount(Account):
     (what we owe, a debt account) or an asset of debtors (what we are owed, a loan
     account); either total can have the other sign. Of one kind of creditors: the people
     (the debt accounts of the currencies), the services (SeD and SeL) or the companies
-    (Wo), see INTERNAL_DEBTS.
+    (Wo), see BUILT_IN_DEBTS.
     """
 
     role: DebtRole = DebtRole.CREDITOR
@@ -1317,7 +1317,7 @@ class ResultType:
     name: str
     long_name: str
     description: str
-    internal: bool = False  # set by pledger itself, with ids of their own
+    built_in: bool = False  # set by pledger itself, with ids of their own
     # Its gains and losses rely on being employed (e.g. the salary and its taxes): left out of
     # the expenses that equity covers (see the Results tab), as they would stop with the job
     employment: bool = False
@@ -1325,8 +1325,8 @@ class ResultType:
     def __post_init__(self):
         if self.id <= 0:
             raise ValueError(f"The ResultType id must be 1-indexed. Value seen: {self.id}")
-        if self.employment and self.internal:
-            raise ValueError(f"Result type {self.name!r} is internal: it can't be tagged {EMPLOYMENT!r}")
+        if self.employment and self.built_in:
+            raise ValueError(f"Result type {self.name!r} is built-in: it can't be tagged {EMPLOYMENT!r}")
 
 
 @dataclass
@@ -1338,7 +1338,7 @@ class MovementBase:
     acc_debit: Account | None
     acc_credit: Account | None
     result_type: ResultType | None
-    internal: bool = False  # set by pledger itself: cannot be picked or deleted by hand
+    built_in: bool = False  # set by pledger itself: cannot be picked or deleted by hand
     debit_special: str | None = None  # one of RESERVED: the debit side takes any such account
     credit_special: str | None = None  # one of RESERVED: the credit side takes any such account
 
@@ -1364,10 +1364,10 @@ class MovementBase:
                 f"Base movement '{self.name}' must have a result type if and only if "
                 f"it is a gain or a loss (it is a {self.move_type.value})"
             )
-        # An internal result type only has internal base movements, but a regular one may have
-        # some too (listed under the `internal` key by its name, see load_yaml)
-        if self.result_type is not None and self.result_type.internal and not self.internal:
-            raise ValueError(f"Base movement '{self.name}' must be internal, as its result type is")
+        # A built-in result type only has built-in base movements, but a regular one may have
+        # some too (listed under the `built_in` key by its name, see load_yaml)
+        if self.result_type is not None and self.result_type.built_in and not self.built_in:
+            raise ValueError(f"Base movement '{self.name}' must be built-in, as its result type is")
 
     def side(self, ledger_side: LedgerSide) -> str | None:
         """
@@ -1390,20 +1390,20 @@ class MovementBase:
         Load MovementBases and ResultTypes from YAML path. A base movement is either
         a dict or just its description (a str), with no fixed accounts.
 
-        The top-level `internal` key has the same structure (its `result_types` next to
-        a `transfer` dict): those base movements and result types are internal, reserved
+        The top-level `built_in` key has the same structure (its `result_types` next to
+        a `transfer` dict): those base movements and result types are built-in, reserved
         for pledger itself. An entry of its `result_types` named like a regular result type
-        only has `base_movements`: internal ones of that regular result type. Each result
+        only has `base_movements`: built-in ones of that regular result type. Each result
         type names the one right before it in its `after` (see result_type_order): their
-        ids, shared by internal and other ones, are their positions in that chain, from 1
+        ids, shared by built-in and other ones, are their positions in that chain, from 1
         to N. A regular result type can set `employment: true` (see ResultType).
         """
         data = _load_yaml(path)
-        internal_data = dict(data.get(INTERNAL) or {})
-        unknown = sorted(set(internal_data) - {"result_types", MovementType.TRANSFER.value})
+        built_in_data = dict(data.get(BUILT_IN) or {})
+        unknown = sorted(set(built_in_data) - {"result_types", MovementType.TRANSFER.value})
         if unknown:
-            raise ValueError(f"The base movements YAML {INTERNAL!r} key only has 'result_types' and 'transfer', not {unknown}")
-        internal = dict(internal_data.get("result_types") or {})
+            raise ValueError(f"The base movements YAML {BUILT_IN!r} key only has 'result_types' and 'transfer', not {unknown}")
+        built_in = dict(built_in_data.get("result_types") or {})
 
         def employment_of(name: str, rt_dict: dict) -> bool:
             employment = rt_dict.get(EMPLOYMENT, False)
@@ -1411,14 +1411,14 @@ class MovementBase:
                 raise ValueError(f"Result type {name!r} must set {EMPLOYMENT!r} to true or false, not {employment!r}")  # noqa: TRY004 (a bad data value)
             return employment
 
-        def result_types_of(rt_dicts: dict, is_internal: bool) -> dict[int, ResultType]:
+        def result_types_of(rt_dicts: dict, is_built_in: bool) -> dict[int, ResultType]:
             return {
                 ids[name]: ResultType(
                     id=ids[name],
                     name=name,
                     long_name=rt_dict["long_name"],
                     description=rt_dict["description"],
-                    internal=is_internal,
+                    built_in=is_built_in,
                     employment=employment_of(name, rt_dict),
                 )
                 for name, rt_dict in rt_dicts.items()
@@ -1440,18 +1440,18 @@ class MovementBase:
                 )
             return sections
 
-        internal_transfers = internal_data.get(MovementType.TRANSFER.value)
-        # The internal base movements of regular result types: only their base_movements
-        extending = {name: rt or {} for name, rt in internal.items() if name in data["result_types"]}
+        built_in_transfers = built_in_data.get(MovementType.TRANSFER.value)
+        # The built-in base movements of regular result types: only their base_movements
+        extending = {name: rt or {} for name, rt in built_in.items() if name in data["result_types"]}
         for name, rt_dict in extending.items():
             other = sorted(set(rt_dict or {}) - {"base_movements"})
             if other:
                 raise ValueError(
-                    f"Result type {name!r} isn't internal: under the {INTERNAL!r} key it only has "
-                    f"the 'base_movements' internal to it, not {other}"
+                    f"Result type {name!r} isn't built-in: under the {BUILT_IN!r} key it only has "
+                    f"its own built-in 'base_movements', not {other}"
                 )
-        internal = {name: rt for name, rt in internal.items() if name not in extending}
-        all_rts = {**data["result_types"], **internal}
+        built_in = {name: rt for name, rt in built_in.items() if name not in extending}
+        all_rts = {**data["result_types"], **built_in}
         for name, rt_dict in all_rts.items():
             if "id" in rt_dict:
                 raise ValueError(
@@ -1461,36 +1461,36 @@ class MovementBase:
                 raise ValueError(
                     f"Result type {name!r} needs an {AFTER!r}: the result type right before it, {FIRST} or {LAST}"
                 )
-        # The ids, 1 to N, internal ones included: their positions in the chain
+        # The ids, 1 to N, built-in ones included: their positions in the chain
         ids = {
             name: i for i, name in enumerate(
                 result_type_order({n: str(rt[AFTER]) for n, rt in all_rts.items()}), 1
             )
         }
         result_types = {
-            **result_types_of(data["result_types"], is_internal=False),
-            **result_types_of(internal, is_internal=True),
+            **result_types_of(data["result_types"], is_built_in=False),
+            **result_types_of(built_in, is_built_in=True),
         }
 
         sections = [
             *((rt, mt, bms, False) for rt, mt, bms in sections_of(data["result_types"], result_types)),
             (None, MovementType.TRANSFER.value, data.get("transfer"), False),
-            *((rt, mt, bms, True) for rt, mt, bms in sections_of({**internal, **extending}, result_types)),
-            (None, MovementType.TRANSFER.value, internal_transfers, True),
+            *((rt, mt, bms, True) for rt, mt, bms in sections_of({**built_in, **extending}, result_types)),
+            (None, MovementType.TRANSFER.value, built_in_transfers, True),
         ]
 
         move_bases = {}
-        for result_type, move_type, mt_base_moves, is_internal in sections:
+        for result_type, move_type, mt_base_moves, is_built_in in sections:
             move_type = MovementType(move_type)
             for name, base_move_d in (mt_base_moves or {}).items():
                 if name in move_bases:
                     raise ValueError(f"Duplicated base movement name: {name!r}")
                 if isinstance(base_move_d, str):
                     base_move_d = {"description": base_move_d}
-                if "internal" in base_move_d:
+                if "built_in" in base_move_d:
                     raise ValueError(
-                        f"Base movement {name!r} must not set 'internal': "
-                        "list it under the top-level 'internal' key instead"
+                        f"Base movement {name!r} must not set 'built_in': "
+                        "list it under the top-level 'built_in' key instead"
                     )
                 if EMPLOYMENT in base_move_d:
                     raise ValueError(f"Base movement {name!r} must not set {EMPLOYMENT!r}: set it on its result type instead")
@@ -1502,7 +1502,7 @@ class MovementBase:
                     acc_debit=acc_debit,
                     acc_credit=acc_credit,
                     result_type=result_type,
-                    internal=is_internal,
+                    built_in=is_built_in,
                     debit_special=_special_side(acc_debit, base_move_d.get("debit")),
                     credit_special=_special_side(acc_credit, base_move_d.get("credit")),
                 )

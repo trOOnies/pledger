@@ -6,7 +6,7 @@ from typing import ClassVar
 
 import pytest
 from fastapi.testclient import TestClient
-from helpers import DEBT_YAML, HTMX, with_internal
+from helpers import DEBT_YAML, HTMX, with_built_in
 
 from pledger.enums import CreditorKind
 from pledger.web.app import create_app
@@ -142,7 +142,7 @@ class TestSplitMovements:
     def settings(self, settings, tmp_path):
         path = tmp_path / "creditors.yaml"
         path.write_text("people:\n  Ana: 0\n", encoding="utf-8")
-        with_internal(settings.base_movements_path, transfers=DEBT_YAML)
+        with_built_in(settings.base_movements_path, transfers=DEBT_YAML)
         return replace(settings, creditors_path=path)
 
     @staticmethod
@@ -238,7 +238,7 @@ class TestSplitSteps:
     def settings(self, settings, tmp_path):
         path = tmp_path / "creditors.yaml"
         path.write_text("people:\n  Ana: 0\n", encoding="utf-8")
-        with_internal(settings.base_movements_path, transfers=DEBT_YAML)
+        with_built_in(settings.base_movements_path, transfers=DEBT_YAML)
         return replace(settings, creditors_path=path)
 
     @pytest.fixture

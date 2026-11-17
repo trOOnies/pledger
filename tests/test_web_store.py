@@ -6,9 +6,9 @@ from dataclasses import replace
 
 import pytest
 import yaml
-from conftest import INTERNAL_ACCOUNTS_YAML
+from conftest import BUILT_IN_ACCOUNTS_YAML
 from fastapi.testclient import TestClient
-from helpers import HTMX, rows, with_internal
+from helpers import HTMX, rows, with_built_in
 
 from pledger.enums import AccountCheck
 from pledger.web.app import create_app
@@ -149,18 +149,18 @@ class TestAccountChecks:
         assert len(rows(settings)) == 4
 
 
-class TestInternalBaseMovements:
+class TestBuiltInBaseMovements:
     @pytest.fixture
     def settings(self, settings):
-        # An internal transfer, with one movement at the end of the ledger
+        # A built-in transfer, with one movement at the end of the ledger
         path = settings.base_movements_path
-        with_internal(path, transfers="    Adjust: Set by pledger\n")
+        with_built_in(path, transfers="    Adjust: Set by pledger\n")
         with settings.ledger_path.open("a") as f:
             f.write("2026-01-05;Adjust;Bk;5;Ca;\n")
         return settings
 
     def test_cannot_be_added(self, settings, client):
-        with pytest.raises(ValueError, match="internal"):
+        with pytest.raises(ValueError, match="is built-in"):
             LedgerStore(settings).add("2026-02-01", "Adjust", "Bk", "Ca", "1")
         body = {
             "move_date": "2026-02-01", "base_movement": "Adjust",
@@ -176,7 +176,7 @@ class TestInternalBaseMovements:
         data = {"move_date": "2026-02-01", "move_type": "transfer", "base_movement": "Adjust",
                 "acc_debit": "Bk", "acc_credit": "Ca", "amount": "1"}
         r = client.post("/movements", data=data, headers=HTMX)
-        assert "is internal" in r.text and ">Adjust<" not in r.text
+        assert "is built-in" in r.text and ">Adjust<" not in r.text
 
     def test_cannot_be_deleted(self, settings, client):
         fp = row_fingerprint(rows(settings).iloc[4])
@@ -191,7 +191,7 @@ class TestInternalBaseMovements:
         assert "cannot be deleted by hand" in index
         assert client.get("/api/base-movements").json()[-1] == {
             "name": "Adjust", "description": "Set by pledger", "type": "transfer",
-            "result_type": None, "debit": None, "credit": None, "internal": True,
+            "result_type": None, "debit": None, "credit": None, "built_in": True,
         }
 
 
@@ -214,7 +214,7 @@ class TestSetupStore:
     def test_add_account_keeps_the_rest_of_the_file(self, settings):
         path = settings.accounts_path
         path.write_text(
-            "# my accounts\n" + INTERNAL_ACCOUNTS_YAML + "asset:\n  Ca:\n    long_name: Cash (A)\n    description: Cash\n"
+            "# my accounts\n" + BUILT_IN_ACCOUNTS_YAML + "asset:\n  Ca:\n    long_name: Cash (A)\n    description: Cash\n"
             "    initial_amount: 0\n  Bk:\n    description: Bank account\n    initial_amount: 0\n"
             "\nliability:\n  Cc:\n    description: Credit card\n    initial_amount: 0\n"
         )
@@ -273,10 +273,10 @@ class TestSetupStore:
 
     @pytest.mark.parametrize("empty", ["null", "~", "{}", "null  # none yet"])
     def test_insert_yaml_entry_into_an_empty_section(self, empty):
-        text = f"internal:\n  liability:\n    De:\n      description: Debts\nliability: {empty}\n"
+        text = f"built_in:\n  liability:\n    De:\n      description: Debts\nliability: {empty}\n"
         out = _insert_yaml_entry(text, ("liability",), "Lo", {"description": "Loan"})
         comment = " # none yet" if "#" in empty else ""
-        assert out == f"internal:\n  liability:\n    De:\n      description: Debts\nliability:{comment}\n  Lo:\n    description: Loan\n"
+        assert out == f"built_in:\n  liability:\n    De:\n      description: Debts\nliability:{comment}\n  Lo:\n    description: Loan\n"
 
     def test_insert_yaml_entry_keeps_crlf_and_indent(self):
         text = "gain:\r\n    A:\r\n        description: a\r\nloss: {X: x}\r\n"
@@ -401,7 +401,7 @@ class TestSetupStore:
         assert settings.base_movements_path.read_text() == before
 
 
-class TestInternalResultTypes:
+class TestBuiltInResultTypes:
     @staticmethod
     def initial_rows(settings) -> list[tuple]:
         df = LedgerStore(settings).load().initial_rows
@@ -528,10 +528,10 @@ class TestInternalResultTypes:
         assert r.text.count('hx-post="/movements/') == 4  # only the CSV rows
         assert "$100.50" in r.text  # Bk's initial movement
         results = client.get("/results", params={"initial": True}).text
-        assert '>Initial <span class="badge internal"' in results  # marked as internal
+        assert '>Initial <span class="badge built-in"' in results  # marked as built-in
 
     def test_cannot_be_added_by_hand(self, settings):
-        with pytest.raises(ValueError, match=re.escape("'Initial (G)' is internal")):
+        with pytest.raises(ValueError, match=re.escape("'Initial (G)' is built-in")):
             LedgerStore(settings).add("2026-01-05", "Initial (G)", "Ca", "Eq", "5")
 
     def test_cannot_be_in_the_ledger_csv(self, settings, client):
@@ -561,7 +561,7 @@ class TestInternalResultTypes:
         assert r.status_code == 500 and f"{missing!r} is required" in r.text.replace("&#39;", "'")
 
     def test_cannot_get_new_base_movements(self, settings, client):
-        with pytest.raises(ValueError, match="'Init' is internal"):
+        with pytest.raises(ValueError, match="'Init' is built-in"):
             LedgerStore(settings).add_base_movement("X", "gain", "d", result_type="Init")
         r = client.get("/form/base-sides", params={"move_type": "gain"})
         assert ">Operative<" in r.text and ">Initial<" not in r.text
@@ -569,7 +569,7 @@ class TestInternalResultTypes:
     def test_share_ids_with_the_other_result_types(self, settings, client):
         LedgerStore(settings).add_result_type("New", "New one", "d")
         result_types = client.get("/api/result-types").json()
-        assert [(rt["id"], rt["name"], rt["internal"]) for rt in result_types] == [
+        assert [(rt["id"], rt["name"], rt["built_in"]) for rt in result_types] == [
             (1, "Op", False), (2, "Gifts", False), (3, "New", False), (4, "Init", True),
         ]
 

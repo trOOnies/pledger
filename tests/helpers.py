@@ -12,8 +12,8 @@ from pledger.web.store import (
 HTMX = {"HX-Request": "true"}
 
 
-def with_internal(path: Path, result_types: str = "", transfers: str = "") -> None:
-    """Add these internal result types and transfers (YAML entries of their sections) to the base movements YAML."""
+def with_built_in(path: Path, result_types: str = "", transfers: str = "") -> None:
+    """Add these built-in result types and transfers (YAML entries of their sections) to the base movements YAML."""
     text = path.read_text()
     text = text.replace("  result_types:\n", "  result_types:\n" + result_types, 1)
     path.write_text(text.replace("  transfer:\n", "  transfer:\n" + transfers, 1))
@@ -43,9 +43,9 @@ def card_labels(html: str) -> list[str]:
 
 
 def with_conversion_bases(settings: Settings) -> Settings:
-    """The settings, with the internal transfers of the conversions."""
+    """The settings, with the built-in transfers of the conversions."""
     path = settings.base_movements_path
-    with_internal(path, transfers=(
+    with_built_in(path, transfers=(
         "    Foreign currency - Bought:\n      description: Pesos to dollars\n      debit: FOREIGN CURRENCY\n"
         "    Foreign currency - Sold:\n      description: Dollars to pesos\n      credit: FOREIGN CURRENCY\n"
     ))
@@ -79,7 +79,7 @@ def with_salaries(settings, debit="Wo"):
     return settings
 
 
-# The internal result type and transfers of the investments (see with_internal)
+# The built-in result type and transfers of the investments (see with_built_in)
 INVEST_YAML = (
     "    Invest:\n      after: Gifts\n      long_name: Investments\n      description: d\n"
     "      base_movements:\n        gain:\n          Capital gains:\n            description: d\n"
@@ -95,7 +95,7 @@ INVEST_TRANSFERS_YAML = (
 )
 
 
-# The internal transfers of the Debt tab (see with_internal)
+# The built-in transfers of the Debt tab (see with_built_in)
 DEBT_YAML = (
     "    Debt - Incurred:\n      description: d\n      credit: DEBT ACCOUNT\n"
     "    Debt - Paid:\n      description: d\n      debit: DEBT ACCOUNT\n"
@@ -104,7 +104,7 @@ DEBT_YAML = (
 )
 
 
-# The internal result type of the Difference of the Debt tab (see with_internal)
+# The built-in result type of the Difference of the Debt tab (see with_built_in)
 DIFFERENCE_YAML = (
     "    Corr:\n      after: Gifts\n      long_name: Corrections\n      description: d\n"
     "      base_movements:\n        gain:\n          Difference (G): d\n        loss:\n          Difference (L): d\n"
@@ -118,7 +118,7 @@ def investment_rows(settings):
     return LedgerStore(settings).load().investments
 
 
-# The internal transfers of the Credit Cards tab (see with_internal)
+# The built-in transfers of the Credit Cards tab (see with_built_in)
 CARD_PAYMENT_YAML = (
     "    Credit card - Payment:\n      description: d\n      debit: CREDIT CARD\n"
     "    Credit card - Surplus:\n      description: d\n      credit: CREDIT CARD\n"

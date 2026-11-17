@@ -14,8 +14,8 @@ from helpers import (
     investment_rows,
     movement_ids,
     rows,
+    with_built_in,
     with_interest_frequency,
-    with_internal,
     with_prices,
 )
 
@@ -229,7 +229,7 @@ class TestNewInvestment:
 
 class TestInvestMovements:
     """
-    The internal Invest base movements are handled in the Investments tab, not the Ledger
+    The built-in Invest base movements are handled in the Investments tab, not the Ledger
     tab, with their movements in the investments CSV and the interest one.
     """
 
@@ -240,7 +240,7 @@ class TestInvestMovements:
             text.replace("liability:\n", "  Br:\n    description: Broker\nliability:\n"), encoding="utf-8"
         )
         path = settings.base_movements_path
-        with_internal(path, INVEST_YAML, INVEST_TRANSFERS_YAML)
+        with_built_in(path, INVEST_YAML, INVEST_TRANSFERS_YAML)
         # Dividends of T
         movements = tmp_path / "investment.csv"
         movements.write_text(INVESTMENT_HEADER + "2026-01-05;Dividends;Ca;5;Eq;;T;\n")
@@ -542,7 +542,7 @@ class TestInvestMovements:
         assert "Total result <small>all time, at each month end</small>" in r.text
         assert 'data-sortable="invested-over-time"' in r.text and 'data-sortable="result-over-time"' in r.text
 
-    def test_internal_investment_transfers_too(self, settings, client):
+    def test_built_in_investment_transfers_too(self, settings, client):
         r = client.get("/form/invest-bases", params={"move_type": "transfer"}, headers=HTMX)
         assert "<option selected>Investment - Bought</option>" in r.text
         assert "Adjust" not in r.text  # no INVESTMENT side: never by hand

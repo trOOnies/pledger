@@ -54,7 +54,7 @@
   <button type="submit">Add payment</button>
   {% else %}
   <p class="msg warn small">Paying {{ service }} needs the base movement <em>{{ payment_base }}</em>, under <code>transfer</code> in the
-    <code>internal</code> section of the base movements YAML.</p>
+    <code>built_in</code> section of the base movements YAML.</p>
   {% endif %}
   {% else %}
   <p class="muted">No services with a <code>base_movement</code> yet: add it to them in the creditors file.</p>

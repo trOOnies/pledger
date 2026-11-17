@@ -54,7 +54,7 @@ class MovementStore(StoreBase):
         Snapshot.invest_base_movements): the interest on money goes to the interest CSV,
         and the others to the investments CSV, with their investment and quantity (see
         _investment_details); an investment of an investment account must be one it has
-        (see _check_known_investment). Without it, it must be of a non-internal base
+        (see _check_known_investment). Without it, it must be of a non-built-in base
         movement whose movements aren't generated, and goes to the ledger CSV: one of a
         debt base movement with `debt` (from the People tab), one of a card payment base
         movement with `card_payment` (from the Credit Cards tab), a balance correction with
@@ -106,7 +106,7 @@ class MovementStore(StoreBase):
     ) -> None:
         """
         Delete a row of the ledger CSV by position, optionally checking it is the
-        expected one. Never of an internal base movement, but a debt movement with
+        expected one. Never of a built-in base movement, but a debt movement with
         `debt` (from the People tab), a card payment with `card_payment` (from the
         Credit Cards tab), a balance correction with `correction` or a Difference with
         `difference`, which are only deleted that way (see _check_tab).

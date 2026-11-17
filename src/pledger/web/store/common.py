@@ -95,17 +95,17 @@ def _required_base(
 ) -> MovementBase:
     """
     A base movement pledger generates or handles movements of (for a `purpose`, if
-    given): an internal gain with a free debit side, or an internal loss with a free
+    given): a built-in gain with a free debit side, or a built-in loss with a free
     credit side, against the equity account. With a `special` side (see SPECIAL_SIDES),
     that side may take it too.
     """
     move_type, side = (MovementType.GAIN, LedgerSide.DEBIT) if gain else (MovementType.LOSS, LedgerSide.CREDIT)
     base = base_movements.get(name)
-    if base is None or not base.internal or base.move_type != move_type or base.side(side) not in {None, special}:
+    if base is None or not base.built_in or base.move_type != move_type or base.side(side) not in {None, special}:
         takes = f"no fixed {side.value} account" + (f" (or {side.value}: {special})" if special else "")
         raise ValueError(
             f"The base movement {name!r} is required{' ' + purpose if purpose else ''}: "
-            f"an internal {move_type.value} with {takes}"
+            f"a built-in {move_type.value} with {takes}"
         )
     return base
 

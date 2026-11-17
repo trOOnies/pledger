@@ -237,7 +237,7 @@ class TestConversions:
         ("row", "error"),
         [
             ("2026-01-05;Foreign currency - Bought;Cc;100;Ca;;1", "between an account in ARS and one in another currency, not Cc and Ca"),
-            ("2026-01-05;Gift;Bk;100;Eq;;1", "must be of 'Foreign currency - Bought' or 'Foreign currency - Sold' (internal transfers), not 'Gift'"),
+            ("2026-01-05;Gift;Bk;100;Eq;;1", "must be of 'Foreign currency - Bought' or 'Foreign currency - Sold' (built-in transfers), not 'Gift'"),
             ("2026-01-05;Nope;Bk;100;Ca;;1", "Unknown base movement of a conversion: 'Nope'"),
             ("2026-13-05;Foreign currency - Bought;Bk;100;Ca;;1", "Invalid date of a conversion"),
             ("2026-01-05;Foreign currency - Bought;Bk;100;Ca;;x", "Invalid amount in USD of a conversion"),
@@ -459,7 +459,7 @@ class TestConversions:
 
     def test_add_exchange_needs_the_base_movement(self, revalued, tmp_path):
         store = LedgerStore(replace(revalued, conversions_path=tmp_path / "conversion.csv"))
-        with pytest.raises(ValueError, match=re.escape("No 'Foreign currency - Bought' base movement: add it as an internal transfer")):
+        with pytest.raises(ValueError, match=re.escape("No 'Foreign currency - Bought' base movement: add it as a built-in transfer")):
             store.add_exchange("2026-01-06", "ARS", "USD", "Ca", "Bk", "1000", "1")
 
     def test_conversion_fields_follow_the_currencies(self, conv_client):
@@ -488,7 +488,7 @@ class TestConversions:
         assert '<a class="source" href="/currencies" title="Added, edited and deleted from the Currencies tab"' in r.text
         assert "🔵</a>" in r.text
         assert r.text.count('hx-post="/movements/') == 4  # only the CSV rows
-        assert "Foreign currency (G)" in r.text  # internal: not deletable either
+        assert "Foreign currency (G)" in r.text  # built-in: not deletable either
         (moved,) = [m for m in conv_client.get("/api/movements").json() if m["conversion"]]
         assert (moved["date"], moved["amount"]) == ("2026-01-05", 1100.0)
 

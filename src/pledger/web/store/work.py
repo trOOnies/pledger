@@ -134,7 +134,7 @@ def deduction_id(name: str) -> str:
 def _deduction_bases(snapshot: Snapshot, salary: MovementBase | None) -> dict[str, MovementBase]:
     """
     The base movements of the deductions of the salary, the columns of the work CSV
-    but its WORK_COLUMNS: each a non-internal loss, with a fixed debit account and
+    but its WORK_COLUMNS: each a non-built-in loss, with a fixed debit account and
     no fixed credit one but the debit one of the SALARY, which they credit.
     """
     bases = {}
@@ -144,11 +144,11 @@ def _deduction_bases(snapshot: Snapshot, salary: MovementBase | None) -> dict[st
             raise ValueError(f"The column {name!r} of the work CSV is not a base movement")
         salary_account = salary.acc_debit.name if salary is not None and salary.acc_debit else None
         if (
-            base.internal or base.move_type != MovementType.LOSS or base.acc_debit is None
+            base.built_in or base.move_type != MovementType.LOSS or base.acc_debit is None
             or base.acc_credit is not None and base.acc_credit.name != salary_account
         ):
             raise ValueError(
-                f"The column {name!r} of the work CSV must be a deduction of the salary: a non-internal "
+                f"The column {name!r} of the work CSV must be a deduction of the salary: a non-built-in "
                 f"loss with a fixed debit account, crediting the account of {SALARY!r}"
             )
         bases[name] = base

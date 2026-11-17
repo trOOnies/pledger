@@ -183,7 +183,7 @@ def conversion_fields(snapshot: Snapshot, sold: str = "", bought: str = "", chan
         if cross:
             missing = [n for n in (CONVERSION_SOLD, CONVERSION_BOUGHT) if n not in snapshot.conversion_base_movements()]
             if missing:
-                raise ValueError(f"No {missing[0]!r} base movement: add it as an internal transfer of the base movements YAML")
+                raise ValueError(f"No {missing[0]!r} base movement: add it as a built-in transfer of the base movements YAML")
             base_movement, missing = "", None
         else:
             base_movement, missing = exchange_base_movement(snapshot, sold, bought), None

@@ -19,7 +19,7 @@ def list_result_types(store: StoreDep):
             "name": rt.name,
             "long_name": rt.long_name,
             "description": rt.description,
-            "internal": rt.internal,
+            "built_in": rt.built_in,
             "employment": rt.employment,
         }
         for rt in (result_types[i] for i in sorted(result_types))

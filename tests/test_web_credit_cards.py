@@ -13,7 +13,7 @@ from helpers import (
     card_labels,
     movement_ids,
     rows,
-    with_internal,
+    with_built_in,
 )
 
 from pledger.models import CreditCardAccount
@@ -69,9 +69,9 @@ class TestCreditCards:
 
     @pytest.fixture
     def paying(self, settings):
-        """With the internal card payment base movement, debiting any credit card."""
+        """With the built-in card payment base movement, debiting any credit card."""
         path = settings.base_movements_path
-        with_internal(path, transfers=CARD_PAYMENT_YAML)
+        with_built_in(path, transfers=CARD_PAYMENT_YAML)
         return settings
 
     def test_card_payments_are_added_from_their_tab(self, paying):

@@ -65,7 +65,7 @@ def service_payment_base(snapshot: Snapshot, service: str) -> tuple[str, str]:
 def service_bases(snapshot: Snapshot) -> dict[str, MovementBase]:
     """
     The services of the debt accounts with a base movement (see Creditor.base_movement), a
-    loss of one's own (not internal) that may credit its debt account (see
+    loss of one's own (not built-in) that may credit its debt account (see
     service_account): their columns of the services CSV.
     """
     bases = {}
@@ -75,11 +75,11 @@ def service_bases(snapshot: Snapshot) -> dict[str, MovementBase]:
         base = snapshot.base_movements.get(service.base_movement)
         account = service_account(snapshot, service)
         if (
-            base is None or base.internal or base.move_type != MovementType.LOSS
+            base is None or base.built_in or base.move_type != MovementType.LOSS
             or base.side(LedgerSide.CREDIT) not in {None, account}
         ):
             raise ValueError(
-                f"The base movement of a service must be a loss, not internal, that may "
+                f"The base movement of a service must be a loss, not built-in, that may "
                 f"credit its debt account, {account}: not {service.base_movement!r} ({service.name})"
             )
         bases[service.name] = base

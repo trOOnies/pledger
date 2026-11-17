@@ -21,7 +21,7 @@ def list_base_movements(store: StoreDep):
             "result_type": b.result_type.name if b.result_type else None,
             "debit": b.side(LedgerSide.DEBIT),
             "credit": b.side(LedgerSide.CREDIT),
-            "internal": b.internal,
+            "built_in": b.built_in,
         }
         for b in store.load().base_movements.values()
     ]

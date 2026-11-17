@@ -112,11 +112,11 @@ def build_results(
         for move_type in (MovementType.GAIN, MovementType.LOSS)
     }
 
-    internal = {rt.long_name for rt in result_types if rt.internal}
+    built_in = {rt.long_name for rt in result_types if rt.built_in}
 
     def marked(groups: list[dict]) -> list[dict]:
-        # The internal result types are marked as such.
-        return [{**g, "internal": g["name"] in internal} for g in groups]
+        # The built-in result types are marked as such.
+        return [{**g, "built_in": g["name"] in built_in} for g in groups]
 
     def by_result_type(move_type: MovementType) -> list[dict]:
         # Every result type and base movement is listed, even at zero in this period.
@@ -138,13 +138,13 @@ def build_results(
         losses = sum(results[MovementType.LOSS].get(rt.long_name, {}).values())
         running += gains - losses
         statement.append({
-            "name": rt.long_name, "short": rt.name, "description": rt.description, "internal": rt.internal,
+            "name": rt.long_name, "short": rt.name, "description": rt.description, "built_in": rt.built_in,
             "gains": gains, "losses": -losses, "net": gains - losses, "cumulative": running,
         })
 
-    # The same statement over the gains of the first result type that isn't internal (e.g.
+    # The same statement over the gains of the first result type that isn't built-in (e.g.
     # the operative one), if any in this period.
-    first = next((r for r, rt in zip(statement, result_types) if not rt.internal), None)
+    first = next((r for r, rt in zip(statement, result_types) if not rt.built_in), None)
     relative = None
     if first and first["gains"] > 1e-9:
         over = [
@@ -188,11 +188,11 @@ EXPENSES_DAYS = 365  # the expenses covered by equity are the average of the los
 def is_expense_type(rt) -> bool:
     """
     Whether the losses of a result type count as expenses by default, the ones that equity
-    covers: not those of an internal one (foreign currency, investments...) and not those of
+    covers: not those of a built-in one (foreign currency, investments...) and not those of
     one relying on having a job (tagged employment, like the salary and its taxes), which
     would stop with it.
     """
-    return rt is not None and not rt.internal and not rt.employment
+    return rt is not None and not rt.built_in and not rt.employment
 
 
 def is_expense(snapshot: Snapshot, base) -> bool:
@@ -269,19 +269,19 @@ def expense_months(snapshot: Snapshot, month: str = "", selected: list[str] | No
     """
     Equity in months of expenses at the end of each month of the selection (`month`, else
     every month of the ledger): its equity then over the average monthly losses of the
-    `selected` loss result types (their names; the non-internal ones by default), each the
+    `selected` loss result types (their names; the non-built-in ones by default), each the
     losses of its base movements in the EXPENSES_DAYS up to then, like equity_metrics. The
-    initial movements and the result types tagged employment never count; the internal
+    initial movements and the result types tagged employment never count; the built-in
     ones only if ticked (see is_expense).
     The `chart` draws those months, and the `raw_chart` the averages themselves, stacked
     by result type. A month without expenses has no months (None), drawn at 0.
     """
     types = loss_result_types(snapshot)
     if selected is None:
-        selected = [rt.name for rt in types if not rt.internal]
+        selected = [rt.name for rt in types if not rt.built_in]
     chosen = [rt for rt in types if rt.name in set(selected)]
     slots = {rt.name: i % 8 + 1 for i, rt in enumerate(types)}
-    filters = [{"name": rt.name, "long_name": rt.long_name, "internal": rt.internal, "slot": slots[rt.name],
+    filters = [{"name": rt.name, "long_name": rt.long_name, "built_in": rt.built_in, "slot": slots[rt.name],
                 "checked": rt in chosen} for rt in types]
     empty = {"filters": filters, "months": [], "chart": None, "raw_chart": None, "selected": [rt.name for rt in chosen]}
     dates = snapshot.all_rows.move_date

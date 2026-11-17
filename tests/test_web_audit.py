@@ -7,7 +7,7 @@ from dataclasses import replace
 
 import pytest
 from fastapi.testclient import TestClient
-from helpers import CORRECTION_YAML, HTMX, INVEST_TRANSFERS_YAML, rows, with_internal
+from helpers import CORRECTION_YAML, HTMX, INVEST_TRANSFERS_YAML, rows, with_built_in
 
 from pledger.models import AuditEntry
 from pledger.web.app import create_app
@@ -31,7 +31,7 @@ def settings(settings, tmp_path):
         text.replace("liability:\n", "  Br:\n    description: Broker\nliability:\n"), encoding="utf-8"
     )
     path = settings.base_movements_path
-    with_internal(path, CORRECTION_YAML, INVEST_TRANSFERS_YAML)
+    with_built_in(path, CORRECTION_YAML, INVEST_TRANSFERS_YAML)
     investments = tmp_path / "investment.yaml"
     investments.write_text("Br:\n  investments:\n    T: stock\n", encoding="utf-8")
     return replace(
@@ -207,7 +207,7 @@ class TestAudit:
         assert client.post("/accounts/correct", data={"name": "Ca", "balance": "1"}).status_code == 404
 
     def test_are_in_the_ledger_csv_and_deleted_from_the_ledger_tab(self, settings, client):
-        # Like those added by hand before they were internal
+        # Like those added by hand before they were built-in
         with settings.ledger_path.open("a") as f:
             f.write("2026-01-05;Correction (L);Eq;5;Ca;\n")
         LedgerStore(settings).freeze_ids()

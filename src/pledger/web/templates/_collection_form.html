@@ -7,7 +7,7 @@
   <p class="muted">No companies yet: they are those of the work history.</p>
   {% elif not base_movement or not loan_account %}
   <p class="msg warn small">Receiving a salary needs the base movement <em>Loan - Collected</em>, under <code>transfer</code> in the
-    <code>internal</code> section of the base movements YAML, and the internal account <code>Wo</code>.</p>
+    <code>built_in</code> section of the base movements YAML, and the built-in account <code>Wo</code>.</p>
   {% else %}
   {# Picking another company fills in what it owes again #}
   <label>Company

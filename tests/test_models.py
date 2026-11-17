@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-from conftest import INTERNAL_ACCOUNTS_YAML, other_currency_yaml
+from conftest import BUILT_IN_ACCOUNTS_YAML, other_currency_yaml
 
 from pledger.enums import (
     AccountCheck,
@@ -126,9 +126,9 @@ class TestAccount:
     def test_load_yaml(self, accounts_yaml, currencies_yaml):
         accounts = Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml))
         assert set(accounts) == {"Ca", "Bk", "Cc", "Fi", "SeL", "Wo", "SeD", "Eq", "De", "Lo", "DeD", "LoD"}
-        # The debt accounts of each currency, of currencies.yaml, after the internal ones of accounts.yaml
-        assert [n for n, a in accounts.items() if a.internal] == ["Fi", "SeL", "Wo", "SeD", "Eq", "De", "Lo", "DeD", "LoD"]
-        # The services and the companies have theirs, internal ones of accounts.yaml, in the base currency
+        # The debt accounts of each currency, of currencies.yaml, after the built-in ones of accounts.yaml
+        assert [n for n, a in accounts.items() if a.built_in] == ["Fi", "SeL", "Wo", "SeD", "Eq", "De", "Lo", "DeD", "LoD"]
+        # The services and the companies have theirs, built-in ones of accounts.yaml, in the base currency
         assert [(a.role, a.kind, a.acc_type) for a in (accounts["SeD"], accounts["SeL"], accounts["Wo"])] == [
             (DebtRole.CREDITOR, CreditorKind.SERVICE, AccountType.LIABILITY),
             (DebtRole.DEBTOR, CreditorKind.SERVICE, AccountType.ASSET),
@@ -158,7 +158,7 @@ class TestAccount:
     def test_load_yaml_checks(self, tmp_path, currencies_yaml):
         path = tmp_path / "accounts.yaml"
         path.write_text(
-            INTERNAL_ACCOUNTS_YAML + "asset:\n  Ca:\n    description: Cash\n    initial_amount: 0\n    checks:\n    - net_positive\n"
+            BUILT_IN_ACCOUNTS_YAML + "asset:\n  Ca:\n    description: Cash\n    initial_amount: 0\n    checks:\n    - net_positive\n"
             "  Fx:\n    description: Fictitious\n    initial_amount: 0\n    checks: [net_zero]\n"
         )
         accounts = Account.load_yaml(str(path), *Currency.load_yaml(currencies_yaml))
@@ -183,7 +183,7 @@ class TestAccount:
         path = tmp_path / "accounts.yaml"
         if "initial_amount" not in extra:
             extra += "    initial_amount: 0\n"
-        path.write_text(INTERNAL_ACCOUNTS_YAML + "asset:\n  Ca:\n    description: Cash\n" + extra)
+        path.write_text(BUILT_IN_ACCOUNTS_YAML + "asset:\n  Ca:\n    description: Cash\n" + extra)
         with pytest.raises(ValueError, match=message):
             Account.load_yaml(str(path), *Currency.load_yaml(currencies_yaml))
 
@@ -198,10 +198,10 @@ class TestAccount:
         self, tmp_path, currencies_yaml, text, message
     ):
         path = tmp_path / "accounts.yaml"
-        path.write_text(INTERNAL_ACCOUNTS_YAML + text)
+        path.write_text(BUILT_IN_ACCOUNTS_YAML + text)
         with pytest.raises(ValueError, match=message):
             Account.load_yaml(str(path), *Currency.load_yaml(currencies_yaml))
-        path.write_text(INTERNAL_ACCOUNTS_YAML.replace("{description: Equity}", "{description: Equity, initial_amount: 0}"))
+        path.write_text(BUILT_IN_ACCOUNTS_YAML.replace("{description: Equity}", "{description: Equity, initial_amount: 0}"))
         with pytest.raises(ValueError, match="Equity account 'Eq' must not have an initial_amount"):
             Account.load_yaml(str(path), *Currency.load_yaml(currencies_yaml))
 
@@ -209,28 +209,28 @@ class TestAccount:
         ("text", "message"),
         [
             ("", r"must have exactly the assets Fi, SeL and Wo, the liability SeD and the equity Eq: it has none"),
-            (INTERNAL_ACCOUNTS_YAML.replace("{Fi:", "{Fx:"), r"it has \{'Fx': 'asset', 'SeL': 'asset'"),
-            (INTERNAL_ACCOUNTS_YAML.replace(", Wo: {description: Work loans}", ""), r"must have exactly .*: it has .*'Eq': 'equity'\}"),
+            (BUILT_IN_ACCOUNTS_YAML.replace("{Fi:", "{Fx:"), r"it has \{'Fx': 'asset', 'SeL': 'asset'"),
+            (BUILT_IN_ACCOUNTS_YAML.replace(", Wo: {description: Work loans}", ""), r"must have exactly .*: it has .*'Eq': 'equity'\}"),
             # SeD is a liability
-            (INTERNAL_ACCOUNTS_YAML.replace("  liability: {SeD: {description: Services debts}}\n", "").replace("Wo: {description: Work loans}}", "Wo: {description: Work loans}, SeD: {description: d}}"),
+            (BUILT_IN_ACCOUNTS_YAML.replace("  liability: {SeD: {description: Services debts}}\n", "").replace("Wo: {description: Work loans}}", "Wo: {description: Work loans}, SeD: {description: d}}"),
              r"must have exactly"),
-            (INTERNAL_ACCOUNTS_YAML.replace("SeL: {description: Services loans}", "SeL: {description: Services loans, initial_amount: 0}"),
+            (BUILT_IN_ACCOUNTS_YAML.replace("SeL: {description: Services loans}", "SeL: {description: Services loans, initial_amount: 0}"),
              "Debt account 'SeL' must not have an initial_amount"),
-            (INTERNAL_ACCOUNTS_YAML.replace("{description: Work loans}", "{description: Work loans, currency: USD}"),
-             "The internal account 'Wo' must be in the base currency"),
+            (BUILT_IN_ACCOUNTS_YAML.replace("{description: Work loans}", "{description: Work loans, currency: USD}"),
+             "The built-in account 'Wo' must be in the base currency"),
             # The debt accounts of the people left there are of the currencies YAML now
-            (INTERNAL_ACCOUNTS_YAML.replace("Wo: {description: Work loans}}", "Wo: {description: Work loans}, Lo: {description: Loans}}"),
+            (BUILT_IN_ACCOUNTS_YAML.replace("Wo: {description: Work loans}}", "Wo: {description: Work loans}, Lo: {description: Loans}}"),
              r"must have exactly .* debt_account and loan_account of each currency"),
-            (INTERNAL_ACCOUNTS_YAML + "equity:\n  Eq2:\n    description: d\n", r"The only equity account is the internal Eq: \['Eq2'\]"),
-            (INTERNAL_ACCOUNTS_YAML + "asset:\n  Ca:\n    description: d\n    initial_amount: 0\n  Fi:\n    description: d\n",
-             r"The accounts \['Fi'\] are internal"),
-            (INTERNAL_ACCOUNTS_YAML.replace("initial_amount: 0,", "initial_amount: 0, currency: USD,"),
-             "The internal account 'Fi' must be in the base currency"),
-            (INTERNAL_ACCOUNTS_YAML + "asset:\n  DeD:\n    description: d\n    initial_amount: 0\n",
+            (BUILT_IN_ACCOUNTS_YAML + "equity:\n  Eq2:\n    description: d\n", r"The only equity account is the built-in Eq: \['Eq2'\]"),
+            (BUILT_IN_ACCOUNTS_YAML + "asset:\n  Ca:\n    description: d\n    initial_amount: 0\n  Fi:\n    description: d\n",
+             r"The accounts \['Fi'\] are built-in"),
+            (BUILT_IN_ACCOUNTS_YAML.replace("initial_amount: 0,", "initial_amount: 0, currency: USD,"),
+             "The built-in account 'Fi' must be in the base currency"),
+            (BUILT_IN_ACCOUNTS_YAML + "asset:\n  DeD:\n    description: d\n    initial_amount: 0\n",
              "Duplicated account name: 'DeD'"),
         ],
     )
-    def test_load_yaml_internal_accounts(self, tmp_path, currencies_yaml, text, message):
+    def test_load_yaml_built_in_accounts(self, tmp_path, currencies_yaml, text, message):
         path = tmp_path / "accounts.yaml"
         path.write_text(text)
         with pytest.raises(ValueError, match=message):
@@ -238,7 +238,7 @@ class TestAccount:
 
     def test_load_yaml_rejects_unknown_account_type(self, tmp_path, currencies_yaml):
         path = tmp_path / "accounts.yaml"
-        path.write_text(INTERNAL_ACCOUNTS_YAML + "assets:\n  Ca:\n    description: Cash\n")
+        path.write_text(BUILT_IN_ACCOUNTS_YAML + "assets:\n  Ca:\n    description: Cash\n")
         with pytest.raises(ValueError, match="assets"):
             Account.load_yaml(str(path), *Currency.load_yaml(currencies_yaml))
 
@@ -272,13 +272,13 @@ class TestResultTypeOrder:
 
 
 def standalone(text: str) -> str:
-    """The base movements YAML of the tests on its own, without internal result types: Gifts is the LAST one."""
+    """The base movements YAML of the tests on its own, without built-in result types: Gifts is the LAST one."""
     assert "    after: Op\n" in text
     return text.replace("    after: Op\n", "    after: LAST\n", 1)
 
 
-INTERNAL_YAML = """\
-internal:
+BUILT_IN_YAML = """\
+built_in:
   result_types:
     Init:
       after: LAST
@@ -317,7 +317,7 @@ class TestMovementBase:
         assert bases["Card fee"].acc_credit is accounts["Cc"]
         assert bases["Withdraw"].move_type == MovementType.TRANSFER
         assert bases["Move"].acc_debit is None and bases["Move"].acc_credit is None
-        assert not any(b.internal for b in bases.values())  # internal defaults to False
+        assert not any(b.built_in for b in bases.values())  # built-in defaults to False
 
         assert sorted(result_types) == [1, 2]
         assert result_types[1].name == "Op" and result_types[1].long_name == "Operative"
@@ -360,64 +360,64 @@ class TestMovementBase:
             MovementBase("Move", "", None, None, result_types[1])
 
 
-    def test_load_yaml_internal(self, tmp_path, accounts_yaml, base_movements_yaml, currencies_yaml):
+    def test_load_yaml_built_in(self, tmp_path, accounts_yaml, base_movements_yaml, currencies_yaml):
         accounts = Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml))
         path = tmp_path / "result_types.yaml"
         text = Path(base_movements_yaml).read_text(encoding="utf-8")
-        path.write_text(text + INTERNAL_YAML, encoding="utf-8")
+        path.write_text(text + BUILT_IN_YAML, encoding="utf-8")
         bases, result_types = MovementBase.load_yaml(str(path), accounts)
-        assert bases["Adjust"].internal and not bases["Move"].internal
+        assert bases["Adjust"].built_in and not bases["Move"].built_in
         assert bases["Adjust"].acc_debit is accounts["Cc"] and bases["Adjust"].result_type is None
         initial = bases["Initial (G)"]
-        assert initial.internal and initial.move_type == MovementType.GAIN
+        assert initial.built_in and initial.move_type == MovementType.GAIN
         assert initial.acc_credit is accounts["Eq"]
-        # Internal result types share the ids of the other ones
+        # Built-in result types share the ids of the other ones
         init = initial.result_type
-        assert (init.id, init.name, init.long_name, init.internal) == (3, "Init", "Initial", True)
-        assert result_types[3] is init and not result_types[1].internal
+        assert (init.id, init.name, init.long_name, init.built_in) == (3, "Init", "Initial", True)
+        assert result_types[3] is init and not result_types[1].built_in
 
     @pytest.mark.parametrize(
         ("old", "new", "message"),
         [
-            ("internal:\n", "  Adjust2:\n    description: d\n    internal: true\ninternal:\n",
-             "must not set 'internal'"),
+            ("built_in:\n", "  Adjust2:\n    description: d\n    built_in: true\nbuilt_in:\n",
+             "must not set 'built_in'"),
             ("  transfer:\n    Adjust:", "  transfer:\n    Move:", "Duplicated base movement name: 'Move'"),
             ("      after: LAST\n", "      after: Op\n", "'Gifts' and 'Init' are both after 'Op': the chain of result types must be linear"),
             ("      after: LAST\n", "      after: Gifts\n", r"must be after: LAST\. Values seen: \[\]"),
-            ("    Init:\n", "    Op:\n", r"Result type 'Op' isn't internal: under the 'internal' key it only has the 'base_movements' internal to it, not \['after', 'description', 'long_name'\]"),
-            ("      after: LAST\n", "      after: LAST\n      employment: true\n", "Result type 'Init' is internal: it can't be tagged 'employment'"),
+            ("    Init:\n", "    Op:\n", r"Result type 'Op' isn't built-in: under the 'built_in' key it only has its own built-in 'base_movements', not \['after', 'description', 'long_name'\]"),
+            ("      after: LAST\n", "      after: LAST\n      employment: true\n", "Result type 'Init' is built-in: it can't be tagged 'employment'"),
             ("        gain:\n", "        transfer:\n", "only include 'gain' and 'loss'"),
             ("  result_types:\n", "  types:\n", r"only has 'result_types' and 'transfer', not \['types'\]"),
         ],
     )
-    def test_load_yaml_rejects_invalid_internal(
+    def test_load_yaml_rejects_invalid_built_in(
         self, tmp_path, accounts_yaml, base_movements_yaml, currencies_yaml, old, new, message
     ):
         accounts = Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml))
         path = tmp_path / "result_types.yaml"
-        assert old in INTERNAL_YAML
+        assert old in BUILT_IN_YAML
         text = Path(base_movements_yaml).read_text(encoding="utf-8")
-        path.write_text(text + INTERNAL_YAML.replace(old, new, 1), encoding="utf-8")
+        path.write_text(text + BUILT_IN_YAML.replace(old, new, 1), encoding="utf-8")
         with pytest.raises(ValueError, match=message):
             MovementBase.load_yaml(str(path), accounts)
 
-    def test_load_yaml_internal_base_movements_of_a_regular_result_type(
+    def test_load_yaml_built_in_base_movements_of_a_regular_result_type(
         self, tmp_path, accounts_yaml, base_movements_yaml, currencies_yaml
     ):
         accounts = Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml))
         path = tmp_path / "result_types.yaml"
         text = Path(base_movements_yaml).read_text(encoding="utf-8")
         extension = "    Op:\n      base_movements:\n        loss:\n          Correction (L): A correction\n"
-        path.write_text(text + INTERNAL_YAML.replace("  transfer:\n", extension + "  transfer:\n", 1), encoding="utf-8")
+        path.write_text(text + BUILT_IN_YAML.replace("  transfer:\n", extension + "  transfer:\n", 1), encoding="utf-8")
         bases, result_types = MovementBase.load_yaml(str(path), accounts)
         correction = bases["Correction (L)"]
-        assert correction.internal and correction.result_type is result_types[1] and not result_types[1].internal
+        assert correction.built_in and correction.result_type is result_types[1] and not result_types[1].built_in
         assert [rt.name for rt in result_types.values()].count("Op") == 1
 
     def test_load_yaml_employment(self, tmp_path, accounts_yaml, base_movements_yaml, currencies_yaml):
         accounts = Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml))
         path = tmp_path / "result_types.yaml"
-        text = Path(base_movements_yaml).read_text(encoding="utf-8") + INTERNAL_YAML
+        text = Path(base_movements_yaml).read_text(encoding="utf-8") + BUILT_IN_YAML
         path.write_text(text.replace("    long_name: Operative\n", "    long_name: Operative\n    employment: true\n", 1), encoding="utf-8")
         _, result_types = MovementBase.load_yaml(str(path), accounts)
         assert [rt.name for rt in result_types.values() if rt.employment] == ["Op"]
@@ -442,18 +442,18 @@ class TestMovementBase:
         bases, result_types = MovementBase.load_yaml(str(path), accounts)
         food, move = bases["Food"], bases["Move"]
         assert (food.description, food.acc_debit, food.acc_credit) == ("Groceries", accounts["Eq"], None)
-        assert food.result_type is result_types[1] and not food.internal
+        assert food.result_type is result_types[1] and not food.built_in
         assert (move.description, move.acc_debit, move.acc_credit) == ("Free transfer", None, None)
 
-    def test_internal_if_its_result_type_is(self, accounts, result_types):
-        init = ResultType(1, "Init", "Initial", "", internal=True)
-        assert MovementBase("Initial (L)", "", accounts["Eq"], None, init, internal=True)
-        with pytest.raises(ValueError, match="must be internal, as its result type is"):
+    def test_built_in_if_its_result_type_is(self, accounts, result_types):
+        init = ResultType(1, "Init", "Initial", "", built_in=True)
+        assert MovementBase("Initial (L)", "", accounts["Eq"], None, init, built_in=True)
+        with pytest.raises(ValueError, match="must be built-in, as its result type is"):
             MovementBase("Initial (L)", "", accounts["Eq"], None, init)
-        # A regular result type may have internal base movements too
-        assert MovementBase("Correction (L)", "", accounts["Eq"], None, result_types[1], internal=True).internal
+        # A regular result type may have built-in base movements too
+        assert MovementBase("Correction (L)", "", accounts["Eq"], None, result_types[1], built_in=True).built_in
         with pytest.raises(ValueError, match="result type"):
-            MovementBase("Initial (L)", "", accounts["Eq"], None, None, internal=True)
+            MovementBase("Initial (L)", "", accounts["Eq"], None, None, built_in=True)
 
 
 INVESTMENTS_YAML = """\
@@ -872,8 +872,8 @@ class TestDebtAccount:
             bare = Account.load_yaml(paths[0], *Currency.load_yaml(paths[1]))[name]
             assert isinstance(bare, DebtAccount) and bare.creditors == {} and bare.initial_amount == 0
         de, lo = accounts["De"], accounts["Lo"]  # the debt accounts, always
-        assert isinstance(de, DebtAccount) and de.acc_type == AccountType.LIABILITY and de.internal
-        assert isinstance(lo, DebtAccount) and lo.acc_type == AccountType.ASSET and lo.internal
+        assert isinstance(de, DebtAccount) and de.acc_type == AccountType.LIABILITY and de.built_in
+        assert isinstance(lo, DebtAccount) and lo.acc_type == AccountType.ASSET and lo.built_in
         # Who has no expected role is in both, with what we owe them in De, and what they owe us in Lo
         assert de.creditors == {"Dad": Creditor("Dad", 100.0), "Mum": Creditor("Mum", 0.0)}
         assert lo.creditors == {"Dad": Creditor("Dad", 0.0), "Mum": Creditor("Mum", -150.5)}
@@ -1009,11 +1009,11 @@ class TestDebtAccount:
     def test_meets_expected(self, expected, amount, met):
         assert Creditor("X", amount, expected=expected).meets_expected is met
 
-    def test_load_yaml_rejects_internal_investment_accounts(self, paths, tmp_path):
+    def test_load_yaml_rejects_built_in_investment_accounts(self, paths, tmp_path):
         investments = tmp_path / "investment.yaml"
         investments.write_text("De: {}\n", encoding="utf-8")
         accounts_yaml, currencies_yaml, creditors_yaml = paths
-        with pytest.raises(ValueError, match=r"internal accounts cannot be investment accounts: \[.De.\]"):
+        with pytest.raises(ValueError, match=r"built-in accounts cannot be investment accounts: \[.De.\]"):
             Account.load_yaml(accounts_yaml, *Currency.load_yaml(currencies_yaml), str(investments), creditors_yaml)
 
 

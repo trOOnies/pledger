@@ -454,7 +454,7 @@ class LinkedStore(MovementStore):
         if base is None:
             gain = base_name == DIFFERENCE_GAIN
             raise ValueError(
-                f"Setting the remaining as a Difference needs {base_name!r}, an internal "
+                f"Setting the remaining as a Difference needs {base_name!r}, a built-in "
                 f"{'gain' if gain else 'loss'} of the base movements YAML"
             )
         debit, credit = (

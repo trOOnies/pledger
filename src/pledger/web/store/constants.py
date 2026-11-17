@@ -1,4 +1,4 @@
-"""constants.py: the names of the internal base movements, and the columns and ids of the CSVs of movements."""
+"""constants.py: the names of the built-in base movements, and the columns and ids of the CSVs of movements."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from pledger.models import DEBT_SIDE, LOAN_SIDE, PREVIOUS_MONTH
 BOM = "﻿"
 
 
-# Internal base movements recording the initial amount of the accounts. Their
+# Built-in base movements recording the initial amount of the accounts. Their
 # movements are generated from the accounts YAML, never stored in the CSV.
 INITIAL_GAIN = "Initial (G)"
 
@@ -16,7 +16,7 @@ INITIAL_GAIN = "Initial (G)"
 INITIAL_LOSS = "Initial (L)"
 
 
-# Internal base movements of the result of holding accounts in other currencies:
+# Built-in base movements of the result of holding accounts in other currencies:
 # the change of their value in the base currency. Their movements are generated
 # when loading (see _result_rows), never stored in the CSV.
 RESULT_GAIN = "Foreign currency (G)"
@@ -31,7 +31,7 @@ RESULT_LOSS = "Foreign currency (L)"
 SALARY = "Work - Salary Main"
 
 
-# Internal base movements of the change in the value of the investments: their capital
+# Built-in base movements of the change in the value of the investments: their capital
 # gains and losses, generated from their prices (see _capital_rows), never stored.
 CAPITAL_GAIN, CAPITAL_LOSS = "Capital gains", "Capital losses"
 
@@ -121,7 +121,7 @@ BROKER_FEES = "Broker fees"
 FEE_BASES = {"Dividends & Interest", "Investment - Bought", "Investment - Sold"}
 
 
-# The internal transfers of the conversions of every other currency: bringing it in
+# The built-in transfers of the conversions of every other currency: bringing it in
 # (debiting an account in it) or taking it out (crediting one).
 CONVERSION_BOUGHT, CONVERSION_SOLD = "Foreign currency - Bought", "Foreign currency - Sold"
 
@@ -135,7 +135,7 @@ CONVERSIONS = {CONVERSION_BOUGHT, CONVERSION_SOLD}
 CROSS_CONVERSION = f"{CONVERSION_SOLD} + {CONVERSION_BOUGHT}"
 
 
-# The internal transfers of the debt accounts, added from the People tab, with that side
+# The built-in transfers of the debt accounts, added from the People tab, with that side
 # taking any debt account of one role (DEBT_BASE_SIDES), in any currency: we owe more or
 # less (the debts, of the DEBT_SIDE), or are owed more or less (the loans, of the LOAN_SIDE).
 DEBT_INCURRED, DEBT_PAID = "Debt - Incurred", "Debt - Paid"
@@ -162,7 +162,7 @@ DEBT_BASE_ROLES = {
 }
 
 
-# The internal transfers paying a credit card (debiting it) and getting back a surplus of
+# The built-in transfers paying a credit card (debiting it) and getting back a surplus of
 # it (a negative payment, crediting it), added from the Credit Cards tab, with that side
 # taking any credit card account (CREDIT_CARD).
 CARD_PAYMENT, CARD_SURPLUS = "Credit card - Payment", "Credit card - Surplus"
@@ -171,8 +171,8 @@ CARD_PAYMENT, CARD_SURPLUS = "Credit card - Payment", "Credit card - Surplus"
 CARD_PAYMENT_BASES = {CARD_PAYMENT: LedgerSide.DEBIT, CARD_SURPLUS: LedgerSide.CREDIT}
 
 
-# Internal result type of the investment results. Its base movements, and the
-# internal transfers with an INVESTMENT side, are added and deleted from the
+# Built-in result type of the investment results. Its base movements, and the
+# built-in transfers with an INVESTMENT side, are added and deleted from the
 # Investments tab instead of the Ledger tab.
 INVEST = "Invest"
 
@@ -188,7 +188,7 @@ INTEREST_LOSS = "Interest on Money (L)"
 INTEREST = {INTEREST_GAIN, INTEREST_LOSS}
 
 
-# The internal gain and loss of the corrections of the balance of an account to the one
+# The built-in gain and loss of the corrections of the balance of an account to the one
 # checked by hand, in favour of oneself or against, in the ledger CSV: added from the
 # Audit tab and deleted from the Ledger one (see LedgerStore.correct_balance)
 CORRECTION_GAIN = "Correction (G)"
@@ -200,7 +200,7 @@ CORRECTION_LOSS = "Correction (L)"
 CORRECTIONS = {CORRECTION_GAIN: MovementType.GAIN, CORRECTION_LOSS: MovementType.LOSS}
 
 
-# Internal base movements settling what remains with someone after a debt movement, in its
+# Built-in base movements settling what remains with someone after a debt movement, in its
 # debt account, against the equity account: added from the People tab with that movement (see
 # LedgerStore.add_debt_movement), and deleted from there or the Ledger tab. A gain if what
 # remained is what we owed them.

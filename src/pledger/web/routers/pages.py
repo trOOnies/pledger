@@ -180,7 +180,7 @@ def currencies(request: Request, store: StoreDep, currency: str = "", account: s
 
 
 # The loss result types of the Equity in months of expenses chart, once its filter was used
-# (`expenses_filtered`, even with none of them): the non-internal ones by default.
+# (`expenses_filtered`, even with none of them): the non-built-in ones by default.
 ExpenseTypes = Annotated[list[str] | None, Query()]
 
 
