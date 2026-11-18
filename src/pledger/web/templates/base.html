@@ -59,7 +59,11 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 4h3a2 2 0 0 1 2 2v14"/><path d="M2 20h3"/><path d="M13 20h9"/><path d="M10 12v.01"/><path d="M13 4.562v16.157a1 1 0 0 1-1.242.97L5 20V5.562a2 2 0 0 1 1.515-1.94l4-1A2 2 0 0 1 13 4.561Z"/></svg>
     </button>
   </header>
-  <div id="flash" class="flash" role="alert" hidden></div>
+  {# Errors (see showFlash below): over everything, until closed #}
+  <div id="flash" class="flash" popover="manual">
+    <span id="flash-text" role="alert"></span>
+    <button type="button" popovertarget="flash" popovertargetaction="hide" aria-label="Close" title="Close">&times;</button>
+  </div>
   {# What sorting a table did, for screen readers (see the sortable tables below) #}
   <div id="sort-status" class="visually-hidden" role="status"></div>
   {# The Save & Quit confirmation (see the quit button below): a modal of pledger's own #}
@@ -74,6 +78,20 @@
       <div class="dialog-actions">
         <button type="submit" value="cancel" class="secondary" autofocus>Cancel</button>
         <button type="submit" value="quit">Save &amp; Quit</button>
+      </div>
+    </form>
+  </dialog>
+  {# The confirmation questions of the HTMX requests (hx-confirm, see the htmx:confirm listener below) #}
+  <dialog id="confirm-dialog" class="dialog" closedby="any" aria-labelledby="confirm-title" aria-describedby="confirm-text">
+    <form method="dialog">
+      <div class="dialog-head">
+        <img src="{{ url_for('static', path='favicon.svg') }}?v={{ static_version('favicon.svg') }}" alt="" width="32" height="32">
+        <h2 id="confirm-title">Are you sure?</h2>
+      </div>
+      <p id="confirm-text"></p>
+      <div class="dialog-actions">
+        <button type="submit" value="cancel" class="secondary" autofocus>Cancel</button>
+        <button type="submit" value="ok">Yes</button>
       </div>
     </form>
   </dialog>
@@ -170,22 +188,36 @@
     });
     darkSystem.addEventListener("change", showTheme);
     showTheme();
-    // Confirmation questions mentioning an amount (data-confirm-money) mask it too.
+    // Confirmation questions (hx-confirm) are asked in a dialog of pledger's own, the request sent
+    // once confirmed. Those mentioning an amount (data-confirm-money) mask it too.
+    const confirmDialog = document.getElementById("confirm-dialog");
     document.addEventListener("htmx:confirm", (e) => {
-      const amount = e.detail.elt.dataset.confirmMoney;
-      if (!moneyHidden() || !amount || !e.detail.question) return;
+      if (!e.detail.question) return;
       e.preventDefault();
-      if (window.confirm(e.detail.question.replace(amount, MONEY_MASK))) e.detail.issueRequest(true);
+      const amount = e.detail.elt.dataset.confirmMoney;
+      const question = moneyHidden() && amount ? e.detail.question.replace(amount, MONEY_MASK) : e.detail.question;
+      document.getElementById("confirm-text").textContent = question;
+      confirmDialog.returnValue = "";
+      confirmDialog.addEventListener("close", () => {
+        if (confirmDialog.returnValue === "ok") e.detail.issueRequest(true);
+      }, { once: true });
+      confirmDialog.showModal();
     });
 
-    // Show server errors (e.g. a stale delete) instead of failing silently.
+    // Errors, e.g. of the server (a stale delete) instead of failing silently: shown until closed,
+    // and read out by screen readers (by ariaNotify where there is one, else by the alert role).
+    const flash = document.getElementById("flash");
+    const flashText = document.getElementById("flash-text");
+    if (document.ariaNotify) flashText.removeAttribute("role");
+    function showFlash(msg) {
+      flashText.textContent = msg;
+      if (!flash.matches(":popover-open")) flash.showPopover();
+      document.ariaNotify?.(msg);
+    }
     document.addEventListener("htmx:responseError", (e) => {
-      const flash = document.getElementById("flash");
       let msg = e.detail.xhr.statusText || "Request failed";
       try { msg = JSON.parse(e.detail.xhr.responseText).detail || msg; } catch {}
-      flash.textContent = msg;
-      flash.hidden = false;
-      setTimeout(() => { flash.hidden = true; }, 6000);
+      showFlash(msg);
     });
     // Sortable tables: a header with text becomes a button (a --sort command for its table)
     // that sorts by that column; again to reverse. The order is kept when HTMX re-renders the table.
@@ -461,10 +493,7 @@
         const r = await fetch("/quit", { method: "POST" });
         if (!r.ok) throw new Error(r.statusText);
       } catch (err) {
-        const flash = document.getElementById("flash");
-        flash.textContent = `Could not quit pledger: ${err.message || err}`;
-        flash.hidden = false;
-        setTimeout(() => { flash.hidden = true; }, 6000);
+        showFlash(`Could not quit pledger: ${err.message || err}`);
         return;
       }
       document.title = "pledger stopped";

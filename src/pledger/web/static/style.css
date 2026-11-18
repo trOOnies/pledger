@@ -425,10 +425,18 @@ tr:target > td { background: color-mix(in srgb, var(--accent) 18%, transparent);
 section.panel > .msg, .panel > .msg.warn { margin-bottom: .75rem; }
 .hint.warn { color: var(--warn); font-size: .8rem; }
 
+/* The errors (a manual popover, see base.html): at the bottom, in the middle */
 .flash {
-  position: fixed; bottom: 1rem; left: 50%; transform: translateX(-50%);
-  background: var(--loss); color: #fff; padding: .6rem 1rem; border-radius: 6px; z-index: 10;
+  position: fixed; inset: auto auto 1rem 50%; margin: 0; translate: -50% 0;
+  max-width: calc(100vw - 2rem); border: none; background: var(--loss); color: #fff;
+  padding: .6rem .5rem .6rem 1rem; border-radius: 6px; box-shadow: 0 4px 12px rgba(0, 0, 0, .2);
 }
+.flash:popover-open { display: flex; align-items: center; gap: .75rem; }
+.flash button {
+  width: auto; padding: 0 .35rem; border: none; border-radius: 4px; background: none; color: inherit;
+  font-size: 1.25rem; line-height: 1; cursor: pointer;
+}
+.flash button:hover { background: rgba(255, 255, 255, .2); }
 
 .htmx-request #view, #view.htmx-request,
 .htmx-request #results-view, #results-view.htmx-request,
