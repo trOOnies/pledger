@@ -61,7 +61,7 @@
   </header>
   <div id="flash" class="flash" role="alert" hidden></div>
   {# The Save & Quit confirmation (see the quit button below): a modal of pledger's own #}
-  <dialog id="quit-dialog" class="dialog" aria-labelledby="quit-title" aria-describedby="quit-text">
+  <dialog id="quit-dialog" class="dialog" closedby="any" aria-labelledby="quit-title" aria-describedby="quit-text">
     <form method="dialog">
       <div class="dialog-head">
         <img src="{{ url_for('static', path='favicon.svg') }}?v={{ static_version('favicon.svg') }}" alt="" width="32" height="32">
@@ -427,8 +427,19 @@
       quitDialog.returnValue = "";
       quitDialog.showModal();
     });
-    // A click on the backdrop, outside the box, cancels it, like Escape
-    quitDialog.addEventListener("click", (e) => { if (e.target === quitDialog) quitDialog.close("cancel"); });
+    // A click on the backdrop, outside the box, cancels a dialog of closedby="any", like Escape. Where
+    // the browser doesn't do it (Safari), here: a press and a release both outside the box, by the
+    // pointer position, as the dialog itself is the target of its padding too.
+    if (!("closedBy" in HTMLDialogElement.prototype)) {
+      const outside = (e) => {
+        const r = e.target.getBoundingClientRect();
+        return e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom;
+      };
+      let pressedOutside = false;
+      const lightDismissed = (e) => e.target.matches?.('dialog[closedby="any"][open]') && outside(e);
+      document.addEventListener("pointerdown", (e) => { pressedOutside = lightDismissed(e); });
+      document.addEventListener("pointerup", (e) => { if (pressedOutside && lightDismissed(e)) e.target.close(); });
+    }
     quitDialog.addEventListener("close", async () => {
       if (quitDialog.returnValue !== "quit") return;
       try {

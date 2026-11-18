@@ -26,7 +26,7 @@
 </div>
 
 {# The picker of a free slot: the widgets of its kind, those already in the dashboard disabled #}
-<dialog id="widget-dialog" class="dialog widget-dialog" aria-labelledby="widget-dialog-title">
+<dialog id="widget-dialog" class="dialog widget-dialog" closedby="any" aria-labelledby="widget-dialog-title">
   <form id="widget-form" hx-post="/dashboard/place" hx-target="#dashboard" hx-swap="innerHTML">
     <div class="dialog-head"><h2 id="widget-dialog-title">Add a card</h2></div>
     <input type="hidden" name="kind" value="">
@@ -46,7 +46,7 @@
     </div>
     {% endfor %}
     <div class="dialog-actions">
-      <button type="button" class="secondary" data-close-dialog>Cancel</button>
+      <button type="button" class="secondary" commandfor="widget-dialog" command="close">Cancel</button>
     </div>
   </form>
 </dialog>
@@ -138,8 +138,6 @@
       dialog.querySelector(`[data-options="${kind}"] button:not(:disabled)`)?.focus();
     });
     form.addEventListener("htmx:afterRequest", () => dialog.close());
-    dialog.querySelector("[data-close-dialog]").addEventListener("click", () => dialog.close());
-    dialog.addEventListener("click", (e) => { if (e.target === dialog) dialog.close(); });
   })();
 </script>
 {% endblock %}
