@@ -4,19 +4,27 @@
     on it (liabilities) at a point in time, after adding up all its movements.</dd>
   <dt>Base currency</dt>
   <dd>The currency <strong>every amount</strong> in Pledger is written in.</dd>
+  <dt>Base movement</dt>
+  <dd>The <strong>category</strong> of a movement, which says if it is a gain, a loss or a transfer (see
+    <a href="/help/concepts">Key ideas</a>, and the <a href="/help/tabs/results">Results</a> tab).</dd>
+  <dt>Conversion</dt>
+  <dd>Buying or selling <strong>another currency</strong>, from the <a href="/help/tabs/currencies">Currencies</a> tab.</dd>
   <dt>CPI (price index)</dt>
   <dd>A number that follows <strong>how prices rise</strong> in your base currency, built day
     by day from the monthly inflation. It starts at 100.</dd>
   <dt>Cumulative</dt>
-  <dd>In the result table of the Results tab, the net results <strong>added up</strong> from the first
+  <dd>In the result table of the <a href="/help/tabs/results">Results</a> tab, the net results <strong>added up</strong> from the first
     result type down to that row. The last row <strong>equals your profit</strong>.</dd>
+  <dt>Debt and loan accounts</dt>
+  <dd>The accounts of what you <strong>owe people</strong> (debt) and what <strong>people owe you</strong> (loan), two per
+    currency, followed person by person in the <a href="/help/tabs/people">People</a> tab.</dd>
   <dt>Employment</dt>
   <dd>A tag for the result types whose gains and losses <strong>only happen while you have a
     job</strong>, like your salary (e.g. a <em>Work</em> result type) and the taxes taken from it
     (e.g. <em>Work Taxes</em>). Their losses aren't counted as expenses in the <em>months of
     expenses</em> of the Results tab and the Dashboard, since they would stop with the job. Tag a
     result type with <code>employment: true</code> in the base movements file, or tick
-    <em>Employment</em> when adding it in the Results tab, which marks it with a badge.</dd>
+    <em>Employment</em> when adding it in the <a href="/help/tabs/results">Results</a> tab, which marks it with a badge.</dd>
   <dt>Equity</dt>
   <dd>Your <strong>net worth</strong>: assets minus liabilities. Gains raise it and losses lower it.</dd>
   <dt>Fixed side</dt>
@@ -27,6 +35,12 @@
   <dt>Initial movement</dt>
   <dd>The movement that sets an account's <strong>starting amount</strong>. Pledger creates
     it on its own, so you never add it.</dd>
+  <dt>Installments</dt>
+  <dd>A credit card purchase <strong>paid in parts</strong>, one per statement (see
+    <a href="/help/tabs/credit-cards">Credit Cards</a>).</dd>
+  <dt>Intermediary account</dt>
+  <dd><code>Fi</code>: an account that is only a <strong>step between movements</strong> and always goes back to
+    0.00, like a conversion between two other currencies.</dd>
   <dt>Liquid</dt>
   <dd>Money you can <strong>use right away</strong>, such as cash or a checking account,
     unlike a fixed-term deposit.</dd>
@@ -34,9 +48,21 @@
   <dd>One entry in the ledger: money moving <strong>from one account to another</strong> on a date.</dd>
   <dt>Net</dt>
   <dd>Gains minus losses, here for a <strong>single result type</strong>.</dd>
+  <dt>Net zero, Net positive</dt>
+  <dd>The <strong>checks</strong> an account can have on its balance at the end of each day: always 0.00, or never
+    negative (see <a href="/help/tabs/accounts">Accounts</a>).</dd>
   <dt>Price</dt>
   <dd>What one unit of an investment <strong>cost on average</strong>: its amount divided by its quantity.</dd>
   <dt>Real value</dt>
   <dd>A value with <strong>inflation taken out</strong>, in today's prices, so you can compare
     amounts from different times fairly.</dd>
+  <dt>Result type</dt>
+  <dd>A <strong>family</strong> of gains and losses, such as <em>Operative</em> or <em>Taxes</em> (see
+    <a href="/help/concepts">Key ideas</a>, and the <a href="/help/tabs/results">Results</a> tab).</dd>
+  <dt>Revaluation</dt>
+  <dd>The <strong>Foreign currency</strong> gain or loss of an account in another currency when that currency's value
+    changes (see <a href="/help/tabs/currencies">Currencies</a>).</dd>
+  <dt>Statement closing date</dt>
+  <dd>The day a credit card's statement <strong>closes</strong>: the charges up to it are paid in that statement (see
+    <a href="/help/tabs/credit-cards">Credit Cards</a>).</dd>
 </dl>

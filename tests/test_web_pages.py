@@ -281,9 +281,10 @@ class TestPages:
 
     def test_help_sections(self, client):
         # Each page's heading carries the same number as the index
-        toc = client.get("/help").text.split("<ol>")[1].split("</ol>")[0]
+        toc = client.get("/help").text.split('class="panel help-toc"')[1].split("</nav>")[0]
         links = re.findall(r'href="/help/([\w-]+)".*?</span> (.+?)</a>', toc)
         assert len(links) == 8 and links[-1] == ("about", "Source code and license")
+        assert "help-toc-sub" not in toc  # the subsections of a section only unroll in it
         for n, (section, title) in enumerate(links, start=1):
             r = client.get(f"/help/{section}")
             assert r.status_code == 200 and f"<title>{title} · Help · pledger</title>" in html.unescape(r.text)
@@ -292,8 +293,44 @@ class TestPages:
             assert r.text.count('aria-current="page"') == 2 and f'<a href="/help/{section}" aria-current="page">' in r.text
             assert ("help-hero" in r.text) == (n == 1)
             assert ('rel="prev"' in r.text) == (n > 1) and ('rel="next"' in r.text) == (n < 8)
-        pager = client.get("/help/tabs").text.split('class="help-pager"')[1].split("</nav>")[0]
-        assert 'href="/help/start" rel="prev">← Getting started' in pager and 'href="/help/concepts" rel="next">Key ideas →' in pager
+        pager = client.get("/help/concepts").text.split('class="help-pager"')[1].split("</nav>")[0]
+        assert 'href="/help/start" rel="prev">← Getting started' in pager and 'href="/help/examples" rel="next">Examples →' in pager
+
+    def test_help_tabs(self, client):
+        # The tabs section has a page for each tab, numbered under it, with a link to the tab itself
+        overview = client.get("/help/tabs").text
+        toc = overview.split('class="help-toc-sub"')[1].split("</ol>")[0]
+        tabs = re.findall(r'href="/help/tabs/([\w-]+)".*?</span> (.+?)</a>', toc)
+        assert len(tabs) == 16 and tabs[:2] == [("dashboard", "Dashboard"), ("ledger", "Ledger")]
+        assert all(f'href="/help/tabs/{tab}"' in overview.split('class="help-body"')[1] for tab, _ in tabs)  # its cards
+        for m, (tab, title) in enumerate(tabs, start=1):
+            r = client.get(f"/help/tabs/{tab}")
+            assert r.status_code == 200 and f"<title>{title} · The tabs · Help · pledger</title>" in html.unescape(r.text)
+            assert f'<span class="help-num">4.{m}.</span>' in r.text and 'href="/help/tabs">4. The tabs</a>' in r.text
+            assert r.text.count('aria-current="page"') == 2 and f'<a href="/help/tabs/{tab}" aria-current="page">' in r.text
+            assert f'class="help-open" href="' in r.text and f">Open the {title} tab →</a>" in html.unescape(r.text)
+        assert 'class="help-open" href="/debt"' in client.get("/help/tabs/people").text
+        # Read in order: into the first tab from the overview, out of the last one into the next section
+        assert 'href="/help/tabs/dashboard" rel="next">Dashboard →' in overview
+        last = client.get("/help/tabs/data").text.split('class="help-pager"')[1].split("</nav>")[0]
+        assert 'href="/help/tabs/budget" rel="prev">← Budget' in last and 'href="/help/how-to" rel="next">' in last
+        assert client.get("/help/tabs/nope").status_code == 404 and client.get("/help/start/ledger").status_code == 404
+
+    def test_help_links(self, client):
+        # Every link between the pages of the Help tab, and every anchor, leads somewhere
+        pages, seen = ["start"], set()
+        while pages:
+            page = pages.pop()
+            if page in seen:
+                continue
+            seen.add(page)
+            r = client.get(f"/help/{page}")
+            assert r.status_code == 200, page
+            for target, anchor in re.findall(r'href="/help/([\w/-]+)(?:#([\w-]+))?"', r.text):
+                if anchor:
+                    assert f'id="{anchor}"' in client.get(f"/help/{target}").text, (page, target, anchor)
+                pages.append(target)
+        assert len(seen) == 8 + 16
 
     def test_help_shows_the_base_currency(self, client):
         assert "base currency ($)" in client.get("/help/start").text.replace("<strong>", "").replace("</strong>", "")

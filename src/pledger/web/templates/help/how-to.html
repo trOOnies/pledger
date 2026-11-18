@@ -1,140 +1,59 @@
+<p>The everyday tasks, and the tab where each one is done. The steps of most of them are on the page of their tab;
+  the ones that take more than one tab are here.</p>
 
-<h3>✍️ Record a movement</h3>
-<ol>
-  <li>Go to <a href="/ledger">Ledger</a>.</li>
-  <li>Pick the <strong>date</strong> and the <strong>type</strong>: gain, loss or transfer.</li>
-  <li>Pick the <strong>base movement</strong> that best describes it.</li>
-  <li>Choose the <strong>debit and credit</strong> accounts, unless they are already filled in.</li>
-  <li>Enter the <strong>amount</strong>, add a comment if you like, and press <strong>Add movement</strong>.</li>
-</ol>
-<p>Bought with a <strong>credit card</strong> as the credit account? An <strong>Installments</strong> field shows
-  up: leave it empty for a single payment, or write how many monthly installments it is in. The card is charged
-  the whole amount that day all the same; the <a href="/credit-cards">Credit Cards</a> tab spreads what is paid of
-  it, one installment a statement, by the card's statement closing dates.</p>
-<p>If something does not fit, for example an account that cannot be used with that base
-  movement, Pledger <strong>explains the problem and nothing is saved</strong>.</p>
-
-<h3>⧉ Repeat a movement</h3>
-<p>Click the <strong>&#10697;</strong> button at the end of the movement's row in the
-  <a href="/ledger">Ledger</a>: the <strong>New movement</strong> form is filled in with it, date included.
-  Change what you need, usually the date, and press <strong>Add movement</strong>. The original
-  stays as it was, and the copy gets its own ID.</p>
-
-<h3>🩹 Fix a mistake</h3>
-<p>Click the <strong>&#9998;</strong> button at the end of the movement's row in the
-  <a href="/ledger">Ledger</a>: the form becomes <strong>Edit movement</strong>, filled in with it.
-  Fix it and press <strong>Save changes</strong>, or <strong>Cancel</strong> to go back to a new
-  movement. It keeps its ID. To remove it instead, use the <strong>&times;</strong> button.
-  The movements of other tabs are edited the same way there: the investment movements in
-  <a href="/investments">Investments</a>, the conversions in <a href="/currencies">Currencies</a>, the debt
-  movements in <a href="/debt">People</a> and the card payments in <a href="/credit-cards">Credit Cards</a>.
-  The ones pledger generates (salaries, initial amounts, revaluations) change with what they come from.</p>
-
-<h3>➕ Add an account</h3>
-<p>Go to <a href="/accounts">Accounts</a>, fill in the <strong>New account</strong> form
-  (name, type and description) and press <strong>Add account</strong>.</p>
-<p>Optionally, pick a <strong>check</strong> on its balance at the end of each day:
-  <strong>Net positive</strong> (never negative) or <strong>Net zero</strong> (always 0.00, for
-  an intermediary account). Movements that would break it are rejected, and the
-  <strong>Checks</strong> column of the balances shows the accounts that have one.</p>
-<p>An account that earns or pays <strong>interest on money</strong> needs its <strong>interest
-  frequency</strong>: <strong>weekly</strong> or <strong>monthly</strong>. There is none by default, and only the
-  accounts with one can have interest on money: the <a href="/investments">Investments</a> tab lists them in its
-  <em>Interest on money</em> section and warns about each past week, or month, without a movement of interest of them.</p>
-
-<h3>🧭 Which kind of account?</h3>
-<p>Before adding an account, follow the questions from the top: the first <strong>Yes</strong> tells you what to
-  use. Some answers are not a new account at all, but an entry of an account that already exists.</p>
-<div class="flow" role="group" aria-label="Choosing the kind of a new account">
-  <p class="flow-start">Is it something you <strong>own</strong>, or something you <strong>owe</strong>?</p>
-  <div class="flow-branches">
-    <ol class="flow-branch asset" aria-label="Something you own: an asset">
-      <li class="flow-head">🟦 You own it: an <strong>asset</strong></li>
-      <li class="flow-step">
-        <span class="flow-q">Does it hold <strong>investments</strong> with a quantity and a price (bonds, stocks, funds, fixed terms…)?</span>
-        <span class="flow-yes"><em>Yes</em> → an <strong>investment account</strong>: an asset listed in
-          <code>investment.yaml</code>, with its investments. Its initial amount comes from them.</span>
-      </li>
-      <li class="flow-step">
-        <span class="flow-q">Is it money that <strong>someone owes you</strong> (a loan you gave)?</span>
-        <span class="flow-yes"><em>Yes</em> → <strong>no new account</strong>: add them to <code>creditors.yaml</code>,
-          with a negative amount, and use the <a href="/debt">People</a> tab: loans are in the loan accounts, one per currency.</span>
-      </li>
-      <li class="flow-step">
-        <span class="flow-q">Is it only a <strong>step between movements</strong> that always goes back to 0.00?</span>
-        <span class="flow-yes"><em>Yes</em> → <strong>no new account</strong>: use <code>Fi</code>, the intermediary
-          (net zero). Add one of your own only if you need it apart, with the <strong>Net zero</strong> check.</span>
-      </li>
-      <li class="flow-step flow-end">
-        <span class="flow-q">None of the above (cash, a bank or wallet balance, a safe box…)</span>
-        <span class="flow-yes">→ a <strong>regular asset</strong>, from the <a href="/accounts">Accounts</a> tab. Then:
-          its <strong>currency</strong>, if not the base one; <strong>Liquid</strong> if it can be spent right away;
-          <strong>Net positive</strong> if it can never go below 0.00; and its <strong>interest frequency</strong>
-          if it earns interest.</span>
-      </li>
-    </ol>
-    <ol class="flow-branch liability" aria-label="Something you owe: a liability">
-      <li class="flow-head">🟧 You owe it: a <strong>liability</strong></li>
-      <li class="flow-step">
-        <span class="flow-q">Is it a <strong>credit card</strong>?</span>
-        <span class="flow-yes"><em>Yes</em> → a <strong>credit card account</strong>, in <code>credit_cards.yaml</code>:
-          always liquid, paid from the <a href="/credit-cards">Credit Cards</a> tab, and its purchases can be in installments.</span>
-      </li>
-      <li class="flow-step">
-        <span class="flow-q">Is it owed to a <strong>person</strong> or a <strong>service</strong> (a friend, the rent, a bill)?</span>
-        <span class="flow-yes"><em>Yes</em> → <strong>no new account</strong>: add them to
-          <code>creditors.yaml</code>, with a positive amount: a person in <code>people</code>, with the
-          <a href="/debt">People</a> tab, where debts are in the debt accounts, one per currency; a service in
-          <code>services</code>, with the <a href="/services">Services</a> tab, in <code>SeD</code> (or <code>SeL</code>).
-          Your employers are there already, from the Work tab, in <code>Wo</code>.</span>
-      </li>
-      <li class="flow-step flow-end">
-        <span class="flow-q">None of the above (a bank loan, a mortgage…)</span>
-        <span class="flow-yes">→ a <strong>regular liability</strong>, from the <a href="/accounts">Accounts</a> tab,
-          with its <strong>currency</strong> and <strong>Liquid</strong> if it is due right away.</span>
-      </li>
-    </ol>
-  </div>
-  <p class="flow-note muted small">There is no new equity account: <code>Eq</code> is the only one, and pledger
-    uses it for every gain and loss.</p>
+<h3>📌 By task</h3>
+<div class="table-wrap">
+  <table>
+    <thead><tr><th>To…</th><th>Go to</th></tr></thead>
+    <tbody>
+      <tr><td>✍️ Record a gain, a loss or a transfer</td><td><a href="/help/tabs/ledger">Ledger</a></td></tr>
+      <tr><td>⧉ Repeat a movement</td><td><a href="/help/tabs/ledger">Ledger</a></td></tr>
+      <tr><td>🛍️ Buy something in installments</td><td><a href="/help/tabs/ledger">Ledger</a>, then <a href="/help/tabs/credit-cards">Credit Cards</a></td></tr>
+      <tr><td>🛒 Record a whole purchase, product by product</td><td><a href="/help/tabs/cart">Cart</a></td></tr>
+      <tr><td>➕ Add an account, or find out if you need one</td><td><a href="/help/tabs/accounts#which-kind">Accounts</a></td></tr>
+      <tr><td>🗂️ Add a result type or base movement</td><td><a href="/help/tabs/results">Results</a></td></tr>
+      <tr><td>🔄 Buy or sell another currency</td><td><a href="/help/tabs/currencies">Currencies</a></td></tr>
+      <tr><td>📈 Buy or sell an investment, or record its interest and dividends</td><td><a href="/help/tabs/investments">Investments</a></td></tr>
+      <tr><td>💼 Record your salary, and when it is paid</td><td><a href="/help/tabs/work">Work</a></td></tr>
+      <tr><td>🧾 Pay the rent or a bill</td><td><a href="/help/tabs/services">Services</a></td></tr>
+      <tr><td>💳 Pay a credit card</td><td><a href="/help/tabs/credit-cards">Credit Cards</a></td></tr>
+      <tr><td>🍕 Split a bill with friends</td><td><a href="/help/tabs/split">Split</a></td></tr>
+      <tr><td>🔍 Check your balances against reality</td><td><a href="/help/tabs/audit">Audit</a></td></tr>
+      <tr><td>🎯 Set a budget or a saving goal</td><td><a href="/help/tabs/budget">Budget</a></td></tr>
+      <tr><td>📦 Back up your data, or move it to another computer</td><td><a href="/help/tabs/data">Data</a></td></tr>
+    </tbody>
+  </table>
 </div>
 
-<h3>➕ Add a result type or base movement</h3>
-<p>Go to <a href="/results">Results</a>, open <strong>New result type</strong> or
-  <strong>New base movement</strong>, fill in the form and press the button. Every entry needs
-  a short <strong>name</strong> and a <strong>description</strong>.</p>
+<h3>🩹 Fix a mistake</h3>
+<p>Click the <strong>&#9998;</strong> button at the end of the movement's row in the tab that added it: the form is
+  filled in with it. Fix it and press <strong>Save changes</strong>, or <strong>Cancel</strong>. It keeps its ID. To
+  remove it instead, use the <strong>&times;</strong> button.</p>
 <ul>
-  <li>A new <strong>base movement</strong> that is a gain or a loss also needs a
-    <strong>result type</strong>.</li>
-  <li>For a base movement's debit and credit, choose an account to <strong>always use that
-    account</strong>, or leave <strong>-</strong> to choose the account each time.</li>
-  <li>A new <strong>result type</strong> is added <strong>at the end</strong> of the list,
-    right before the <code>LAST</code> one, which stays last.</li>
+  <li>Gains, losses and transfers: in the <a href="/help/tabs/ledger">Ledger</a>.</li>
+  <li>The rest, in their own tab, which the colored circle of their row in the Ledger links to: the investment
+    movements in <a href="/help/tabs/investments">Investments</a>, the conversions in
+    <a href="/help/tabs/currencies">Currencies</a>, the debt movements in <a href="/help/tabs/people">People</a>, the
+    card payments in <a href="/help/tabs/credit-cards">Credit Cards</a> and the products of a cart in
+    <a href="/help/tabs/cart">Cart</a>.</li>
+  <li>The ones pledger generates (salaries, services, initial amounts, revaluations) change with what they come from:
+    edit the month in <a href="/help/tabs/work">Work</a>, the value in <a href="/help/tabs/services">Services</a>, the
+    account in <a href="/help/tabs/accounts">Accounts</a>.</li>
 </ul>
-<p>To rename, reorder or remove entries, the settings files have to be <strong>edited by hand</strong>.</p>
 
-<h3>📈 Buy or sell an investment</h3>
-<p>Go to <a href="/investments">Investments</a> and use its form, not the Ledger one. Name the
-  <strong>investment</strong> and, when buying, selling or splitting, its
-  <strong>quantity</strong>. The money comes from (or goes to) another account, such as
-  your bank account. Interest, dividends and broker fees are recorded there too. When buying or
-  selling, or for a dividend, fill in <strong>Broker fees</strong> to add them in one go. The
-  <strong>Currency</strong> follows the account you pick: Pledger handles the conversion for you.</p>
-
-<h3>🤝 Keep track of who owes you</h3>
-<p>Add lending, borrowing and paying back from the <a href="/debt">People</a> tab, picking
-  <strong>who</strong> it is about: debts go to a debt account and loans to a loan account, of the currency they are
-  in (each currency has both, in the currencies file). Pay the services from the <a href="/services">Services</a>
-  tab, and add the salaries you receive from the <a href="/work">Work</a> tab. For other movements of a debt account,
-  write the person's, service's or company's <strong>name in the comment</strong>, such as "Lunch with Dad". Each
-  tab adds them to them, and the People tab warns you about movements that name no one.</p>
-
-<h3>🔍 Check your balances against reality</h3>
-<p>Go to <a href="/audit">Audit</a> and fill in the balances you see today, leaving empty the accounts you don't
-  want to check. pledger hides its own until you <strong>confirm</strong>. If one differs, find the mistake and fix
-  it, or use the button next to it to add a correction dated today.</p>
+<h3>🤝 Keep track of who owes you, and whom you owe</h3>
+<p>Each kind of creditor has its tab and its accounts:</p>
+<ul>
+  <li><strong>People</strong>: lending, borrowing and paying back, from the <a href="/help/tabs/people">People</a> tab,
+    picking <strong>who</strong> it is about. Debts go to a debt account and loans to a loan account, of the currency
+    they are in (each currency has both, in the currencies file).</li>
+  <li><strong>Services</strong>: pay them from the <a href="/help/tabs/services">Services</a> tab.</li>
+  <li><strong>Companies</strong>: add the salaries you receive from the <a href="/help/tabs/work">Work</a> tab.</li>
+</ul>
+<p>For other movements of a debt account, write the person's, service's or company's <strong>name in the
+  comment</strong>, such as "Lunch with Dad". Each tab adds them to them, and the People tab warns you about movements
+  that name no one.</p>
 
 <h3>🔎 Look at a single month or account</h3>
-<p>Use the <strong>Month</strong> filter on Ledger, Accounts, Results, People or Credit Cards (it is remembered
-  across tabs), and the <strong>Account</strong> filter on Ledger. Pick <em>All time</em> to
-  go back.</p>
+<p>Use the <strong>Month</strong> filter on Ledger, Accounts, Results, People or Credit Cards (it is remembered across
+  tabs), and the <strong>Account</strong> filter on Ledger. Pick <em>All time</em> to go back.</p>

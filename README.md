@@ -89,7 +89,7 @@ A FastAPI + HTMX UI, one tab per area:
 | 🧾 **Split** | Splits the tab of a get-together among you and up to 7 more, says who pays whom, settles what is paid now and creates the movements of your part, debts and loans included. See [Split](#split). |
 | 🔍 **Audit** | Fill in the balances you checked by hand, without seeing pledger's, then compare them with the actual ones and, if you want, add a correction for each difference. |
 | 📦 **Data** | Exports every data file in one zip, at its path in `info/`, and imports such a zip back, replacing the data with its own. It lists the data files (each one downloads on its own) and the backups of the imports. See [Your data files](#-your-data-files). |
-| ❓ **Help** | The concepts, explained for everyday users, in sections with an index and Previous and Next links. |
+| ❓ **Help** | The concepts, explained for everyday users, in sections with an index and Previous and Next links, and a page for each tab (under *The tabs*), with the steps of what is done there and a link to it. |
 
 A few things are shared across tabs:
 

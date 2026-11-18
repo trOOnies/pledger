@@ -167,6 +167,31 @@ main { padding: 1rem 1.5rem 2rem; max-width: 1840px; width: 100%; margin: 0 auto
 }
 .help-toc { position: sticky; top: 1rem; }
 .help-toc ol { margin: 0; padding-left: 1.25rem; display: grid; gap: .3rem; }
+/* The subsections of the section being read, unrolled under it, with their emojis for markers */
+.help-toc ol.help-toc-sub { margin: .3rem 0 .2rem; padding-left: .25rem; list-style: none; font-size: .9rem; gap: .2rem; }
+.help-toc .help-toc-sub a:not([aria-current]) { color: var(--muted); }
+/* Its own page, or the start of a section, to go back up */
+.help-crumb { margin: 0 0 .25rem; }
+.help-crumb a { text-decoration: none; }
+.help-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .25rem 1rem; }
+.help-head .help-heading { margin-top: 0; }
+.help-open { text-decoration: none; font-size: .9rem; white-space: nowrap; }
+.help-open:hover { text-decoration: underline; }
+/* The tabs (help/tabs.html): a card for each, in the groups of the top bar */
+.help-tab-groups { display: grid; gap: 1rem; }
+.help-body h3.help-group { margin: 0 0 .4rem; font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.help-body .help-tab-cards {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: .5rem;
+}
+.help-tab-cards a {
+  display: grid; gap: .15rem; align-content: start; height: 100%; box-sizing: border-box; padding: .5rem .75rem;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--surface); text-decoration: none;
+}
+.help-tab-cards a:hover { border-color: var(--accent); }
+.help-tab-cards strong { color: var(--accent); }
+.help-tab-cards span { color: var(--muted); font-size: .9rem; line-height: 1.45; }
+.help-body .see-also { color: var(--muted); font-size: .9rem; border-top: 1px solid var(--border); padding-top: .6rem; margin-top: 1rem; }
 .help-body { display: grid; gap: 1rem; min-width: 0; max-width: 820px; }
 .help-body section { scroll-margin-top: 1rem; }
 .help-pager { display: flex; gap: 1rem; }
@@ -178,7 +203,7 @@ main { padding: 1rem 1.5rem 2rem; max-width: 1840px; width: 100%; margin: 0 auto
 .help-body h3 { margin-top: 1.25rem; }
 .help-body h2 + h3 { margin-top: .25rem; }
 .help-body ul, .help-body ol { padding-left: 1.25rem; margin: 0 0 .6rem; }
-/* The flowchart of the kind of a new account (help/how-to.html): a question on top splitting
+/* The flowchart of the kind of a new account (help/tabs/accounts.html): a question on top splitting
    into the asset and liability chains, each a list of questions read down until a Yes. */
 .flow { display: grid; gap: .75rem; margin: 0 0 .6rem; }
 .flow-start {
@@ -605,6 +630,7 @@ tfoot th { position: static; color: var(--text); border-top: 2px solid var(--bor
   .layout > aside { position: static; }
   .help { grid-template-columns: 1fr; }
   .help-toc { position: static; }
+  .help-toc ol.help-toc-sub { display: none; }  /* the breadcrumb, the pager and the cards of the section lead to them */
   .cards { grid-template-columns: 1fr; }
 }
 

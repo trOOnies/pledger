@@ -1,202 +1,49 @@
-<dl>
-  <dt>🏠 Dashboard</dt>
-  <dd>The home page: click the <strong>pledger logo</strong> to get here. The <strong>New movement</strong> buttons take you
-    to the tab and form of each kind of movement. Next to them, <strong>slots</strong> for number cards and plots: click a
-    dotted one with a <strong>+</strong> to pick what goes in it, and the <strong>×</strong> of a card or plot to free its slot.
-    <strong>Rearrange</strong> lets you drag them to other slots (or move them with their arrows); click <strong>Done</strong>,
-    press Escape or leave the tab to stop. Click the title of a card or plot to open the tab it comes from.</dd>
-  <dt>📋 Ledger</dt>
-  <dd>Your <strong>movements</strong>, newest first, with the form to <strong>add new
-    ones</strong>: pick its <strong>type</strong> (gain, loss or transfer) and then its base movement.
-    Conversions, debt movements and card payments are added in their own tabs.
-    Use the <em>Month</em>, <em>Account</em> and <em>Base movement</em> filters to narrow everything down
-    (a filter in use is highlighted). Each movement shows the <strong>balance of its debit and credit
-    accounts right after it</strong>. The
-    movements setting each account's <strong>initial amount</strong> are left out unless
-    you tick <em>Initial movements</em>. Each movement has an <strong>ID</strong> that
-    never changes, given by pledger itself (rows added to the CSVs by hand get theirs when
-    pledger starts). Click ✎ on a movement to <strong>edit it</strong> in the form, or × to
-    delete it. Movements handled in another tab can't be edited or deleted
-    here: instead, they show a <strong>colored circle</strong> linking to their row in that tab (or
-    to the row they are generated from, like the month of a salary), highlighted:
-    🟢 Investments, 🔵 Currencies (conversions and revaluations), 🟠 Work (salaries),
-    🟣 Accounts (initial amounts, and the balance corrections of the Audit tab, which can be deleted here), 🟡 People (debts and loans) and Services (what the services are owed, and their payments), 🔴 Credit Cards (card payments) and 🟤 Cart (the products of a cart). Their <strong>ID</strong> links there too, and the IDs of the Investments,
-    Currencies, People, Services, Work and Credit Cards tabs link back to the same movement in the Ledger tab.</dd>
-  <dt>🏦 Accounts</dt>
-  <dd>Every account with its <strong>description and balance</strong>, your total
-    <strong>assets, liabilities and equity</strong>, and the form to <strong>add a new
-    account</strong>. With a month picked, balances show where each account stood
-    <strong>at the end of that month</strong>. It also shows what your assets and liabilities
-    are made of, <strong>by currency or by liquidity</strong>, and, at each month end, your
-    <strong>debt over equity</strong> and your <strong>net liquidity</strong> (liquid assets
-    minus liquid liabilities) <strong>over equity</strong>. Click ✎ on an asset or liability
-    account to <strong>edit it</strong> (all but its name, type and currency).</dd>
-  <dt>💱 Currencies</dt>
-  <dd>Your <strong>currencies</strong>: the <strong>inflation month by month</strong> of the
-    base currency and the price index built from it, day by day (the months that haven't
-    ended yet are projected, and so are the estimated ones), and, for each other currency, what it is
-    <strong>worth in the base one</strong> over time next to its <strong>real value</strong>
-    (that value with inflation taken out, in today's prices: if it goes down, the
-    currency grew less than prices). It also shows the balances of the accounts in each currency, what the
-    accounts in other currencies hold <strong>in their own currency</strong>, the <strong>weekly values</strong>
-    of the other currencies, set with the <em>New week</em> form (an estimated one is the last known value, and a
-    week that ends without a known value is warned about), and how your
-    assets are split <strong>by currency</strong> at each month end. Buying or selling another currency is a
-    <strong>conversion</strong>: add it here, picking the currency sold and the one bought, with the amount in each one
-    (between two other currencies, it goes through the intermediary account Fi); the <em>Currency</em> and <em>Account</em> filters
-    narrow them down, <em>Initial movements</em> adds the initial amounts of those accounts, and each one shows the account's balance in its own currency right after it. Every time the
-    currency's value changes, its accounts get a <strong>Foreign currency (G)</strong> or <strong>(L)</strong> gain or loss, so their
-    balance always matches what they hold at that value.</dd>
-  <dt>📊 Results</dt>
-  <dd>How much your <strong>equity changed</strong> in the period, nominal and real (taking
-    out inflation), and how many <strong>months of expenses</strong> it covers: how long your
-    equity would last spending what you spent on average each month of the last year. Expenses are
-    your losses, leaving out the initial movements, the built-in result types and the result types tagged
-    <strong>Employment</strong> (see the glossary): if you lost your job, those would stop too. Your gains and losses <strong>grouped by result type</strong> (click a result type to
-    see what is inside it, and tick <em>Cumulative</em> to add each one to the ones before it), a <strong>waterfall</strong> of the gains and then the losses of
-    each result type adding up to your profit (with its table one click away; tick
-    <em>% of Operative gains</em> to see it all as a share of the gains of your first result type), your
-    <strong>equity in months of expenses</strong> at each month end, counted the same way (tick or untick the loss result types
-    that count as expenses, or tick <em>Raw monthly averages</em> to see their average monthly losses
-    stacked instead), and a line
-    showing your <strong>equity over time</strong>, nominal and real (dashed, deflated by the CPI
-    to the prices of its last date). Hover over the line to see each day.
-    Initial movements are left out of the results here too, unless you tick <em>Initial
-    movements</em>. Below them are your <strong>result types</strong> and <strong>base
-    movements</strong>; you can add new ones here.</dd>
-  <dt>💼 Work</dt>
-  <dd>Your <strong>work history, month by month</strong>: the company and job position,
-    the <strong>gross salary</strong> and its <strong>deductions</strong> (taxes,
-    contributions... each a column of the work CSV, named after its loss base movement),
-    which take it to the <strong>net salary</strong>, and the date you <strong>received the
-    payment</strong>. A table shows how this year's gross salary gets to the net one. Months without a job are kept too, so no month is ever missing. Add
-    the next month with the form (<em>Fill in from</em> copies the last month into it), or click ✎ on a month to <strong>edit it</strong>. Two
-    charts show your <strong>gross and net salary</strong> over time, nominal and real (dashed). Each month's gross
-    salary also goes into the ledger <strong>week by week</strong>, split equally between
-    the weeks of the month (Monday to Sunday, each in the month with at least 4 of its days),
-    and so do its deductions, into <code>Wo</code>, the account of what the companies owe you: the net salary is owed by
-    the company until it pays it. The Ledger tab shows these with a 🟠: change them by editing the month here. Below,
-    <strong>what each company owes</strong> in <code>Wo</code>, and the <strong>Salary received</strong> form, which
-    adds a company's payment (a <em>Loan - Collected</em>) into the account you got it in, filled in with what it owes;
-    its movements are listed with what it owes after each one, and deleted there.</dd>
-  <dt>📈 Investments</dt>
-  <dd>What you hold in your <strong>investment accounts</strong>: each investment with its
-    type, quantity, amount, <strong>price</strong> (amount over quantity) and broker <strong>fees over
-    its amount</strong>, and what your
-    investments are made of, <strong>by type or by account</strong>. The investment results
-    (capital gains and losses, interest, dividends, broker fees and stock splits) and the
-    buying and selling of investments are
-    <strong>added, edited and deleted here</strong>, not in the Ledger tab, which shows them with a 🟢.
-    Each one names its <strong>investment</strong> and, when buying, selling or splitting, its
-    <strong>quantity</strong>, so the amounts and quantities above stay up to date. The
-    <strong>interest on money</strong> earned or paid in a regular account with an <strong>interest frequency</strong>
-    (set in the Accounts tab; picking an
-    <em>Interest on Money</em> base movement, with no investment) gets a section of its own, by account and month by month, and counts towards the total
-    result. It warns about each past week without interest of a weekly account, or each past month of a monthly one. Two charts show the <strong>total invested</strong> (nominal and real, dashed) and the <strong>total result</strong>
-    month by month. The <em>Investment account</em>, <em>Investment</em> and <em>Base movement</em> filters
-    narrow the movements down (an investment shows all its movements, broker fees and dividends
-    included), and each movement shows the total of its account and the amount and quantity of
-    its investment right after it.</dd>
-  <dt>👥 People</dt>
-  <dd>The <strong>people</strong> in your <strong>debt accounts</strong>, two per currency (set in the currencies file): the
-    <strong>debt account</strong>, the debts (what you owe), and the <strong>loan account</strong>, the loans (what
-    you are owed): <strong>what you owe</strong> each of them in each account, in its currency, and in all,
-    <strong>what they owe you</strong>, and your net debt, in the base currency. The services and the companies have
-    accounts of their own, in the Services and Work tabs. A movement of a debt
-    account counts for whoever is named in its <strong>comment</strong>. Whoever is <strong>expected</strong> to be a
-    creditor is only in the debt accounts, whoever is expected to be a debtor only in the loan accounts, and the
-    rest in all of them. A warning shows up when a movement names no one, or someone who isn't in its account, or when
-    someone owes the other way around from what is expected. The
-    <strong>movements</strong> of the debt accounts are listed too, with who each one names.
-    Borrowing (<em>Debt</em>, then Incurred or Paid, in a debt account) and lending (<em>Loan</em>, then Given or
-    Collected, in a loan account) are
-    <strong>added, edited and deleted here</strong>, in any currency, picking who of that account they are about;
-    between two currencies, you also say what it was in the currency of the debt account, as it was converted when you
-    made it (e.g. paying a debt in dollars with pesos), and the accounts in other currencies are revalued with their
-    currency, like in the Currencies tab; the <em>Who</em> filter shows the movements of one of them,
-    and each movement shows what you owe whoever it is about right after it (negative and green: what they owe you).
-    With <strong>Set remaining as Difference</strong>, a new movement also settles what would remain with them in its account, showing it
-    before you add it: a <em>Difference (G)</em> if you owed them, a <em>Difference (L)</em> if they owed you, leaving
-    them at 0.00. It can't be edited, only deleted, here or in the Ledger tab. Below it, the
-    <strong>New person</strong> form adds someone to the creditors file, with what was owed when the ledger starts
-    (positive if you owe them, negative if they owe you) and, optionally, their expected role.</dd>
-  <dt>🧾 Services</dt>
-  <dd>The <strong>monthly values</strong> of your services (rent, gas,
-    internet…), a column each in the services file, set month by month and <strong>split between the
-    weeks</strong> of the month, on their Mondays (prorated, like the salaries). They have two accounts of their own:
-    <code>SeD</code>, what you owe them, and <code>SeL</code>, what they owe you, for a service expected to be a
-    debtor (one that charges in advance). Each value becomes movements of its <code>base_movement</code>, an expense,
-    crediting the account of its service, naming the service, up to today. Pay them with the
-    <strong>New service payment</strong> form: the value of the month, if known, fills in
-    the amount (paying another one leaves the difference with the service, to balance later); if it
-    isn't known, the amount paid can become the value of the month. The movements of <code>SeD</code> and
-    <code>SeL</code> are listed with what you owe each service after them, and the payments are deleted there.</dd>
-  <dt>💳 Credit Cards</dt>
-  <dd>What you <strong>owe on each credit card</strong>, plus what was <strong>charged</strong>
-    to it and <strong>paid</strong> off it. With a month picked, the balance is the one at
-    the end of that month, and the charges and payments are the ones of that month. A bar chart shows what was
-    <strong>charged each month</strong> (your purchases, not your payments), another one what is
-    <strong>paid each month</strong>, with the purchases in <strong>installments</strong> split into them, the ones
-    still due striped, and another one shows what you owe on them <strong>as a share of your equity</strong>, month by month,
-    and their <strong>movements</strong> are listed below, each with what you owe on its card right after it
-    (the <em>Credit card</em> filter shows the ones of one card), followed by the <strong>installments</strong>
-    of the charges, picked by the month of their statement rather than by the date of the charge.
-    <strong>Card payments</strong> are added, edited and deleted here, picking the card and the account paying it.
-    A card in another currency also shows what you owe in that currency, and its payments always say
-    <strong>how much was paid in the card's currency</strong>, whatever currency you paid with.
-    The <strong>statement closing dates</strong> are set here in a table with a row for each month of a year and a column for each card; the months
-    without one are autocompleted from the last one set before (the same day, as many months later), or are the
-    last day of the month. The charts of what is charged and paid each month follow them: a charge counts in the
-    first statement closing on or after its date, and its installments in the statements after it, still due until
-    each one closes (the results still count it in its own month).</dd>
-  <dt>🛒 Cart</dt>
-  <dd>Enter a whole purchase at once: a <strong>cart</strong> has a date, a store and the account it is paid from (in your
-    base currency; a credit card too), and its products go in <strong>bags</strong>. Each bag has a loss base movement and,
-    paid with a credit card, a number of <strong>installments</strong>, shared by its products; two bags may have the same
-    ones, as bags only organize the cart. Each product is a movement of the ledger, its comment naming the store, then the
-    product. The carts are listed here, and are edited (keeping the IDs of the products kept) and deleted, with their
-    movements, only from this tab.</dd>
-  <dt>🎯 Budget</dt>
-  <dd>Set a <strong>monthly budget</strong> for any loss base movement and compare it with what was spent in the month
-    you pick, with what is left and what is over. A budget holds from its month on, until you change it, so past months
-    keep theirs. <strong>Saving goals</strong> track the balance of an asset account against a target in its currency,
-    with what to save each month to reach it by its due date. Nothing here adds movements to the ledger.</dd>
-  <dt>✈️ Trip</dt>
-  <dd>Plan a trip with its <strong>expenses</strong>, by category and in any currency, seen in your base currency at today's
-    values, per day and against what you <strong>spent</strong>: the movements of the base movement you pick during the
-    trip, listed there. As the ledger can date movements on the Monday of their week, every week it touches counts.
-    Nothing here adds movements to the ledger.</dd>
-  <dt>🧾 Split</dt>
-  <dd>Take a <strong>get-together</strong> with up to 7 more people to the ledger, in three steps.
-    <strong>Step 1: What was meant vs What was paid</strong>: one table, a column per person, named in its header
-    (<strong>+</strong> adds one, the &times; of its header removes it), and a row per item with its price and the base
-    movement of your share, where you check who fronts it, split evenly among them, or turn on
-    <strong>Percentages</strong> to give each one a share of it (adding up to 100%); its last row is what each one
-    actually put in, and <strong>Split</strong> says who pays whom so that everyone is even.
-    <strong>Step 2: Settling differences</strong>: the date, the account you paid from, and for each one you owe or who
-    owes you, what is paid now (0.00 by default) and into or out of which account; the rest stays as a debt or loan
-    in the People tab. Each one is shown as already in People or to be added.
-    <strong>Step 3: Reflect with movements</strong>: <strong>Process all</strong> lists the movements to check;
-    <strong>Create movements</strong> creates them and adds the new people, or <strong>Return to Settling</strong> goes
-    back. Nothing is written before that.</dd>
-  <dt>🔍 Audit</dt>
-  <dd>Check your accounts against reality: fill in the balances you see in your bank or wallet
-    <strong>without seeing pledger's</strong>, grouped into assets, investment accounts, debt, credit cards and other
-    liabilities (all confirmed at once). Leave an account empty to skip it; a
-    <strong>0.00</strong> is audited as zero. The net zero accounts, like <em>Fi</em>, are fixed at 0.00, and a net
-    positive account can't be filled in as negative. Once you confirm, each balance is shown next to the actual one, and
-    each difference offers a button to add a <em>Correction</em> gain or loss dated today. It's optional:
-    you can fix the difference yourself instead. Every audit you confirm is kept in the <strong>History</strong>,
-    with its amounts and the corrections you accepted.</dd>
-  <dt>📦 Data</dt>
-  <dd>Take your data with you: <strong>Export data</strong> downloads all your files in one zip, a backup or your data for
-    pledger on another computer. <strong>Import</strong> such a zip to replace your data with its own, all of it. It is
-    only imported if it loads as a whole, so a zip pledger can't read changes nothing, and your current data is saved to
-    a <strong>backup</strong> first, listed here: import it to undo the import. Each data file can also be downloaded on
-    its own.</dd>
-  <dt>❓ Help</dt>
-  <dd>These pages: pick a section in the index, or read them in order with the links at the bottom.</dd>
-</dl>
-<p class="note">🗓️ The <strong>Month filter is shared</strong>: pick a month on Ledger,
-  Accounts, Results, People or Credit Cards and the other tabs open on that same month. Pick
-  <em>All time</em> to clear it.</p>
+<p>Every tab works on the <strong>same ledger</strong>: the Ledger tab lists all its movements, and the others
+  each look at one part of it, add the movements of that part with a form of their own, or both. Each tab has a
+  page here: pick one below, or read them in order with the links at the bottom.</p>
+<p>The top bar groups them like here: <strong>Info</strong>, <strong>Revenue</strong>, <strong>Debt</strong> and
+  <strong>Other</strong> unroll when you point at them, and the rest are always in sight. The Dashboard is the
+  pledger logo, at the left.</p>
+
+{# One line about each tab, by the id of its page (see HELP_TABS in routers/pages.py) #}
+{% set summaries = {
+  "dashboard": "The home page: cards and plots of your choice, and a button for each kind of new movement.",
+  "ledger": "Every movement, with the form to add gains, losses and transfers.",
+  "accounts": "Each account's balance, your assets, liabilities and equity, and new accounts.",
+  "currencies": "Inflation, the price index, the value of each currency, and conversions.",
+  "results": "How much your equity changed, by result type, and the months of expenses it covers.",
+  "work": "Your jobs and salaries month by month, from gross to net, and what companies owe you.",
+  "investments": "What you hold in each investment account, its results, and interest on money.",
+  "people": "What you owe people and what they owe you: debts and loans.",
+  "services": "Rent, gas, internet…: their monthly values and their payments.",
+  "credit-cards": "What you owe on each card, its installments, payments and statement closing dates.",
+  "cart": "A whole purchase at once, its products in bags.",
+  "trip": "A trip's planned expenses against what you spent on it.",
+  "split": "A get-together's bill split among everyone, taken to the ledger in three steps.",
+  "audit": "Your balances checked against your bank and wallet.",
+  "budget": "Monthly budgets and saving goals.",
+  "data": "Export, import and back up your data.",
+} %}
+<div class="help-tab-groups">
+  {% for group in ["Home", "Info", "Revenue", "Debt", "Other", "Tools"] %}
+  <section aria-labelledby="group-{{ group | lower }}">
+    <h3 class="help-group" id="group-{{ group | lower }}">{{ group if group != "Tools" else "Always in sight" }}</h3>
+    <ul class="help-tab-cards">
+      {% for id, emoji, title, href, tab_group in tabs if tab_group == group %}
+      <li><a href="/help/tabs/{{ id }}"><strong><span aria-hidden="true">{{ emoji }}</span> {{ title }}</strong><span>{{ summaries[id] }}</span></a></li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endfor %}
+</div>
+
+<h3>🧩 Shared by every tab</h3>
+<ul>
+  <li><strong>The Month filter is shared</strong>: pick a month on Ledger, Accounts, Results, People or Credit Cards
+    and the other tabs open on that same month. Pick <em>All time</em> to clear it. A filter in use is highlighted.</li>
+  <li>A movement belongs to the tab that adds it. The Ledger shows it with a <strong>colored circle</strong> linking
+    back to that tab, where it is edited and deleted (see <a href="/help/tabs/ledger">Ledger</a>).</li>
+  <li>Most tables <strong>sort</strong> by any of their columns: click its header, and again to reverse the order.</li>
+  <li>The <strong>eye</strong>, <strong>theme</strong> and <strong>Save &amp; Quit</strong> buttons are at the top right
+    of every tab (see <a href="/help/start">Getting started</a>).</li>
+</ul>

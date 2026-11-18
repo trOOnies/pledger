@@ -1,7 +1,7 @@
 {% extends "base.html" %}
-{% block title %}{{ section[2] }} · Help · pledger{% endblock %}
+{% block title %}{{ page.title }}{% if parent %} · {{ parent.title }}{% endif %} · Help · pledger{% endblock %}
 {% block content %}
-{% if number == 1 %}
+{% if page.number == "1" %}
 <header class="help-hero">
   <h1><img class="help-logo" src="{{ url_for('static', path='favicon.svg') }}?v={{ static_version('favicon.svg') }}" alt="" width="40" height="40"> Pledger</h1>
   <p class="help-tagline">Your money, <strong>one movement at a time</strong>. Here is everything you need to know to use it.</p>
@@ -14,23 +14,38 @@
 {% endif %}
 
 <div class="help">
+  {# The index: the sections, and the subsections of the one being read #}
   <nav class="panel help-toc" aria-label="Help sections">
     <h2>Help</h2>
     <ol>
-      {% for id, emoji, title in sections %}
-      <li><a href="/help/{{ id }}"{% if loop.index == number %} aria-current="page"{% endif %}><span aria-hidden="true">{{ emoji }}</span> {{ title }}</a></li>
+      {% for id, emoji, title, subsections in sections %}
+      <li><a href="/help/{{ id }}"{% if page.path == id %} aria-current="page"{% endif %}><span aria-hidden="true">{{ emoji }}</span> {{ title }}</a>
+        {% if subsections and page.section == id %}
+        <ol class="help-toc-sub">
+          {% for sub, sub_emoji, sub_title in subsections %}
+          <li><a href="/help/{{ id }}/{{ sub }}"{% if page.path == id ~ '/' ~ sub %} aria-current="page"{% endif %}><span aria-hidden="true">{{ sub_emoji }}</span> {{ sub_title }}</a></li>
+          {% endfor %}
+        </ol>
+        {% endif %}
+      </li>
       {% endfor %}
     </ol>
   </nav>
 
   <article class="help-body">
-    <section class="panel" id="{{ section[0] }}">
-      <h2 class="help-heading"><span class="help-num">{{ number }}.</span> <span aria-hidden="true">{{ section[1] }}</span> {{ section[2] }}</h2>
-      {% include "help/" ~ section[0] ~ ".html" %}
+    <section class="panel" id="{{ page.path | replace('/', '-') }}">
+      {% if parent %}
+      <p class="help-crumb small"><a href="/help/{{ parent.path }}">{{ parent.number }}. {{ parent.title }}</a> ›</p>
+      {% endif %}
+      <div class="help-head">
+        <h2 class="help-heading"><span class="help-num">{{ page.number }}.</span> <span aria-hidden="true">{{ page.emoji }}</span> {{ page.title }}</h2>
+        {% if help_tab %}<a class="help-open" href="{{ help_tab[3] }}">Open the {{ help_tab[2] }} tab →</a>{% endif %}
+      </div>
+      {% include "help/" ~ page.path ~ ".html" %}
     </section>
-    <nav class="help-pager" aria-label="Previous and next sections">
-      {% if previous %}<a href="/help/{{ previous[0] }}" rel="prev">← {{ previous[2] }}</a>{% endif %}
-      {% if next %}<a class="next" href="/help/{{ next[0] }}" rel="next">{{ next[2] }} →</a>{% endif %}
+    <nav class="help-pager" aria-label="Previous and next pages">
+      {% if previous %}<a href="/help/{{ previous.path }}" rel="prev">← {{ previous.title }}</a>{% endif %}
+      {% if next %}<a class="next" href="/help/{{ next.path }}" rel="next">{{ next.title }} →</a>{% endif %}
     </nav>
   </article>
 </div>

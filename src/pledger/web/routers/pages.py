@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, NamedTuple
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse
@@ -217,28 +217,74 @@ def audit(request: Request, store: StoreDep):
     return templates.TemplateResponse(request, "audit.html", context)
 
 
-# The sections of the Help tab, in reading order: the id of its page and template, its emoji and title
+# The tabs, each with a page of its own in "The tabs" section of the Help tab, in the order of the
+# top bar (the Ledger right after the Dashboard, as everything else builds on it): the id of its
+# page and template, its emoji, title, path and the group of the top bar it is in
+HELP_TABS = [
+    ("dashboard", "🏠", "Dashboard", "/", "Home"),
+    ("ledger", "📋", "Ledger", "/ledger", "Home"),
+    ("accounts", "🏦", "Accounts", "/accounts", "Info"),
+    ("currencies", "💱", "Currencies", "/currencies", "Info"),
+    ("results", "📊", "Results", "/results", "Info"),
+    ("work", "💼", "Work", "/work", "Revenue"),
+    ("investments", "📈", "Investments", "/investments", "Revenue"),
+    ("people", "👥", "People", "/debt", "Debt"),
+    ("services", "🧾", "Services", "/services", "Debt"),
+    ("credit-cards", "💳", "Credit Cards", "/credit-cards", "Debt"),
+    ("cart", "🛒", "Cart", "/cart", "Other"),
+    ("trip", "✈️", "Trip", "/trip", "Other"),
+    ("split", "🧾", "Split", "/split", "Other"),
+    ("audit", "🔍", "Audit", "/audit", "Tools"),
+    ("budget", "🎯", "Budget", "/budget", "Tools"),
+    ("data", "📦", "Data", "/data", "Tools"),
+]
+
+# The sections of the Help tab, in reading order: the id of its page and template, its emoji,
+# title and subsections (each a page of its own, in help/<section>/<subsection>.html)
 HELP_SECTIONS = [
-    ("start", "🚀", "Getting started"),
-    ("tabs", "🧭", "The tabs"),
-    ("concepts", "💡", "Key ideas"),
-    ("how-to", "🛠️", "How to…"),
-    ("examples", "🧾", "Examples"),
-    ("glossary", "📖", "Glossary"),
-    ("faq", "❓", "Questions"),
-    ("about", "🐙", "Source code and license"),
+    ("start", "🚀", "Getting started", ()),
+    ("concepts", "💡", "Key ideas", ()),
+    ("examples", "🧾", "Examples", ()),
+    ("tabs", "🧭", "The tabs", tuple(t[:3] for t in HELP_TABS)),
+    ("how-to", "🛠️", "How to…", ()),
+    ("glossary", "📖", "Glossary", ()),
+    ("faq", "❓", "Questions", ()),
+    ("about", "🐙", "Source code and license", ()),
 ]
 
 
+class HelpPage(NamedTuple):
+    """A page of the Help tab: a section, or a subsection of one, numbered like "4" or "4.2"."""
+    path: str  # after /help/, and of its template in help/
+    emoji: str
+    title: str
+    number: str
+    section: str  # the id of its section, its own for a section
+
+
+# Every page of the Help tab in reading order, each section followed by its subsections
+HELP_PAGES = [
+    page
+    for n, (id_, emoji, title, subsections) in enumerate(HELP_SECTIONS, 1)
+    for page in (
+        HelpPage(id_, emoji, title, str(n), id_),
+        *(HelpPage(f"{id_}/{sub}", e, t, f"{n}.{m}", id_) for m, (sub, e, t) in enumerate(subsections, 1)),
+    )
+]
+HELP_INDEX = {page.path: i for i, page in enumerate(HELP_PAGES)}
+
+
 @router.get("/help")
-@router.get("/help/{section}")
-def help_page(request: Request, store: StoreDep, section: str = HELP_SECTIONS[0][0]):
-    number = next((n for n, s in enumerate(HELP_SECTIONS, 1) if s[0] == section), None)
-    if number is None:
-        raise HTTPException(status_code=404, detail=f"No help section {section!r}")
+@router.get("/help/{path:path}")
+def help_page(request: Request, store: StoreDep, path: str = HELP_PAGES[0].path):
+    i = HELP_INDEX.get(path)
+    if i is None:
+        raise HTTPException(status_code=404, detail=f"No help page {path!r}")
+    page = HELP_PAGES[i]
     return templates.TemplateResponse(request, "help.html", {
-        "settings": store.settings, "sections": HELP_SECTIONS, "number": number,
-        "section": HELP_SECTIONS[number - 1],
-        "previous": HELP_SECTIONS[number - 2] if number > 1 else None,
-        "next": HELP_SECTIONS[number] if number < len(HELP_SECTIONS) else None,
+        "settings": store.settings, "sections": HELP_SECTIONS, "page": page,
+        "parent": HELP_PAGES[HELP_INDEX[page.section]] if page.path != page.section else None,
+        "help_tab": next((t for t in HELP_TABS if f"tabs/{t[0]}" == page.path), None), "tabs": HELP_TABS,
+        "previous": HELP_PAGES[i - 1] if i > 0 else None,
+        "next": HELP_PAGES[i + 1] if i + 1 < len(HELP_PAGES) else None,
     })

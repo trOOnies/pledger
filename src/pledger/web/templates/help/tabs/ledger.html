@@ -1,0 +1,60 @@
+<p>Your <strong>movements</strong>, newest first, with the form to <strong>add new ones</strong>. It is the heart of
+  pledger: every other tab reads from it (see <a href="/help/concepts">Key ideas</a> for what a movement is).</p>
+
+<h3>✍️ Record a movement</h3>
+<ol>
+  <li>Pick the <strong>date</strong> and the <strong>type</strong>: gain, loss or transfer.</li>
+  <li>Pick the <strong>base movement</strong> that best describes it.</li>
+  <li>Choose the <strong>debit and credit</strong> accounts, unless they are already filled in.</li>
+  <li>Enter the <strong>amount</strong>, add a comment if you like, and press <strong>Add movement</strong>.</li>
+</ol>
+<p>If something does not fit, for example an account that cannot be used with that base movement, Pledger
+  <strong>explains the problem and nothing is saved</strong>. Not sure which accounts go where? See the
+  <a href="/help/examples">Examples</a>.</p>
+<p>Bought with a <strong>credit card</strong> as the credit account? An <strong>Installments</strong> field shows up:
+  leave it empty for a single payment, or write how many monthly installments it is in. The card is charged the whole
+  amount that day all the same; the <a href="/help/tabs/credit-cards">Credit Cards</a> tab spreads what is paid of it,
+  one installment a statement, by the card's statement closing dates.</p>
+<p class="note">Conversions, investments, debt movements, card payments and the rest are added in
+  <strong>their own tabs</strong>, not here.</p>
+
+<h3>⧉ Repeat a movement</h3>
+<p>Click the <strong>&#10697;</strong> button at the end of the movement's row: the <strong>New movement</strong> form
+  is filled in with it, date included. Change what you need, usually the date, and press <strong>Add movement</strong>.
+  The original stays as it was, and the copy gets its own ID.</p>
+
+<h3>🩹 Fix a mistake</h3>
+<p>Click the <strong>&#9998;</strong> button at the end of the movement's row: the form becomes <strong>Edit
+  movement</strong>, filled in with it. Fix it and press <strong>Save changes</strong>, or <strong>Cancel</strong> to go
+  back to a new movement. It keeps its ID. To remove it instead, use the <strong>&times;</strong> button.</p>
+
+<h3>🔎 Filters</h3>
+<p>The <em>Month</em>, <em>Account</em> and <em>Base movement</em> filters narrow everything down (a filter in use is
+  highlighted). Pick <em>All time</em> to go back. The month is shared with the other tabs.</p>
+<p>The movements setting each account's <strong>initial amount</strong> are left out unless you tick <em>Initial
+  movements</em>.</p>
+
+<h3>🧾 Each movement</h3>
+<ul>
+  <li>It shows the <strong>balance of its debit and credit accounts right after it</strong>.</li>
+  <li>It has an <strong>ID</strong> that never changes, given by pledger itself. Rows added to the CSVs by hand get
+    theirs when pledger starts.</li>
+</ul>
+
+<h3>🔵 Movements of other tabs</h3>
+<p>Movements handled in another tab <strong>can't be edited or deleted here</strong>. Instead they show a
+  <strong>colored circle</strong> linking to their row in that tab, or to the row they are generated from (like the
+  month of a salary), highlighted:</p>
+<ul>
+  <li>🟢 <a href="/help/tabs/investments">Investments</a></li>
+  <li>🔵 <a href="/help/tabs/currencies">Currencies</a>: conversions and revaluations</li>
+  <li>🟠 <a href="/help/tabs/work">Work</a>: salaries</li>
+  <li>🟣 <a href="/help/tabs/accounts">Accounts</a>: initial amounts, and the balance corrections of the
+    <a href="/help/tabs/audit">Audit</a> tab, which can be deleted here</li>
+  <li>🟡 <a href="/help/tabs/people">People</a> (debts and loans) and <a href="/help/tabs/services">Services</a>
+    (what the services are owed, and their payments)</li>
+  <li>🔴 <a href="/help/tabs/credit-cards">Credit Cards</a>: card payments</li>
+  <li>🟤 <a href="/help/tabs/cart">Cart</a>: the products of a cart</li>
+</ul>
+<p>Their <strong>ID</strong> links there too, and the IDs of the Investments, Currencies, People, Services, Work and
+  Credit Cards tabs link back to the same movement here.</p>
