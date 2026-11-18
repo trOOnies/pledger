@@ -60,6 +60,8 @@
     </button>
   </header>
   <div id="flash" class="flash" role="alert" hidden></div>
+  {# What sorting a table did, for screen readers (see the sortable tables below) #}
+  <div id="sort-status" class="visually-hidden" role="status"></div>
   {# The Save & Quit confirmation (see the quit button below): a modal of pledger's own #}
   <dialog id="quit-dialog" class="dialog" closedby="any" aria-labelledby="quit-title" aria-describedby="quit-text">
     <form method="dialog">
@@ -185,9 +187,11 @@
       flash.hidden = false;
       setTimeout(() => { flash.hidden = true; }, 6000);
     });
-    // Sortable tables: click (or Enter on) a header to sort by that column; click
-    // again to reverse. The order is kept when HTMX re-renders the table.
+    // Sortable tables: a header with text becomes a button (a --sort command for its table)
+    // that sorts by that column; again to reverse. The order is kept when HTMX re-renders the table.
     const sortState = {};
+    const sortCollator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+    let sortTables = 0;
 
     function sortTable(table) {
       const state = sortState[table.dataset.sortable];
@@ -200,41 +204,52 @@
       const rows = [...tbody.rows].sort((a, b) => {
         const [x, y] = [value(a), value(b)];
         const [nx, ny] = [Number(x), Number(y)];
-        const cmp = x !== "" && y !== "" && !isNaN(nx) && !isNaN(ny)
-          ? nx - ny
-          : x.localeCompare(y, undefined, { numeric: true, sensitivity: "base" });
+        const cmp = x !== "" && y !== "" && !isNaN(nx) && !isNaN(ny) ? nx - ny : sortCollator.compare(x, y);
         return state.dir * cmp;
       });
-      tbody.append(...rows);
+      // Moved, not taken out and put back, so what's inside the rows (e.g. the focus) is kept
+      for (const row of rows) {
+        if (tbody.moveBefore) tbody.moveBefore(row, null); else tbody.append(row);
+      }
       table.querySelectorAll("thead th").forEach((th, i) => {
         if (i === state.col) th.setAttribute("aria-sort", state.dir > 0 ? "ascending" : "descending");
         else th.removeAttribute("aria-sort");
       });
     }
 
-    function initSortable(root) {
-      root.querySelectorAll("table[data-sortable]").forEach((table) => {
-        table.querySelectorAll("thead th").forEach((th) => {
-          if (th.textContent.trim()) th.tabIndex = 0;
-        });
-        sortTable(table);
-      });
-    }
-
-    function onSortHeader(e) {
-      const th = e.target.closest("table[data-sortable] thead th");
-      if (!th || !th.textContent.trim()) return;
-      if (e.type === "keydown" && e.key !== "Enter" && e.key !== " ") return;
-      e.preventDefault();
-      const table = th.closest("table");
+    function onSortCommand(e) {
+      if (e.command !== "--sort") return;
+      const table = e.currentTarget;
+      const th = e.source.closest("th");
       const key = table.dataset.sortable;
       const prev = sortState[key];
       sortState[key] = { col: th.cellIndex, dir: prev && prev.col === th.cellIndex ? -prev.dir : 1 };
       sortTable(table);
+      const order = sortState[key].dir > 0 ? "ascending" : "descending";
+      document.getElementById("sort-status").textContent = `Sorted by ${e.source.textContent.trim()}, ${order}`;
     }
 
-    document.addEventListener("click", onSortHeader);
-    document.addEventListener("keydown", onSortHeader);
+    function initSortable(root) {
+      root.querySelectorAll("table[data-sortable]").forEach((table) => {
+        if (!table.dataset.sortReady) {
+          table.dataset.sortReady = "";
+          table.id ||= `sortable-${++sortTables}`;
+          table.addEventListener("command", onSortCommand);
+          table.querySelectorAll("thead th").forEach((th) => {
+            if (!th.textContent.trim()) return;
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "sort";
+            button.setAttribute("commandfor", table.id);
+            button.setAttribute("command", "--sort");
+            button.append(...th.childNodes);
+            th.append(button);
+          });
+        }
+        sortTable(table);
+      });
+    }
+
     document.addEventListener("DOMContentLoaded", () => initSortable(document));
     document.addEventListener("htmx:afterSettle", (e) => initSortable(e.detail.elt));
 
