@@ -1,104 +1,41 @@
 :root {
-  --bg: #f6f7f9;
-  --surface: #ffffff;
-  --border: #e2e5ea;
-  --text: #1c2129;
-  --muted: #6b7380;
-  --accent: #2f5bd3;
-  --accent-text: #ffffff;
-  --gain: #1a7f4b;
-  --gain-nested: #3f9f6f;
-  --loss: #c0392b;
-  --loss-nested: #d9665a;
-  --warn: #9a6100;
-  --transfer: #6b7380;
-  --gain-bg: #e3f4ea;
-  --loss-bg: #fbe7e5;
-  --transfer-bg: #eceef1;
-  --series-asset: #2a78d6;
-  --series-asset-nested: #74a9ea;
-  --series-liability: #eb6834;
-  --series-liability-nested: #f4a17f;
-  --track: #f0f1f4;
+  /* Colors: light-dark(<light>, <dark>), following color-scheme below */
+  --bg: light-dark(#f6f7f9, #111418);
+  --surface: light-dark(#ffffff, #1a1e24);
+  --border: light-dark(#e2e5ea, #2c323b);
+  --text: light-dark(#1c2129, #e6e9ee);
+  --muted: light-dark(#6b7380, #9099a6);
+  --accent: light-dark(#2f5bd3, #6f93f2);
+  --accent-text: light-dark(#ffffff, #0d1117);
+  --gain: light-dark(#1a7f4b, #4cc38a);
+  --gain-nested: light-dark(#3f9f6f, #b9edd3);
+  --loss: light-dark(#c0392b, #f07167);
+  --loss-nested: light-dark(#d9665a, #fccbc6);
+  --warn: light-dark(#9a6100, #e3b341);
+  --transfer: light-dark(#6b7380, #9099a6);
+  --gain-bg: light-dark(#e3f4ea, #17321f);
+  --loss-bg: light-dark(#fbe7e5, #3a1c1a);
+  --transfer-bg: light-dark(#eceef1, #262b33);
+  --series-asset: light-dark(#2a78d6, #3987e5);
+  --series-asset-nested: light-dark(#74a9ea, #b3d1f5);
+  --series-liability: light-dark(#eb6834, #d95926);
+  --series-liability-nested: light-dark(#f4a17f, #f5c2aa);
+  --track: light-dark(#f0f1f4, #222730);
   /* Categorical series, in a fixed order (1 and 2 are the asset and liability colors) */
   --series-1: var(--series-asset);
   --series-2: var(--series-liability);
-  --series-3: #1baf7a;
-  --series-4: #eda100;
-  --series-5: #e87ba4;
+  --series-3: light-dark(#1baf7a, #199e70);
+  --series-4: light-dark(#eda100, #c98500);
+  --series-5: light-dark(#e87ba4, #d55181);
   --series-6: #008300;
-  --series-7: #6250d6;
-  --series-8: #e34948;
-  --series-neutral: #a4aab3;  /* a medium-light grey, e.g. for what is paid */
+  --series-7: light-dark(#6250d6, #9085e9);
+  --series-8: light-dark(#e34948, #e66767);
+  --series-neutral: light-dark(#a4aab3, #7c838d);  /* a medium-light grey, e.g. for what is paid */
   --radius: 8px;
-  color-scheme: light;
-}
-
-/* Dark: the system's, unless the theme toggle of the top bar picked one (data-theme on <html>) */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #111418;
-    --surface: #1a1e24;
-    --border: #2c323b;
-    --text: #e6e9ee;
-    --muted: #9099a6;
-    --accent: #6f93f2;
-    --accent-text: #0d1117;
-    --gain: #4cc38a;
-    --gain-nested: #b9edd3;
-    --loss: #f07167;
-    --loss-nested: #fccbc6;
-    --warn: #e3b341;
-    --transfer: #9099a6;
-    --gain-bg: #17321f;
-    --loss-bg: #3a1c1a;
-    --transfer-bg: #262b33;
-    --series-asset: #3987e5;
-    --series-asset-nested: #b3d1f5;
-    --series-liability: #d95926;
-    --series-liability-nested: #f5c2aa;
-    --track: #222730;
-    --series-3: #199e70;
-    --series-4: #c98500;
-    --series-5: #d55181;
-    --series-6: #008300;
-    --series-7: #9085e9;
-    --series-8: #e66767;
-    --series-neutral: #7c838d;
-    color-scheme: dark;
-  }
-}
-
-:root[data-theme="dark"] {
-  --bg: #111418;
-  --surface: #1a1e24;
-  --border: #2c323b;
-  --text: #e6e9ee;
-  --muted: #9099a6;
-  --accent: #6f93f2;
-  --accent-text: #0d1117;
-  --gain: #4cc38a;
-  --gain-nested: #b9edd3;
-  --loss: #f07167;
-  --loss-nested: #fccbc6;
-  --warn: #e3b341;
-  --transfer: #9099a6;
-  --gain-bg: #17321f;
-  --loss-bg: #3a1c1a;
-  --transfer-bg: #262b33;
-  --series-asset: #3987e5;
-  --series-asset-nested: #b3d1f5;
-  --series-liability: #d95926;
-  --series-liability-nested: #f5c2aa;
-  --track: #222730;
-  --series-3: #199e70;
-  --series-4: #c98500;
-  --series-5: #d55181;
-  --series-6: #008300;
-  --series-7: #9085e9;
-  --series-8: #e66767;
-  --series-neutral: #7c838d;
-  color-scheme: dark;
+  /* The system's theme, unless the theme toggle of the top bar picked one (the color-scheme meta of base.html) */
+  color-scheme: light dark;
+  &:has(> head > meta[name="color-scheme"][content="dark"]) { color-scheme: dark; }
+  &:has(> head > meta[name="color-scheme"][content="light"]) { color-scheme: light; }
 }
 
 * { box-sizing: border-box; }
@@ -159,11 +96,11 @@ code { font-size: .9em; }
 /* The theme toggle shows the theme in use: a moon in dark, a sun in light */
 .theme .sun { display: none; }
 @media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) .theme .moon { display: none; }
-  :root:not([data-theme="dark"]) .theme .sun { display: block; }
+  :root:has(> head > meta[name="color-scheme"][content="light dark"]) .theme .moon { display: none; }
+  :root:has(> head > meta[name="color-scheme"][content="light dark"]) .theme .sun { display: block; }
 }
-:root[data-theme="light"] .theme .moon { display: none; }
-:root[data-theme="light"] .theme .sun { display: block; }
+:root:has(> head > meta[name="color-scheme"][content="light"]) .theme .moon { display: none; }
+:root:has(> head > meta[name="color-scheme"][content="light"]) .theme .sun { display: block; }
 /* Hidden amounts show a fixed mask (set by the visibility toggle), in a neutral color so
    not even the sign shows. Not yet masked ones (e.g. mid-swap) stay invisible. */
 .hide-money .money { color: var(--muted); }
