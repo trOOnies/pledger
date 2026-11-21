@@ -77,6 +77,7 @@ from pledger.web.views.currencies import (
 from pledger.web.views.dashboard import (
     WIDGETS,
     build_dashboard,
+    card_account,
     new_movement_buttons,
     valid_dashboard,
 )
@@ -196,6 +197,7 @@ __all__ = [
     "build_view",
     "build_work",
     "build_work_loan",
+    "card_account",
     "card_payment_fields",
     "cart_form_of",
     "charged_chart",

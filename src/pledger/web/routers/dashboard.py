@@ -14,7 +14,7 @@ from fastapi.responses import HTMLResponse
 from pledger.web.dependencies import StoreDep
 from pledger.web.store import DASHBOARD_SLOTS
 from pledger.web.templating import templates
-from pledger.web.views import WIDGETS, build_dashboard, valid_dashboard
+from pledger.web.views import WIDGETS, build_dashboard, card_account, valid_dashboard
 
 router = APIRouter(prefix="/dashboard", tags=["pages"], default_response_class=HTMLResponse)
 
@@ -37,13 +37,15 @@ def _slots(request: Request, store, dashboard: dict):
 
 @router.post("/place")
 def place(request: Request, store: StoreDep, kind: Kind, slot: Slot, widget: Annotated[str, Form()]):
-    """Put a widget in a free slot."""
+    """Put a widget in a free slot: one of WIDGETS, or a card of the balance of an asset or liability account."""
     _check_slot(kind, slot)
     dashboard = valid_dashboard(store.load_dashboard())
-    if widget not in WIDGETS[kind]:
+    account = card_account(store.load(), widget) if kind == "cards" else None
+    if widget not in WIDGETS[kind] and account is None:
         raise HTTPException(status_code=400, detail=f"No {widget!r} to put in the {kind} of the dashboard")
     if widget in dashboard[kind]:
-        raise HTTPException(status_code=400, detail=f"{WIDGETS[kind][widget][0]} is already in the dashboard")
+        title = account.name if account is not None else WIDGETS[kind][widget][0]
+        raise HTTPException(status_code=400, detail=f"{title} is already in the dashboard")
     if dashboard[kind][slot] is not None:
         raise HTTPException(status_code=400, detail="That slot is not free: free it first")
     dashboard[kind][slot] = widget

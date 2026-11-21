@@ -13,7 +13,7 @@ from pledger.web.views import WIDGETS
 def slots(html: str, kind: str) -> list[str | None]:
     """The widget of each slot of a kind, None for a free one, in order."""
     grid = html.split(f'data-kind="{kind}">', 1)[1].split('<div class="widget-grid', 1)[0]
-    found = re.findall(r'<article class="widget[^"]*" data-kind="\w+" data-slot="(\d+)" data-widget="([\w-]+)"|<button type="button" class="widget-free" data-kind="\w+" data-slot="(\d+)"', grid)
+    found = re.findall(r'<article class="widget[^"]*" data-kind="\w+" data-slot="(\d+)" data-widget="([^"]+)"|<button type="button" class="widget-free" data-kind="\w+" data-slot="(\d+)"', grid)
     return [widget or None for _, widget, _ in found]
 
 
@@ -35,12 +35,14 @@ class TestDashboard:
         for kind, widgets in WIDGETS.items():
             picker = r.text.split(f'data-options="{kind}"')[1].split("</div>")[0]
             assert re.findall(r'name="widget" value="([\w-]+)"', picker) == list(widgets)
-        # In groups: the accounts, then the results
+        # In groups: the accounts, then the results, then the balance of one account
         cards = r.text.split('data-options="cards"')[1].split("</div>")[0]
         assert [re.findall(r'value="([\w-]+)"', g) for g in cards.split("<legend>")[1:]] == [
             ["assets", "liabilities", "equity", "net-liquidity"],
             ["month-gains", "month-losses", "month-profit", "month-equity-change", "monthly-expenses", "months-covered", "liquidity-months"],
+            [],
         ]
+        assert re.findall(r'data-account-type="(\w+)"', cards) == ["asset", "liability"]
         plots = r.text.split('data-options="plots"')[1].split("</div>")[0]
         assert re.findall(r"<legend>(\w+)</legend>", plots) == ["Accounts", "Results"]
         assert [re.findall(r'value="([\w-]+)"', g) for g in plots.split("<legend>")[1:]] == [
@@ -131,6 +133,55 @@ class TestDashboard:
         plot = r.text.split('data-widget="months-of-expenses"')[1].split("</article>")[0]
         assert '<div class="tip-change muted money"></div>' in plot
         assert '<div class="tip-value "></div>' in plot  # months, not an amount
+
+    @staticmethod
+    def account_picker(html: str, acc_type: str) -> list[tuple[str, list[str]]]:
+        """The groups of the account picker of a type, with the accounts of each."""
+        picker = html.split(f'data-accounts="{acc_type}"')[1].split("</div>")[0]
+        return [
+            (g.split("</legend>")[0], re.findall(r'name="widget" value="account:([^"]+)"', g))
+            for g in picker.split("<legend>")[1:]
+        ]
+
+    def test_account_picker_lists_the_asset_and_liability_accounts(self, client):
+        html = client.get("/").text
+        assert 'id="account-dialog"' in html
+        assets = dict(self.account_picker(html, "asset"))
+        assert {"Ca", "Fi"} <= set(assets["General assets"]) and assets["Foreign currency assets"] == ["Bk"]
+        assert "Lo" in assets["Debts &amp; loans"]  # the loans to people
+        liabilities = dict(self.account_picker(html, "liability"))
+        assert "Cc" in liabilities["General liabilities"] and "De" in liabilities["Debts &amp; loans"]
+        everything = [a for groups in (assets, liabilities) for accs in groups.values() for a in accs]
+        assert "Eq" not in everything and len(everything) == len(set(everything))
+
+    def test_account_balance_card(self, client):
+        r = client.post("/dashboard/place", data={"kind": "cards", "slot": 5, "widget": "account:Bk"})
+        assert r.status_code == 200 and slots(r.text, "cards")[5] == "account:Bk"
+        card = r.text.split('data-widget="account:Bk"')[1].split("</article>")[0]
+        assert 'title="Balance of the asset account Bk, today: Bank account"' in card
+        assert '<a class="label" href="/accounts#account-Bk">Bk</a>' in card
+        assert "today, " in card and " USD</span>" in card  # its balance in its own currency
+        assert 'id="account-Bk"' in client.get("/accounts").text
+        # A liability one, kept
+        client.post("/dashboard/place", data={"kind": "cards", "slot": 6, "widget": "account:Cc"})
+        assert slots(client.get("/").text, "cards")[5:7] == ["account:Bk", "account:Cc"]
+        # Once only, and only of an asset or liability account
+        r = client.post("/dashboard/place", data={"kind": "cards", "slot": 7, "widget": "account:Bk"})
+        assert r.status_code == 400 and r.json()["detail"] == "Bk is already in the dashboard"
+        for widget in ("account:Eq", "account:Nope", "account:"):
+            r = client.post("/dashboard/place", data={"kind": "cards", "slot": 7, "widget": widget})
+            assert r.status_code == 400 and "to put in the cards" in r.json()["detail"], widget
+        r = client.post("/dashboard/place", data={"kind": "plots", "slot": 3, "widget": "account:Bk"})
+        assert r.status_code == 400
+
+    def test_account_card_of_an_account_gone(self, settings, tmp_path):
+        path = tmp_path / "dashboard.yaml"
+        path.write_text("cards: ['account:Gone', 'account:Ca']\n")
+        r = TestClient(create_app(replace(settings, dashboard_path=path))).get("/")
+        assert slots(r.text, "cards")[:2] == ["account:Gone", "account:Ca"]
+        card = r.text.split('data-widget="account:Gone"')[1].split("</article>")[0]
+        assert '<span class="num muted">-</span>' in card and "no such account" in card
+        assert "today</span>" in r.text.split('data-widget="account:Ca"')[1].split("</article>")[0]
 
     def test_kept_in_its_yaml(self, settings, tmp_path):
         path = tmp_path / "dashboard.yaml"

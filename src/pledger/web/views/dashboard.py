@@ -9,6 +9,12 @@ from pledger.models import CreditCardAccount, InvestmentAccount, next_month
 from pledger.web.store import DASHBOARD_SLOTS, Dashboard, Snapshot, today
 from pledger.web.views.accounts import over_time_charts
 from pledger.web.views.charts import column_chart, line_chart
+from pledger.web.views.common import (
+    ACCOUNT_GROUPS,
+    account_group,
+    own_balance,
+    row_anchor,
+)
 from pledger.web.views.debt import kind_movements, net_creditors
 from pledger.web.views.results import equity_metrics, equity_series, expense_months
 
@@ -42,6 +48,36 @@ WIDGETS = {
 }
 
 
+# A card of the balance of one asset or liability account: this, then the account's name
+ACCOUNT_WIDGET = "account:"
+ACCOUNT_CARD_TYPES = (AccountType.ASSET, AccountType.LIABILITY)
+
+
+def account_name(widget: str | None) -> str | None:
+    """The account of the balance card `widget` (see ACCOUNT_WIDGET), None for another widget."""
+    return (widget[len(ACCOUNT_WIDGET):] or None) if widget and widget.startswith(ACCOUNT_WIDGET) else None
+
+
+def card_account(snapshot: Snapshot, widget: str):
+    """The asset or liability account of the balance card `widget`, None if it has none (e.g. removed)."""
+    account = snapshot.accounts.get(account_name(widget) or "")
+    return account if account is not None and account.acc_type in ACCOUNT_CARD_TYPES else None
+
+
+def account_options(snapshot: Snapshot) -> dict[str, list[dict]]:
+    """The asset and the liability accounts, by type then group (see ACCOUNT_GROUPS), for the account picker."""
+    options: dict[str, list[dict]] = {t.value: [] for t in ACCOUNT_CARD_TYPES}
+    for key, (_, label) in ACCOUNT_GROUPS.items():
+        for acc_type in ACCOUNT_CARD_TYPES:
+            accounts = [
+                {"key": ACCOUNT_WIDGET + a.name, "title": a.name, "description": a.description}
+                for a in snapshot.accounts.values() if a.acc_type == acc_type and account_group(a) == key
+            ]
+            if accounts:
+                options[acc_type.value].append({"name": label, "options": accounts})
+    return options
+
+
 def dashboard_options(kind: str) -> list[dict]:
     """The widgets of a kind of slot, in order, by group, for its picker."""
     groups: dict[str, list[dict]] = {}
@@ -56,7 +92,8 @@ def valid_dashboard(dashboard: Dashboard) -> Dashboard:
     for kind, names in dashboard.items():
         seen, slots = set(), []
         for name in names:
-            ok = name in WIDGETS[kind] and name not in seen
+            known = name in WIDGETS[kind] or (kind == "cards" and account_name(name) is not None)
+            ok = known and name not in seen
             seen.add(name)
             slots.append(name if ok else None)
         valid[kind] = slots
@@ -124,8 +161,31 @@ class _Widgets:
     def metrics(self, month: str = "") -> dict:
         return self._once(f"metrics {month}", lambda: equity_metrics(self.snapshot, month))
 
+    def account_card(self, key: str) -> dict:
+        """The balance card of an account, in the base currency, with its own in the note if in another one."""
+        account = card_account(self.snapshot, key)
+        name = account_name(key)
+        if account is None:
+            return {
+                "title": name, "description": f"{name} is not an asset or liability account anymore",
+                "href": "/accounts", "value": None, "unit": "money", "note": "no such account", "tone": None,
+            }
+        balances = self._once("account_balances", lambda: self.snapshot.ledger().balances())
+        value = balances.get(account.name, 0.0)
+        own = own_balance(self.snapshot, account)
+        kind = "asset" if account.acc_type == AccountType.ASSET else "liability"
+        return {
+            "title": account.name,
+            "description": f"Balance of the {kind} account {account.name}, today" + (f": {account.description}" if account.description else ""),
+            "href": f"/accounts#{row_anchor('account', account.name)}",
+            "value": value, "unit": "money", "tone": "loss" if value < -0.005 else None,
+            "note": "today" if own is None else f"today, {own:,.2f} {account.currency.name}",
+        }
+
     def card(self, key: str) -> dict:
         """A number card: its value (None if there is none yet), how to show it and a note."""
+        if account_name(key) is not None:
+            return self.account_card(key)
         value, unit, note, tone = None, "money", "today", None
         if key in ("equity", "assets", "liabilities", "net-liquidity"):
             value = self.balances()[key]
@@ -187,12 +247,15 @@ def build_dashboard(snapshot: Snapshot, dashboard: Dashboard) -> dict:
         build = widgets.card if kind == "cards" else widgets.plot
         slots[kind] = [
             None if name is None else {
-                "key": name, "title": WIDGETS[kind][name][0], "description": WIDGETS[kind][name][1],
-                "href": WIDGETS[kind][name][2], **build(name),
+                "key": name, **dict(zip(("title", "description", "href"), WIDGETS[kind].get(name, ("", "", "")))),
+                **build(name),  # an account card has its own title, description and link
             }
             for name in names
         ]
-    return {"slots": slots, "slot_counts": DASHBOARD_SLOTS, "options": {k: dashboard_options(k) for k in WIDGETS}}
+    return {
+        "slots": slots, "slot_counts": DASHBOARD_SLOTS, "options": {k: dashboard_options(k) for k in WIDGETS},
+        "account_options": account_options(snapshot),
+    }
 
 
 def new_movement_buttons(snapshot: Snapshot) -> list[dict]:

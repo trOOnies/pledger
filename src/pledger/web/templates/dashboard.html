@@ -43,10 +43,48 @@
         {% endfor %}
       </fieldset>
       {% endfor %}
+      {% if kind == "cards" %}
+      {# The balance of one account: each opens the account picker of its type #}
+      <fieldset class="widget-group">
+        <legend>Account balance</legend>
+        {% for type, label in [("asset", "Asset account"), ("liability", "Liability account")] %}
+        <button type="button" class="widget-option" data-account-type="{{ type }}" {% if not account_options[type] %}disabled title="No {{ type }} accounts"{% endif %}>
+          <strong>{{ label }}…</strong><span class="muted small">The balance of one {{ type }} account, today: pick which one next</span>
+        </button>
+        {% endfor %}
+      </fieldset>
+      {% endif %}
     </div>
     {% endfor %}
     <div class="dialog-actions">
       <button type="button" class="secondary" commandfor="widget-dialog" command="close">Cancel</button>
+    </div>
+  </form>
+</dialog>
+
+{# The account picker, over the card picker: the asset or the liability accounts, by group,
+   those already in the dashboard disabled. Back returns to the card picker. #}
+<dialog id="account-dialog" class="dialog widget-dialog" closedby="any" aria-labelledby="account-dialog-title">
+  <form id="account-form" hx-post="/dashboard/place" hx-target="#dashboard" hx-swap="innerHTML">
+    <div class="dialog-head"><h2 id="account-dialog-title">Add the balance of an account</h2></div>
+    <input type="hidden" name="kind" value="cards">
+    <input type="hidden" name="slot" value="">
+    {% for type, groups in account_options.items() %}
+    <div class="widget-options" data-accounts="{{ type }}" hidden>
+      {% for g in groups %}
+      <fieldset class="widget-group">
+        <legend>{{ g.name }}</legend>
+        {% for o in g.options %}
+        <button type="submit" name="widget" value="{{ o.key }}" class="widget-option">
+          <strong>{{ o.title }}</strong>{% if o.description %}<span class="muted small">{{ o.description }}</span>{% endif %}
+        </button>
+        {% endfor %}
+      </fieldset>
+      {% endfor %}
+    </div>
+    {% endfor %}
+    <div class="dialog-actions">
+      <button type="button" class="secondary" commandfor="account-dialog" command="close">Back</button>
     </div>
   </form>
 </dialog>
@@ -58,6 +96,8 @@
     const hint = wrap.querySelector(".rearrange-hint");
     const dialog = document.getElementById("widget-dialog");
     const form = document.getElementById("widget-form");
+    const accountDialog = document.getElementById("account-dialog");
+    const accountForm = document.getElementById("account-form");
 
     // Rearrange mode: the widgets can be dragged, or moved with their arrows, to other slots
     // of their kind. It is never kept: leaving the tab (or Escape) turns it off.
@@ -71,7 +111,7 @@
     }
     button.addEventListener("click", () => setRearrange(!rearranging()));
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && rearranging() && !dialog.open) setRearrange(false);
+      if (e.key === "Escape" && rearranging() && !dialog.open && !accountDialog.open) setRearrange(false);
     });
     // Also when the browser keeps the page to show it again on Back (bfcache)
     window.addEventListener("pagehide", () => setRearrange(false));
@@ -138,6 +178,26 @@
       dialog.querySelector(`[data-options="${kind}"] button:not(:disabled)`)?.focus();
     });
     form.addEventListener("htmx:afterRequest", () => dialog.close());
+
+    // Asset account / Liability account: the accounts of that type, over the card picker
+    const placedCards = () => new Set([...wrap.querySelectorAll('.widget[data-kind="cards"]')].map((w) => w.dataset.widget));
+    dialog.addEventListener("click", (e) => {
+      const pick = e.target.closest("[data-account-type]");
+      if (!pick) return;
+      const type = pick.dataset.accountType;
+      accountForm.elements.slot.value = form.elements.slot.value;
+      document.getElementById("account-dialog-title").textContent =
+        type === "asset" ? "Add the balance of an asset account" : "Add the balance of a liability account";
+      const placed = placedCards();
+      accountDialog.querySelectorAll("[data-accounts]").forEach((list) => { list.hidden = list.dataset.accounts !== type; });
+      accountDialog.querySelectorAll(`[data-accounts="${type}"] button`).forEach((b) => {
+        b.disabled = placed.has(b.value);
+        b.title = b.disabled ? "Already in the dashboard" : "";
+      });
+      accountDialog.showModal();
+      accountDialog.querySelector(`[data-accounts="${type}"] button:not(:disabled)`)?.focus();
+    });
+    accountForm.addEventListener("htmx:afterRequest", () => { accountDialog.close(); dialog.close(); });
   })();
 </script>
 {% endblock %}
