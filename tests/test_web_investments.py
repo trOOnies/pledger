@@ -795,6 +795,16 @@ class TestInvestMovements:
         r = client.get("/form/prices", params={"date": "2026-02-02", "account": "Br", "investment": "T", "price": "33"})
         assert 'value="2026-02-02"' in r.text and 'value="33"' in r.text and 'id="prices-form"' in r.text
 
+    def test_prices_form_shows_the_change_over_the_last_price(self, settings, client):
+        form = client.get("/form/prices").text
+        row = form.split('name="investment" value="T"')[1].split("</tr>")[0]
+        last = next(r["last_price"] for r in price_rows(LedgerStore(settings).load()) if r["name"] == "T")
+        # The input has the last price, unrounded, and the change its <output>, filled in once entered
+        assert re.search(r'<input id="(new-price-\d+)" name="price" data-change-from="([^"]+)"', row)[2] == str(last)
+        input_id = re.search(r'<input id="(new-price-\d+)"', row)[1]
+        assert f'<output class="price-change" for="{input_id}"></output>' in row
+        assert form.count('<th class="num" title="Of the new price over its last price, once entered">Change</th>') == 1
+
     def test_add_price_creates_the_csv(self, settings):
         settings.prices_path.unlink()
         settings.investments_path.write_text("Br:\n  investments:\n    T: stock\n")

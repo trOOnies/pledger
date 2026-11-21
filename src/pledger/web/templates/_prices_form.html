@@ -8,7 +8,7 @@
   </label>
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Investment</th><th>Type</th><th>Account</th><th class="num">Quantity</th><th class="num" title="Its last price: amount over quantity">Price</th><th class="num">New price</th></tr></thead>
+      <thead><tr><th>Investment</th><th>Type</th><th>Account</th><th class="num">Quantity</th><th class="num" title="Its last price: amount over quantity">Price</th><th class="num">New price</th><th class="num" title="Of the new price over its last price, once entered">Change</th></tr></thead>
       <tbody>
       {% for r in rows %}
       <tr>
@@ -22,9 +22,10 @@
           <input type="hidden" name="investment" value="{{ r.name }}">
           <span class="money-input">
             <span class="prefix">{{ currency }}</span>
-            <input name="price" inputmode="decimal" min="0" value="{{ r.value }}" placeholder="0.00" autocomplete="off" aria-label="New price of {{ r.name }} in {{ r.account }}" data-money="6">
+            <input id="new-price-{{ loop.index }}" name="price" {% if r.last_price %}data-change-from="{{ r.last_price }}"{% endif %} inputmode="decimal" min="0" value="{{ r.value }}" placeholder="0.00" autocomplete="off" aria-label="New price of {{ r.name }} in {{ r.account }}" data-money="6">
           </span>
         </td>
+        <td class="num"><output class="price-change" for="new-price-{{ loop.index }}"></output></td>
       </tr>
       {% endfor %}
       </tbody>

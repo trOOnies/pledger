@@ -463,7 +463,7 @@ def invest_fields(snapshot: Snapshot, base_movement: str = "", move_type: str = 
 def price_rows(snapshot: Snapshot, entered: dict[tuple[str, str], str] | None = None) -> list[dict]:
     """
     The investments held, of the investments YAML and those only in the ledger, each with
-    its price (amount over quantity) and the new price `entered` for it, by account and name.
+    its price (amount over quantity, also unrounded as last_price) and the new price `entered` for it, by account and name.
     """
     return [
         {
@@ -472,6 +472,8 @@ def price_rows(snapshot: Snapshot, entered: dict[tuple[str, str], str] | None = 
             "type": INVESTMENT_TYPE_LABELS.get(h["investment"].type, NO_TYPE),
             "quantity": h["total_quantity"],
             "price": _quantity_text(round(h["total_amount"] / h["total_quantity"], 4)) if h["total_quantity"] else None,
+            # Unrounded, for the change of a new price over it (see base.html)
+            "last_price": h["total_amount"] / h["total_quantity"] if h["total_quantity"] else None,
             "value": (entered or {}).get((a.name, name), ""),
         }
         for a in snapshot.investment_accounts()

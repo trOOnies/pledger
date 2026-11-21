@@ -365,6 +365,29 @@
       }
     });
 
+    // An input with data-change-from (e.g. a new price, from its last one) shows its change over
+    // it in its <output for>, once entered (on change, not while typing): green up, red down,
+    // grey and an explicit 0.00% without one, nothing while empty.
+    function showChange(input) {
+      const output = document.querySelector(`output[for="${input.id}"]`);
+      if (!output) return;
+      const from = Number(input.dataset.changeFrom);
+      const value = Number(input.value.replace(/,/g, ""));
+      const change = input.value.trim() && Number.isFinite(value) && from ? (100 * (value - from)) / from : null;
+      const shown = change === null ? "" : Math.abs(change) < 0.005 ? "0.00%" : `${change > 0 ? "+" : ""}${change.toFixed(2)}%`;
+      output.textContent = shown;
+      output.classList.toggle("gain", shown.startsWith("+"));
+      output.classList.toggle("loss", shown.startsWith("-"));
+      output.classList.toggle("muted", shown === "0.00%");
+    }
+    document.addEventListener("change", (e) => {
+      if (e.target.matches("input[data-change-from]")) showChange(e.target);
+    });
+    // Those entered already, e.g. kept by a form sent back with an error
+    const showChanges = () => document.querySelectorAll("input[data-change-from]").forEach(showChange);
+    document.addEventListener("DOMContentLoaded", showChanges);
+    document.addEventListener("htmx:afterSettle", showChanges);
+
     // In a form with data-account-currencies, picking an account picks its currency too.
     document.addEventListener("change", (e) => {
       const form = e.target.closest("form[data-account-currencies]");
