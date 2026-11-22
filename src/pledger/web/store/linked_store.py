@@ -6,7 +6,7 @@ from dataclasses import replace
 
 from pandas import DataFrame, concat, read_csv
 
-from pledger.enums import AccountType, LedgerSide, MovementType
+from pledger.enums import AccountType, CreditorKind, DebtRole, LedgerSide, MovementType
 from pledger.models import (
     INTERMEDIARY,
     Account,
@@ -17,10 +17,12 @@ from pledger.models import (
 )
 from pledger.web.store.common import (
     _amount_of,
+    _existing,
     _fit_row,
     _parse_amount,
     _parse_date,
     _value_on,
+    next_id,
     stored_ids,
 )
 from pledger.web.store.constants import (
@@ -29,12 +31,16 @@ from pledger.web.store.constants import (
     CONVERSION_COLUMNS,
     CONVERSION_ID,
     CONVERSION_SOLD,
+    DEBT_INCURRED,
+    DEBT_PAID,
     DIFFERENCE_GAIN,
     FEE_BASES,
     INTEREST,
     INVESTMENT_COLUMN,
     LEDGER_ID,
     LINKED_COLUMN,
+    LOAN_COLLECTED,
+    LOAN_GIVEN,
     OTHER_AMOUNT,
 )
 from pledger.web.store.conversions import _conversion_row, linked_ids
@@ -105,6 +111,39 @@ def _own_amount(own: Account, other: Account, value: float, amount_own: str | fl
     if paid == 0:
         raise ValueError(f"The amount in {own.currency.name} must be positive")
     return paid
+
+
+# The debt base movement of each side of a debt or loan account (see DEBT_BASES): debited,
+# we owe them less (or they owe us more), credited, we owe them more (or they owe us less).
+DEBT_LEG_BASES = {
+    (DebtRole.CREDITOR, True): DEBT_PAID, (DebtRole.CREDITOR, False): DEBT_INCURRED,
+    (DebtRole.DEBTOR, True): LOAN_GIVEN, (DebtRole.DEBTOR, False): LOAN_COLLECTED,
+}
+
+
+def _people_account(snapshot: Snapshot, name: str) -> DebtAccount:
+    """A debt or loan account of the people, of any currency, by name."""
+    account = snapshot.accounts.get(name.strip())
+    if not isinstance(account, DebtAccount) or account.kind != CreditorKind.PERSON:
+        raise ValueError(f"Pick a debt or loan account of the people, not {name.strip() or 'none'!r}")
+    return account
+
+
+def _free_debt_account(other: Account | None) -> None:
+    """The other account of a debt movement of the People tab can't be a debt or loan account (see add_debt_exchange)."""
+    if isinstance(other, DebtAccount):
+        raise ValueError(  # noqa: TRY004 (a bad pick, not a bad type)
+            f"A debt movement can't be against {other.name}, a debt or loan account: move debt between them with "
+            "the Debt/loan exchange form, or to another currency with the Change debt/loan currency form"
+        )
+
+
+def _positive(amount: str | float, what: str) -> float:
+    """An amount that must be over 0."""
+    value = _parse_amount(amount, what)
+    if value == 0:
+        raise ValueError(f"The {what} must be positive")
+    return value
 
 
 class LinkedStore(MovementStore):
@@ -255,8 +294,8 @@ class LinkedStore(MovementStore):
         for field, found in new_rows.items():
             path, what, prefix = self._movement_file(field)
             frame = getattr(snapshot, field)
-            extra = [c for row in found for c in row if c not in frame.columns and c == OTHER_AMOUNT]
-            for column in set(extra):
+            extra = [c for row in found for c in row if c not in frame.columns and c in (OTHER_AMOUNT, LINKED_COLUMN)]
+            for column in dict.fromkeys(extra):
                 self._add_column(path, len(frame), column)
             fitted = [_fit_row(row, [*frame.columns, *extra], what) for row in found]
             self._write_file(self._appended(path, prefix, fitted, list(frame.columns)))
@@ -395,6 +434,8 @@ class LinkedStore(MovementStore):
         comment = _debt_comment(snapshot, acc_debit, acc_credit, who, comment)
         debt = snapshot.debt_account_of(base_movement, acc_debit, acc_credit)
         other = snapshot.accounts.get(acc_credit if debt is not None and debt.name == acc_debit else acc_debit)
+        if debt is not None:
+            _free_debt_account(other)
         if debt is None or other is None or (debt.currency.is_base_currency and other.currency.is_base_currency):
             # One amount, in the base currency (an unknown account or base movement fails below)
             if str(amount_debt).strip() and abs(
@@ -496,6 +537,18 @@ class LinkedStore(MovementStore):
         snapshot = self.load()
         comment = _debt_comment(snapshot, acc_debit, acc_credit, who, comment)
         debt = snapshot.debt_account_of(base_movement, acc_debit, acc_credit)
+        current = snapshot.rows.iloc[index] if 0 <= index < len(snapshot.rows) else None
+        if debt is not None and current is not None:
+            other = snapshot.accounts.get(acc_credit if debt.name == acc_debit else acc_debit)
+            if other is not None and other.name not in (current["acc_debit"], current["acc_credit"]):
+                _free_debt_account(other)  # one added before it was forbidden can stay
+            if str(current.get(LINKED_COLUMN, "")).strip() and (
+                (base_movement, acc_debit, acc_credit) != (current["base_movement"], current["acc_debit"], current["acc_credit"])
+            ):
+                raise ValueError(
+                    "Its base movement and accounts came with the movement it was added with: "
+                    "delete the movement and add it again"
+                )
         amount_other = None
         if debt is not None and is_foreign(debt):
             if not str(amount_debt).strip():
@@ -513,3 +566,140 @@ class LinkedStore(MovementStore):
             index, fingerprint, move_date, base_movement, acc_debit, acc_credit, amount, comment,
             debt=True, amount_other=amount_other,
         )
+
+    def add_debt_exchange(
+        self,
+        move_date: str,
+        acc_debit: str,
+        who_debit: str,
+        acc_credit: str,
+        who_credit: str,
+        amount: str | float,
+        comment: str = "",
+    ) -> None:
+        """
+        Move `amount` of debt between two debt or loan accounts of the people of the same
+        currency, or two people of one of them: what we owe `who_debit` in `acc_debit` goes
+        down (in a loan account, what they owe us goes up), and what we owe `who_credit` in
+        `acc_credit` goes up (what they owe us goes down). E.g. paying someone with what
+        someone else owed us, or a debt with someone passing to someone else.
+
+        Each side is a movement of its debt base movement (see DEBT_LEG_BASES) against the
+        INTERMEDIARY account, named after its person, so each account adds it to its own
+        (see _add_debt_pair). In another currency, each row is of `amount` at its value on
+        that date, with `amount` in its OTHER_AMOUNT.
+        """
+        snapshot = self._load_frozen()
+        debit, credit = _people_account(snapshot, acc_debit), _people_account(snapshot, acc_credit)
+        if debit.currency.name != credit.currency.name:
+            raise ValueError(
+                f"{debit.name} is in {debit.currency.name} and {credit.name} in {credit.currency.name}: an exchange is "
+                "between two accounts of the same currency (change the currency of a debt or loan with its own form)"
+            )
+        who_debit, who_credit = who_debit.strip(), who_credit.strip()
+        if debit.name == credit.name and who_debit == who_credit:
+            raise ValueError("An exchange is between two people of an account, or two accounts: pick another one")
+        if _parse_date(move_date, "date") is None:
+            raise ValueError("The date is required")
+        value = _positive(amount, "amount")
+        base_value = self._base_value(debit, value, move_date)
+        def note(who: str, account: DebtAccount) -> str:  # the other side
+            return f"exchange with {account.name}" if who_debit == who_credit else f"exchange with {who} in {account.name}"
+
+        self._add_debt_pair(snapshot, move_date, base_value, [
+            (debit, True, who_debit, value, note(who_credit, credit)),
+            (credit, False, who_credit, value, note(who_debit, debit)),
+        ], comment)
+
+    def add_debt_currency_change(
+        self,
+        move_date: str,
+        who: str,
+        acc_from: str,
+        acc_to: str,
+        amount_from: str | float,
+        amount_to: str | float,
+        comment: str = "",
+    ) -> None:
+        """
+        Change what is owed with `who` in one currency to another: `amount_from`, in the
+        currency of `acc_from`, out of it, and `amount_to`, in that of `acc_to`, into it,
+        two debt accounts of the people (or two loan accounts) of different currencies. A
+        debt stays a debt and a loan a loan, at an exchange rate of its own.
+
+        Like add_debt_exchange, a pair of movements against the INTERMEDIARY account, each
+        following its own amount: both rows are of the amount in the base currency, if
+        either is, else of `amount_from` at the value of its currency on that date. What it
+        was worth over or under the value of the currencies then is a result of their next
+        revaluations (see _result_rows).
+        """
+        snapshot = self._load_frozen()
+        source, target = _people_account(snapshot, acc_from), _people_account(snapshot, acc_to)
+        if source.role != target.role:
+            raise ValueError(
+                f"{source.name} and {target.name} must both be debt accounts or loan accounts: a debt stays a debt, "
+                "and a loan a loan (move debt between them with the Debt/loan exchange form)"
+            )
+        if source.currency.name == target.currency.name:
+            raise ValueError(
+                f"{source.name} and {target.name} are both in {source.currency.name}: pick accounts of two currencies"
+            )
+        if _parse_date(move_date, "date") is None:
+            raise ValueError("The date is required")
+        value_from = _positive(amount_from, f"amount in {source.currency.name}")
+        value_to = _positive(amount_to, f"amount in {target.currency.name}")
+        if target.currency.is_base_currency:
+            base_value = value_to
+        else:
+            base_value = self._base_value(source, value_from, move_date)
+        # A debt is paid in one currency and incurred in the other; a loan collected and given
+        out = source.role == DebtRole.CREDITOR
+        self._add_debt_pair(snapshot, move_date, base_value, [
+            (source, out, who, value_from, f"changed to {target.currency.name}"),
+            (target, not out, who, value_to, f"changed from {source.currency.name}"),
+        ], comment)
+
+    @staticmethod
+    def _base_value(account: Account, value: float, move_date: str) -> float:
+        """An amount in the currency of an account, in the base one at its value on that date."""
+        if account.currency.is_base_currency:
+            return value
+        return round(value * _value_on(account.currency, move_date, f"to convert from {account.currency.name}"), 2)
+
+    def _load_frozen(self) -> Snapshot:
+        """The Snapshot, with every row of the ledger CSV with its id first, so the ids of the next ones are known."""
+        path = self._movement_file("rows")[0]
+        if _existing(path) and path.read_bytes().strip():
+            self._freeze_file(path, LEDGER_ID)
+        return self.load()
+
+    def _add_debt_pair(
+        self, snapshot: Snapshot, move_date: str, base_value: float,
+        legs: list[tuple[DebtAccount, bool, str, float, str]], comment: str,
+    ) -> None:
+        """
+        Add two debt movements against the INTERMEDIARY account, linked to each other (see
+        linked_ids), of `base_value` in the base currency: each leg (its debt account,
+        whether it is debited, who it is about, the amount in its currency and a note
+        before the comment) of its debt base movement (see DEBT_LEG_BASES), its comment
+        starting with who it is about (see _debt_comment), with its amount in its OTHER_AMOUNT if its
+        account is in another currency. The INTERMEDIARY account balances with both.
+        """
+        comment = comment.replace(";", ",").strip()
+        rows = []
+        for account, debited, who, own, note in legs:
+            debit, credit = (account.name, INTERMEDIARY) if debited else (INTERMEDIARY, account.name)
+            # Named first, even if the note or the comment names them later
+            text = _debt_comment(snapshot, debit, credit, who, f"{who.strip()}: {note}{', ' + comment if comment else ''}")
+            field, row = _movement_row(
+                snapshot, move_date, DEBT_LEG_BASES[account.role, debited], debit, credit, base_value, text,
+                False, "", "", True, False,
+            )
+            if is_foreign(account):
+                row[OTHER_AMOUNT] = f"{own:,.4f}"
+            rows.append((field, row))
+        first = int(next_id(snapshot.rows, LEDGER_ID).split("-")[1])
+        ids = [f"{LEDGER_ID}-{first + i}" for i in range(len(rows))]
+        for i, (_, row) in enumerate(rows):
+            row[LINKED_COLUMN] = " ".join(own for own in ids if own != ids[i])
+        self._add_linked(snapshot, rows, None)

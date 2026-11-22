@@ -30,7 +30,7 @@ from pledger.web.store import (
 from pledger.web.store.common import _parse_amount, _value_on
 from pledger.web.store.movements import debt_amount
 from pledger.web.views.common import account_movements, composition, months_of
-from pledger.web.views.forms import account_fields
+from pledger.web.views.forms import account_fields, by_group
 
 CREDITOR_KIND_LABELS = {
     CreditorKind.PERSON: "People", CreditorKind.SERVICE: "Services", CreditorKind.COMPANY: "Companies",
@@ -369,7 +369,7 @@ def debt_form_fields(snapshot: Snapshot, base_movement: str = "", kind: str = ""
         "bases": list(bases),
         "base_movement": base_movement,
         "missing": missing,
-        "fields": people_fields(snapshot, account_fields(snapshot, base_movement)),
+        "fields": people_fields(snapshot, account_fields(snapshot, base_movement), base_movement),
         "debt_side": "acc_credit" if DEBT_BASES.get(base_movement) == LedgerSide.CREDIT else "acc_debit",
         "who": sorted(who),
         "difference_missing": sorted(DIFFERENCES.keys() - snapshot.difference_base_movements().keys()),
@@ -382,14 +382,23 @@ def debt_form_fields(snapshot: Snapshot, base_movement: str = "", kind: str = ""
     }
 
 
-def people_fields(snapshot: Snapshot, fields: dict) -> dict:
-    """The account fields of a debt base movement (see account_fields) without the debt accounts of the services and the companies."""
-    others = {a.name for a in snapshot.accounts.values() if isinstance(a, DebtAccount) and a.kind != CreditorKind.PERSON}
+def people_fields(snapshot: Snapshot, fields: dict, base_movement: str = "") -> dict:
+    """
+    The account fields of a debt base movement (see account_fields) without the debt
+    accounts of the services and the companies, and without any debt or loan account on
+    the free side, the one not of its debt account (see DEBT_BASES): debt moves between
+    them with the Debt/loan exchange and Change debt/loan currency forms.
+    """
+    debts = {a.name: a for a in snapshot.accounts.values() if isinstance(a, DebtAccount)}
+    others = {n for n, a in debts.items() if a.kind != CreditorKind.PERSON}
+    debt_side = DEBT_BASES.get(base_movement)
     fields = dict(fields)
     for side in ("debit", "credit"):
-        fields[f"{side}_options"] = [n for n in fields[f"{side}_options"] if n not in others]
+        free = debt_side is not None and side != debt_side.value
+        out = set(debts) if free else others
+        fields[f"{side}_options"] = [n for n in fields[f"{side}_options"] if n not in out]
         fields[f"{side}_groups"] = {
-            g: kept for g, names in fields[f"{side}_groups"].items() if (kept := [n for n in names if n not in others])
+            g: kept for g, names in fields[f"{side}_groups"].items() if (kept := [n for n in names if n not in out])
         }
     return fields
 
@@ -426,4 +435,70 @@ def debt_difference(
     return {
         "who": who, "account": debt.name, "own": own_currency(debt), "balance": balance, "remaining": remaining,
         "base": difference[0] if difference else None, "amount": difference[1] if difference else 0.0,
+    }
+
+
+def people_debt_accounts(snapshot: Snapshot) -> list[DebtAccount]:
+    """The debt and loan accounts of the people, of every currency, in the order of the currencies."""
+    return [a for a in snapshot.accounts.values() if isinstance(a, DebtAccount) and a.kind == CreditorKind.PERSON]
+
+
+# What a side of a debt or loan account does to the balance with someone (see DEBT_BASES),
+# debited or not: none picked yet, either.
+SIDE_EFFECTS = {
+    (DebtRole.CREDITOR, True): "we owe them less", (DebtRole.CREDITOR, False): "we owe them more",
+    (DebtRole.DEBTOR, True): "they owe us more", (DebtRole.DEBTOR, False): "they owe us less",
+    (None, True): "we owe them less, or they owe us more", (None, False): "we owe them more, or they owe us less",
+}
+
+
+def exchange_fields(snapshot: Snapshot, values: dict) -> dict:
+    """
+    The fields of the Debt/loan exchange form (see LinkedStore.add_debt_exchange): the
+    debt and loan accounts of the people of each side, grouped by currency (see
+    by_group), with who of the one picked it can be about and what it does to them, and
+    the currency of the amount, that of the accounts picked: a warning if they differ.
+    """
+    accounts = {a.name: a for a in people_debt_accounts(snapshot)}
+    sides = {}
+    for side in ("debit", "credit"):
+        account = accounts.get(values.get(f"acc_{side}", ""))
+        sides[side] = {
+            "account": account.name if account else "",
+            "who": sorted(account.creditors) if account else [],
+            "effect": SIDE_EFFECTS[account.role if account else None, side == "debit"],
+            "currency": account.currency.name if account else None,
+        }
+    picked = [accounts[s["account"]] for s in sides.values() if s["account"]]
+    return {
+        "groups": by_group(snapshot, list(accounts)),
+        "sides": sides,
+        "amount_currency": own_currency(picked[0]) if picked else None,
+        "mismatch": len({a.currency.name for a in picked}) > 1,
+    }
+
+
+# The kinds of the Change debt/loan currency form, with their color and role
+CURRENCY_KINDS = [(title, color, role) for title, color, _, role in DEBT_PAIRS]
+
+
+def currency_change_fields(snapshot: Snapshot, values: dict) -> dict:
+    """
+    The fields of the Change debt/loan currency form (see LinkedStore.add_debt_currency_change):
+    the kind picked (Debt by default), who can be in its accounts, the accounts of its role
+    of each currency to change it from and to, and the currency of each amount. Not
+    `available` without accounts of two currencies.
+    """
+    kind = next((k for k in CURRENCY_KINDS if k[0] == values.get("debt_kind")), CURRENCY_KINDS[0])
+    accounts = {a.name: a for a in snapshot.role_accounts(kind[2])}
+    picked = {side: accounts.get(values.get(f"acc_{side}", "")) for side in ("from", "to")}
+    return {
+        "available": len({a.currency.name for a in people_debt_accounts(snapshot)}) > 1,
+        "kinds": [{"title": t, "color": c} for t, c, _ in CURRENCY_KINDS],
+        "kind": kind[0],
+        "options": list(accounts),
+        "who": sorted({n for a in accounts.values() for n in a.creditors}),
+        "accounts": {side: a.name if a else "" for side, a in picked.items()},
+        "currencies": {side: a.currency.name if a else None for side, a in picked.items()},
+        "base_currency": snapshot.base_currency.name,
     }

@@ -72,6 +72,28 @@ class DebtMovementIn(MovementIn):
     amount_debt: float | None = None
 
 
+class DebtExchangeIn(BaseModel):
+    """Debt moved between two debt or loan accounts of the people of the same currency (see add_debt_exchange)."""
+    move_date: str
+    acc_debit: str  # what we owe who_debit in it goes down (in a loan account, what they owe us goes up)
+    who_debit: str
+    acc_credit: str  # what we owe who_credit in it goes up (in a loan account, what they owe us goes down)
+    who_credit: str
+    amount: float  # in the currency of both accounts
+    comment: str = ""
+
+
+class DebtCurrencyChangeIn(BaseModel):
+    """What is owed with someone in one currency, changed to another (see add_debt_currency_change)."""
+    move_date: str
+    who: str
+    acc_from: str  # a debt account of the people (or a loan one)
+    acc_to: str  # another one of the same role, of another currency
+    amount_from: float  # in the currency of acc_from
+    amount_to: float  # in the currency of acc_to
+    comment: str = ""
+
+
 class PersonIn(BaseModel):
     name: str
     amount: float | None = None  # initial debt in the base currency (positive: we owe them), 0 by default

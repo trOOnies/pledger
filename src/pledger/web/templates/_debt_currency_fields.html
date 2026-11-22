@@ -1,0 +1,45 @@
+{# The fields of the Change debt/loan currency form that depend on its kind and accounts: see views.currency_change_fields. #}
+{% macro account(side, label) %}
+<label>{{ label }}
+  <select name="acc_{{ side }}" required hx-get="/form/debt-currency-fields" hx-target="#debt-currency-fields"
+    hx-swap="innerHTML" hx-include="closest form">
+    <option value="">Choose…</option>
+    {% for acc in options %}<option {% if acc == accounts[side] %}selected{% endif %}>{{ acc }}</option>{% endfor %}
+  </select>
+</label>
+{% endmacro %}
+{% macro amount(side, label) %}
+{% set code = currencies[side] %}
+<label>{{ label }}{% if code %} <em class="optional">(in {{ code }})</em>{% endif %}
+  <span class="money-input">
+    <span class="prefix">{{ currency if not code or code == base_currency else code }}</span>
+    <input name="amount_{{ side }}" inputmode="decimal" min="0" value="{{ values['amount_' ~ side] }}" placeholder="0.00" required autocomplete="off" data-money="4">
+  </span>
+</label>
+{% endmacro %}
+<div class="field">
+  <span class="field-label" id="debt-currency-kind">Kind</span>
+  <div class="segmented types" role="radiogroup" aria-labelledby="debt-currency-kind">
+    {% for k in kinds %}
+    <label class="{{ k.color }}">
+      <input type="radio" name="debt_kind" value="{{ k.title }}" {% if k.title == kind %}checked{% endif %}
+        hx-get="/form/debt-currency-fields" hx-target="#debt-currency-fields" hx-swap="innerHTML" hx-include="closest form">
+      {{ k.title }}
+    </label>
+    {% endfor %}
+  </div>
+</div>
+<label>Who <span class="muted small">(of the {{ "debt" if kind == "Debt" else "loan" }} accounts)</span>
+  <select name="who" required>
+    <option value="">Choose…</option>
+    {% for name in who %}<option {% if name == values.who %}selected{% endif %}>{{ name }}</option>{% endfor %}
+  </select>
+</label>
+<div class="pair">
+  {{ account("from", "From") }}
+  {{ account("to", "To") }}
+</div>
+<div class="pair">
+  {{ amount("from", "Amount from") }}
+  {{ amount("to", "Amount to") }}
+</div>

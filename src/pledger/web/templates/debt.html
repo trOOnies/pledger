@@ -26,6 +26,14 @@
       {{ debt_form | safe }}
     </section>
     <section class="panel">
+      {{ exchange_form | safe }}
+    </section>
+    {% if currency_form %}
+    <section class="panel">
+      {{ currency_form | safe }}
+    </section>
+    {% endif %}
+    <section class="panel">
       {{ person_form | safe }}
     </section>
   </aside>

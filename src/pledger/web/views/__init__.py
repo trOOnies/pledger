@@ -87,9 +87,11 @@ from pledger.web.views.debt import (
     DEBT_PAIRS,
     UNASSIGNED,
     build_debts,
+    currency_change_fields,
     debt_after,
     debt_difference,
     debt_form_fields,
+    exchange_fields,
     people_fields,
 )
 from pledger.web.views.forms import (
@@ -210,6 +212,7 @@ __all__ = [
     "conversion_filter",
     "cpi_chart",
     "cumulative_composition",
+    "currency_change_fields",
     "currency_week_form",
     "currency_weeks",
     "debt_after",
@@ -218,6 +221,7 @@ __all__ = [
     "default_move_type",
     "equity_metrics",
     "equity_series",
+    "exchange_fields",
     "expense_months",
     "fees_share",
     "grouped_composition",

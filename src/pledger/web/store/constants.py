@@ -110,7 +110,8 @@ CONVERSION_COLUMNS = ["move_date", "base_movement", "acc_debit", BASE_AMOUNT, "a
 
 # Optional column of the conversions CSV: the ids of the movements of other CSVs a conversion
 # was added with, through the INTERMEDIARY account, which only balances with all of them.
-# They are deleted together (see linked_ids).
+# Also of the ledger CSV: the id of the other row of a pair of debt movements through the
+# INTERMEDIARY (see LinkedStore.add_debt_exchange). They are deleted together (see linked_ids).
 LINKED_COLUMN = "linked"
 
 

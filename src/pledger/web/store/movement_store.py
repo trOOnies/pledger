@@ -144,7 +144,9 @@ class MovementStore(StoreBase):
         if self._linked_group(snapshot, "rows", index) and not card_payment and (
             move_date != current["move_date"] or _parse_amount(amount, "amount") != _amount_of(current["amount"])
         ):
-            raise ValueError("Its date and amount came with its conversion: delete the movement and add it again")
+            raise ValueError(
+                "Its date and amount came with the movements it was added with: delete the movement and add it again"
+            )
         if (
             amount_other is None and str(current.get(OTHER_AMOUNT, "")).strip()
             and _parse_amount(amount, "amount") != _amount_of(current["amount"])

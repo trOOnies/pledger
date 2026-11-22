@@ -7,7 +7,12 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query
 
 from pledger.web.dependencies import StoreDep
-from pledger.web.schemas import DebtMovementIn, PersonIn
+from pledger.web.schemas import (
+    DebtCurrencyChangeIn,
+    DebtExchangeIn,
+    DebtMovementIn,
+    PersonIn,
+)
 from pledger.web.store import StaleRowError
 
 router = APIRouter(prefix="/api/debt", tags=["debt"])
@@ -26,6 +31,34 @@ def create_debt_movement(store: StoreDep, movement: DebtMovementIn):
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e)) from None
     return {"ok": True, "difference": dict(zip(("base_movement", "amount"), difference)) if difference else None}
+
+
+@router.post("/exchanges", status_code=201)
+def create_debt_exchange(store: StoreDep, exchange: DebtExchangeIn):
+    """
+    Two debt movements through the intermediary account, linked to each other: what we owe
+    `who_debit` in `acc_debit` goes down by `amount`, and what we owe `who_credit` in
+    `acc_credit` goes up, two debt or loan accounts of the people of the same currency.
+    """
+    try:
+        store.add_debt_exchange(**exchange.model_dump())
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
+    return {"ok": True}
+
+
+@router.post("/currency-changes", status_code=201)
+def create_debt_currency_change(store: StoreDep, change: DebtCurrencyChangeIn):
+    """
+    Two debt movements through the intermediary account, linked to each other: `amount_from`
+    owed with `who` out of `acc_from`, and `amount_to` into `acc_to`, of the same role in
+    another currency (a debt stays a debt, and a loan a loan).
+    """
+    try:
+        store.add_debt_currency_change(**change.model_dump())
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from None
+    return {"ok": True}
 
 
 @router.post("/people", status_code=201)

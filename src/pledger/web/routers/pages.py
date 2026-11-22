@@ -18,6 +18,8 @@ from pledger.web.templating import (
     render_collection_form,
     render_conversion_form,
     render_currency_week_form,
+    render_debt_currency_form,
+    render_debt_exchange_form,
     render_debt_form,
     render_form,
     render_invest_form,
@@ -125,6 +127,9 @@ def debt(request: Request, store: StoreDep, month: str | None = None, who: str =
     if is_partial(request):
         return remember_month(templates.TemplateResponse(request, "_debt.html", context), month)
     context["debt_form"] = render_debt_form(request, snapshot, {}).body.decode()
+    context["exchange_form"] = render_debt_exchange_form(request, snapshot, {}).body.decode()
+    currency_form = render_debt_currency_form(request, snapshot, {})
+    context["currency_form"] = currency_form.body.decode() if currency_form.context["available"] else ""
     context["person_form"] = render_person_form(request, {}).body.decode()
     return remember_month(templates.TemplateResponse(request, "debt.html", context), month)
 

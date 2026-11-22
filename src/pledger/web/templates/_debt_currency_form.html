@@ -1,0 +1,22 @@
+{# The Change debt/loan currency form of the People tab: what is owed with someone in one currency,
+   changed to another (see LinkedStore.add_debt_currency_change). Only with accounts of two currencies. #}
+<form id="debt-currency-form" class="stack" hx-post="/debt/currency-changes" hx-swap="outerHTML">
+  <h2>Change debt/loan currency</h2>
+  {% if error %}<p class="msg error">{{ error }}</p>{% endif %}
+  {% if success %}<p class="msg success">{{ success }}</p>{% endif %}
+  <label>Date
+    <input type="date" name="move_date" value="{{ values.move_date }}" required data-future-warning>
+    <span class="hint warn" hidden>⚠️ This date is in the future.</span>
+  </label>
+  <div id="debt-currency-fields" class="stack">{% include "_debt_currency_fields.html" %}</div>
+  <span hidden hx-get="/form/debt-currency-fields" hx-trigger="person-added from:body" hx-target="#debt-currency-fields"
+    hx-swap="innerHTML" hx-include="#debt-currency-form"></span>
+  <label><span>Comment <em class="optional">(optional)</em></span>
+    <input name="comment" value="{{ values.comment }}" autocomplete="off">
+  </label>
+  <p class="muted small">Changes what is owed with someone from one currency to another, at an exchange rate of its
+    own: a debt stays a debt, and a loan a loan. Added as two debt movements through <code>Fi</code>, each account
+    following its own amount, deleted together; what it was worth over or under the value of the currencies then is
+    revalued later, in the <a href="/currencies">Currencies</a> tab.</p>
+  <button type="submit">Change currency</button>
+</form>

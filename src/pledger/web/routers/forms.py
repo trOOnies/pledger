@@ -29,6 +29,8 @@ from pledger.web.templating import (
     render_collection_form,
     render_conversion_form,
     render_currency_week_form,
+    render_debt_currency_form,
+    render_debt_exchange_form,
     render_debt_form,
     render_form,
     render_invest_form,
@@ -57,8 +59,10 @@ from pledger.web.views import (
     closing_dates,
     conversion_fields,
     conversion_filter,
+    currency_change_fields,
     debt_difference,
     debt_form_fields,
+    exchange_fields,
     invest_fields,
     invest_filter,
     people_fields,
@@ -86,7 +90,7 @@ def form_accounts(request: Request, store: StoreDep, base_movement: str = "", pe
     return templates.TemplateResponse(
         request,
         "_account_fields.html",
-        {"fields": people_fields(snapshot, fields) if people else fields, "values": {}},
+        {"fields": people_fields(snapshot, fields, base_movement) if people else fields, "values": {}},
     )
 
 
@@ -632,6 +636,71 @@ def create_debt_movement(
         what += f" and {difference[0]}: {amount_text(debt, difference[1], symbol)}"
     future = " (dated in the future)" if move_date > dt.date.today().isoformat() else ""
     response = render_debt_form(request, snapshot, keep, success=f"Added {base_movement} ({who.strip()}): {what}{future}")
+    response.headers["HX-Trigger"] = "debt-changed"
+    return response
+
+
+@router.post("/debt/exchanges")
+def create_debt_exchange(
+    request: Request,
+    store: StoreDep,
+    move_date: Annotated[str, Form()],
+    amount: Annotated[str, Form()],
+    acc_debit: Annotated[str, Form()] = "",
+    who_debit: Annotated[str, Form()] = "",
+    acc_credit: Annotated[str, Form()] = "",
+    who_credit: Annotated[str, Form()] = "",
+    comment: Annotated[str, Form()] = "",
+):
+    values = {
+        "move_date": move_date, "acc_debit": acc_debit, "who_debit": who_debit, "acc_credit": acc_credit,
+        "who_credit": who_credit, "amount": amount, "comment": comment,
+    }
+    try:
+        store.add_debt_exchange(move_date, acc_debit, who_debit, acc_credit, who_credit, amount, comment)
+    except ValueError as e:
+        return render_debt_exchange_form(request, store.load(), values, error=str(e))
+    snapshot = store.load()
+    what = amount_text(snapshot.accounts[acc_debit], amount, store.settings.currency)
+    future = " (dated in the future)" if move_date > dt.date.today().isoformat() else ""
+    response = render_debt_exchange_form(
+        request, snapshot, {"move_date": move_date},
+        success=f"Added an exchange of {what}: {who_debit.strip()} in {acc_debit}, {who_credit.strip()} in {acc_credit}{future}",
+    )
+    response.headers["HX-Trigger"] = "debt-changed"
+    return response
+
+
+@router.post("/debt/currency-changes")
+def create_debt_currency_change(
+    request: Request,
+    store: StoreDep,
+    move_date: Annotated[str, Form()],
+    amount_from: Annotated[str, Form()],
+    amount_to: Annotated[str, Form()],
+    who: Annotated[str, Form()] = "",
+    debt_kind: Annotated[str, Form()] = "",
+    acc_from: Annotated[str, Form()] = "",
+    acc_to: Annotated[str, Form()] = "",
+    comment: Annotated[str, Form()] = "",
+):
+    values = {
+        "move_date": move_date, "who": who, "debt_kind": debt_kind, "acc_from": acc_from, "acc_to": acc_to,
+        "amount_from": amount_from, "amount_to": amount_to, "comment": comment,
+    }
+    try:
+        store.add_debt_currency_change(move_date, who, acc_from, acc_to, amount_from, amount_to, comment)
+    except ValueError as e:
+        return render_debt_currency_form(request, store.load(), values, error=str(e))
+    snapshot = store.load()
+    symbol = store.settings.currency
+    source, target = snapshot.accounts[acc_from], snapshot.accounts[acc_to]
+    future = " (dated in the future)" if move_date > dt.date.today().isoformat() else ""
+    response = render_debt_currency_form(
+        request, snapshot, {"move_date": move_date, "debt_kind": debt_kind},
+        success=f"Changed {amount_text(source, amount_from, symbol)} with {who.strip()} in {acc_from} to "
+        f"{amount_text(target, amount_to, symbol)} in {acc_to}{future}",
+    )
     response.headers["HX-Trigger"] = "debt-changed"
     return response
 
@@ -1195,6 +1264,35 @@ def form_debt_difference(
         if remaining_as_difference else {}
     )
     return templates.TemplateResponse(request, "_debt_difference.html", {"asked": remaining_as_difference, **context})
+
+
+@router.get("/form/debt-exchange-fields")
+def form_debt_exchange_fields(
+    request: Request, store: StoreDep, acc_debit: str = "", who_debit: str = "", acc_credit: str = "",
+    who_credit: str = "", amount: str = "",
+):
+    """The fields of the Debt/loan exchange form for the accounts picked, still about who was picked if they can be."""
+    values = {"acc_debit": acc_debit, "who_debit": who_debit, "acc_credit": acc_credit, "who_credit": who_credit, "amount": amount}
+    return templates.TemplateResponse(
+        request, "_debt_exchange_fields.html",
+        {"currency": store.settings.currency, "values": values, **exchange_fields(store.load(), values)},
+    )
+
+
+@router.get("/form/debt-currency-fields")
+def form_debt_currency_fields(
+    request: Request, store: StoreDep, debt_kind: str = "", who: str = "", acc_from: str = "", acc_to: str = "",
+    amount_from: str = "", amount_to: str = "",
+):
+    """The fields of the Change debt/loan currency form for the kind and accounts picked."""
+    values = {
+        "debt_kind": debt_kind, "who": who, "acc_from": acc_from, "acc_to": acc_to,
+        "amount_from": amount_from, "amount_to": amount_to,
+    }
+    return templates.TemplateResponse(
+        request, "_debt_currency_fields.html",
+        {"currency": store.settings.currency, "values": values, **currency_change_fields(store.load(), values)},
+    )
 
 
 @router.get("/form/debt-movement")

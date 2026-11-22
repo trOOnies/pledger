@@ -38,6 +38,7 @@ from pledger.web.store.constants import (
     CONVERSIONS,
     ID_COLUMN,
     INITIAL_ID,
+    LEDGER_ID,
     LINKED_COLUMN,
     OTHER_AMOUNT,
     RESULT_GAIN,
@@ -151,15 +152,16 @@ def _cross_rows(
 def linked_ids(snapshot: Snapshot) -> dict[str, set[str]]:
     """
     The movements added together through the INTERMEDIARY account: the id of each one to
-    the ids of them all, from the LINKED_COLUMN of their conversion.
+    the ids of them all, from the LINKED_COLUMN of their conversion, or of the rows of a
+    pair of debt movements in the ledger CSV.
     """
     groups: dict[str, set[str]] = {}
-    if LINKED_COLUMN in snapshot.conversions.columns:
-        rows = snapshot.conversions
-        for own, text in zip(stored_ids(rows, CONVERSION_ID), rows[LINKED_COLUMN]):
-            if own and str(text).split():
-                group = {own, *str(text).split()}
-                groups |= dict.fromkeys(group, group)
+    for rows, prefix in ((snapshot.conversions, CONVERSION_ID), (snapshot.rows, LEDGER_ID)):
+        if LINKED_COLUMN in rows.columns:
+            for own, text in zip(stored_ids(rows, prefix), rows[LINKED_COLUMN]):
+                if own and str(text).split():
+                    group = {own, *str(text).split(), *groups.get(own, ())}
+                    groups |= dict.fromkeys(group, group)
     return groups
 
 

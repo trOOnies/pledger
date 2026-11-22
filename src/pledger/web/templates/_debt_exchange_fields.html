@@ -1,0 +1,43 @@
+{# The fields of the Debt/loan exchange form that depend on its accounts: see views.exchange_fields. #}
+{% macro account(side, label) %}
+{% set s = sides[side] %}
+<label><span>{{ label }} <em class="optional">({{ s.effect }})</em></span>
+  <select name="acc_{{ side }}" required hx-get="/form/debt-exchange-fields" hx-target="#debt-exchange-fields"
+    hx-swap="innerHTML" hx-include="closest form">
+    <option value="">Choose…</option>
+    {% for group, names in groups.items() %}
+    <optgroup label="{{ group }}">
+      {% for acc in names %}<option {% if acc == s.account %}selected{% endif %}>{{ acc }}</option>{% endfor %}
+    </optgroup>
+    {% endfor %}
+  </select>
+</label>
+{% endmacro %}
+{% macro who(side) %}
+{% set s = sides[side] %}
+<label>Who{% if s.account %} <span class="muted small">(of {{ s.account }})</span>{% endif %}
+  <select name="who_{{ side }}" required {% if not s.account %}disabled{% endif %}>
+    <option value="">{{ "Choose…" if s.account else "Pick its account first" }}</option>
+    {% for name in s.who %}<option {% if name == values["who_" ~ side] %}selected{% endif %}>{{ name }}</option>{% endfor %}
+  </select>
+</label>
+{% endmacro %}
+<div class="pair">
+  {{ account("debit", "Debit") }}
+  {{ account("credit", "Credit") }}
+</div>
+<div class="pair">
+  {{ who("debit") }}
+  {{ who("credit") }}
+</div>
+{% if mismatch %}
+<p class="msg warn small">{{ sides.debit.account }} is in {{ sides.debit.currency }} and {{ sides.credit.account }} in
+  {{ sides.credit.currency }}: an exchange is between two accounts of the same currency. Change the currency of a
+  debt or loan in the Change debt/loan currency form.</p>
+{% endif %}
+<label>Amount{% if amount_currency %} <em class="optional">(in {{ amount_currency }})</em>{% endif %}
+  <span class="money-input">
+    <span class="prefix">{{ amount_currency or currency }}</span>
+    <input name="amount" inputmode="decimal" min="0" value="{{ values.amount }}" placeholder="0.00" required autocomplete="off" data-money="4">
+  </span>
+</label>

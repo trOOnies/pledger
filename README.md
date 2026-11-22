@@ -80,7 +80,7 @@ A FastAPI + HTMX UI, one tab per area:
 | 📊 **Results** | The nominal and real change of equity in the period and the months of expenses it covers (how long equity would last at the average monthly losses of the last year, leaving out the initial ones and those of the built-in result types and of those tagged `employment`), gains, losses and profit by result type (also cumulative), a waterfall of the result by type (with its result statement as a table, both also as a share of the gains of the first result type, e.g. *Operative*), equity in months of expenses at each month end (of the loss result types picked, or their raw average monthly losses stacked) and equity over time. Result types and base movements are listed and added here, with a badge on the result types tagged Employment. |
 | 💼 **Work** | The company, job position and salary of each month, from gross to net through its deductions (taxes, contributions...), with a chart of both salaries (0 for the months without a job). Below, what each company owes in `Wo` (the net salaries it hasn't paid yet) and its movements; the salaries received are added (*Salary received*) and deleted here. |
 | 📈 **Investments** | The investments of the investment accounts with their price (amount over quantity), their composition by type or by account, the results of each one, the interest on money of regular accounts, and charts of the total invested and the total result. The broker fees of each investment are shown over its amount. The **Investment account**, **Investment** and **Base movement** filters narrow the movements down (an investment shows all its movements, whatever their accounts), each with the total of its account and the amount and quantity of its investment after it. The built-in `Invest` movements are added, edited and deleted here, and so are new prices of the investments, from which their capital gains and losses are generated. |
-| 👥 **People** | Who we owe and who owes us among the people, in the debt and loan accounts of each currency, each in its currency and in all in the base one, with alerts and the movements of the month, each with what we owe whoever it names after it. The debt and loan movements of the people are added and edited here, in any currency, and new people added to `creditors.yaml`. (The `Debt` menu has People, Services and Credit Cards.) |
+| 👥 **People** | Who we owe and who owes us among the people, in the debt and loan accounts of each currency, each in its currency and in all in the base one, with alerts and the movements of the month, each with what we owe whoever it names after it. The debt and loan movements of the people are added and edited here, in any currency, debt is moved between their debt and loan accounts (a *Debt/loan exchange*) or to another currency (*Change debt/loan currency*), and new people added to `creditors.yaml`. (The `Debt` menu has People, Services and Credit Cards.) |
 | 🧾 **Services** | The services, in their own debt accounts `SeD` and `SeL`, with their base movements and monthly values, what was owed to them this month and in all, and what we owe them now, with the table of monthly values and the movements of `SeD` and `SeL`. The monthly values and the payments (*New service payment*) are added here, and the payments deleted. |
 | 💳 **Credit Cards** | What we owe on each card (also in its currency, for a card in another one), what was charged and paid in the month, a chart of the monthly charges, the net owed over equity, and the movements of the month (charges included), each with what we owe on its card after it, and the installments of the statement of the month, made or still due. The card payments are added and edited here, and so are the statement closing dates of each card for each month. |
 | 🛒 **Cart** | Many movements at once: a purchase at a store on a date, paid from an account, with its products in bags of a base movement (and installments, with a credit card). The carts are listed, edited and deleted here. See [Cart](#cart). |
@@ -846,7 +846,8 @@ They are only added from their tabs (or `/api/debt/movements`), each naming who 
 in the comment, who must be of the account: a person in the debt accounts of the people, a service
 in `SeD` or `SeL`, a company in `Wo`. The **People** tab adds, edits and deletes those of the people,
 picking one of them in two steps (Debt, then Incurred or Paid; Loan, then Given or Collected), with
-only the debt accounts of the people on either side. Its form asks who of its account the movement
+only the debt accounts of the people on the side of its debt account and never a debt or loan
+account on the other one (see *Exchanges and currency changes* below). Its form asks who of its account the movement
 is about (so never an expected debtor for a debt, or an expected creditor for a loan). The Ledger tab
 shows them with a 🟡 linking there. The services are paid from the [Services](#services) tab (`Debt -
 Paid` in `SeD`, `Loan - Given` in `SeL`), and the salaries received from the [Work](#work) tab (`Loan -
@@ -878,6 +879,32 @@ movements. So whatever a movement paid over or under the value of the currency t
 currency` result of its next date of `currencies.csv`, while what is owed in it stays as it was. The
 debt accounts never take conversions of their own, and a gain or loss of one in another currency
 in the Ledger tab is in its currency too, a single row with its `amount_other_currency`.
+
+**Exchanges and currency changes.** Debt moves between the debt and loan accounts of the people
+with two forms of their own in the People tab (or `POST /api/debt/exchanges` and
+`/api/debt/currency-changes`), as the debt movement form never has one on both sides:
+
+- **Debt/loan exchange**: between two debt or loan accounts of the same currency, or two people of
+  one, picking the account and who of it of each side. What we owe whoever is on the *Debit* side
+  goes down (in a loan account, what they owe us goes up), and what we owe whoever is on the
+  *Credit* side goes up (what they owe us goes down): e.g. Mum paying Dad what she owed us (`De`
+  for Dad, `Lo` for Mum), or what we owe Dad passing to Mum (`De` for both).
+- **Change debt/loan currency**: what is owed with someone in one currency, changed to another at a
+  rate of its own, from a debt account to the debt account of another currency (or a loan account to
+  a loan account): a debt stays a debt, and a loan a loan. It asks for the amount in each currency,
+  and each account follows its own. Only shown with debt accounts in more than one currency.
+
+Each is a pair of debt movements of the four built-in transfers above against `Fi`, one about each
+side, each naming its person first in the comment (with what it was, like `Dad: exchange with Mum
+in Lo` or `Dad: changed to ARS`), so each account adds it to them. Their rows name each other in
+the `linked` column of `ledger.csv` (added with the first pair): they are deleted together, and
+editing one only changes who it is about, its comment and its amount in another currency. Both rows
+are of the same amount in the base currency, so `Fi` balances: that of the accounts, if they are in
+the base currency, else of the amount at the value of its currency on that date (of the amount
+changed from, in a currency change between two other currencies), with the amount in each account
+in another currency in its `amount_other_currency`. Like any debt movement in another currency, what
+that was worth over or under the value of the currencies then is a result of their next
+revaluations.
 `/api/debt/movements` takes the amount of the debt account as `amount_debt`. When editing, *Amount*
 is the one in the ledger, in the base currency, and that of a debt account in another currency is
 required.

@@ -1,0 +1,22 @@
+{# The Debt/loan exchange form of the People tab: debt moved between two debt or loan accounts of
+   the people of the same currency, or two people of one (see LinkedStore.add_debt_exchange). #}
+<form id="debt-exchange-form" class="stack" hx-post="/debt/exchanges" hx-swap="outerHTML">
+  <h2>Debt/loan exchange</h2>
+  {% if error %}<p class="msg error">{{ error }}</p>{% endif %}
+  {% if success %}<p class="msg success">{{ success }}</p>{% endif %}
+  <label>Date
+    <input type="date" name="move_date" value="{{ values.move_date }}" required data-future-warning>
+    <span class="hint warn" hidden>⚠️ This date is in the future.</span>
+  </label>
+  <div id="debt-exchange-fields" class="stack">{% include "_debt_exchange_fields.html" %}</div>
+  {# Who it can be about, again once someone is added in the New person form #}
+  <span hidden hx-get="/form/debt-exchange-fields" hx-trigger="person-added from:body" hx-target="#debt-exchange-fields"
+    hx-swap="innerHTML" hx-include="#debt-exchange-form"></span>
+  <label><span>Comment <em class="optional">(optional)</em></span>
+    <input name="comment" value="{{ values.comment }}" autocomplete="off">
+  </label>
+  <p class="muted small">Moves debt between two debt or loan accounts of the same currency, or between two people
+    of one: e.g. someone who owed us paying someone we owed, or what we owe someone passing to someone else. Added as
+    two debt movements through <code>Fi</code>, one about each, deleted together.</p>
+  <button type="submit">Add exchange</button>
+</form>

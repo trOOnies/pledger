@@ -19,8 +19,10 @@ from pledger.web.views import (
     card_payment_fields,
     collection_form,
     conversion_fields,
+    currency_change_fields,
     currency_week_form,
     debt_form_fields,
+    exchange_fields,
     invest_fields,
     ledger_link,
     new_investment_fields,
@@ -279,6 +281,29 @@ def render_debt_form(request: Request, snapshot: Snapshot, values: dict, **extra
         request,
         "_debt_form.html",
         {"currency": request.app.state.store.settings.currency, "values": values, **fields, **extra},
+    )
+
+
+def render_debt_exchange_form(request: Request, snapshot: Snapshot, values: dict, **extra):
+    """The Debt/loan exchange form of the People tab (see views.exchange_fields)."""
+    values.setdefault("move_date", dt.date.today().isoformat())
+    return templates.TemplateResponse(
+        request,
+        "_debt_exchange_form.html",
+        {"currency": request.app.state.store.settings.currency, "values": values, **exchange_fields(snapshot, values), **extra},
+    )
+
+
+def render_debt_currency_form(request: Request, snapshot: Snapshot, values: dict, **extra):
+    """The Change debt/loan currency form of the People tab (see views.currency_change_fields)."""
+    values.setdefault("move_date", dt.date.today().isoformat())
+    return templates.TemplateResponse(
+        request,
+        "_debt_currency_form.html",
+        {
+            "currency": request.app.state.store.settings.currency, "values": values,
+            **currency_change_fields(snapshot, values), **extra,
+        },
     )
 
 
