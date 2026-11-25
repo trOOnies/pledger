@@ -208,7 +208,9 @@ class TestPages:
         assert "Added Gift: $5.00" in r.text and "(dated in the future)" not in r.text
         assert len(rows(settings)) == 5
 
-    def test_future_date_warns_but_is_saved(self, client, settings):
+    def test_future_date_warns_but_is_saved(self, client, settings, monkeypatch):
+        # Within this week (see test_not_after_this_week): a week later, it ends after it
+        monkeypatch.setattr("pledger.web.store.common.today", lambda: dt.date.today() + dt.timedelta(weeks=1))
         future = (dt.date.today() + dt.timedelta(days=3)).isoformat()
         form = {"move_date": future, "base_movement": "Gift", "acc_debit": "Ca", "acc_credit": "Eq", "amount": "5"}
         r = client.post("/movements", data=form, headers=HTMX)
@@ -216,6 +218,15 @@ class TestPages:
         assert len(rows(settings)) == 5
         # The form warns on the client before submitting
         assert "data-future-warning" in r.text and "This date is in the future" in r.text
+
+    def test_not_after_this_week(self, client, settings, monkeypatch):
+        monkeypatch.setattr("pledger.web.store.common.today", lambda: dt.date(2026, 11, 25))  # a Wednesday
+        form = {"base_movement": "Gift", "acc_debit": "Ca", "acc_credit": "Eq", "amount": "5"}
+        r = client.post("/movements", data=form | {"move_date": "2026-11-30"}, headers=HTMX)
+        assert 'class="msg error"' in r.text and "at most on the last day of this week, 2026-11-29" in r.text
+        assert len(rows(settings)) == 4
+        r = client.post("/movements", data=form | {"move_date": "2026-11-29"}, headers=HTMX)  # its Sunday
+        assert "Added Gift: $5.00" in r.text and len(rows(settings)) == 5
 
     @pytest.mark.parametrize(("amount", "message"), [("-5", "cannot be negative"), ("nan", "Invalid amount")])
     def test_negative_amount_is_blocked(self, client, settings, amount, message):

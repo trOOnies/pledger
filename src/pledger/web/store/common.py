@@ -26,6 +26,7 @@ from pledger.web.store.constants import (
     INTEREST_ACCOUNT,
     OTHER_AMOUNT,
 )
+from pledger.weeks import Week
 
 
 class LedgerDataError(Exception):
@@ -172,6 +173,17 @@ def _concat(frames: list[DataFrame], columns) -> DataFrame:
 def today() -> dt.date:
     """Today, up to which the services are owed (see _service_rows)."""
     return dt.date.today()
+
+
+def _check_not_after_this_week(rows: list[dict]) -> None:
+    """
+    A movement is never dated after this week (see weeks.Week): at most on its Sunday,
+    so none is ever booked in a later one.
+    """
+    end = Week.of(today()).end.isoformat()
+    later = sorted({r["move_date"] for r in rows if str(r.get("move_date", "")).strip() > end})
+    if later:
+        raise ValueError(f"A movement can be dated at most on the last day of this week, {end}, not on {', '.join(later)}")
 
 
 def _check_free_sides(base: MovementBase, acc_debit: Account, acc_credit: Account) -> None:

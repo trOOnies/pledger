@@ -10,6 +10,7 @@ from pandas import DataFrame
 
 from pledger.enums import MovementType
 from pledger.models import WORK_LOAN, Company, JobPosition, MovementBase, WorkMonth
+from pledger.web.store import common
 from pledger.web.store.common import _generated_rows, _parse_amount, _parse_date
 from pledger.web.store.constants import (
     COMPANY,
@@ -22,7 +23,7 @@ from pledger.web.store.constants import (
     SALARY_ID,
     WORK_COLUMNS,
 )
-from pledger.weeks import prorate_by_week
+from pledger.weeks import Week, prorate_by_week
 
 if TYPE_CHECKING:
     from pledger.web.store.snapshot import Snapshot
@@ -45,9 +46,13 @@ class Work:
 
     @property
     def current(self) -> WorkMonth | None:
-        """The last month, if it is not a gap: the current job."""
-        last = self.months[-1] if self.months else None
-        return None if last is None or last.is_gap else last
+        """
+        The current job: the one of the month of this week (see weeks.Week: of the
+        month of its Thursday), if it has one, whatever later months are listed.
+        """
+        month = Week.of(common.today()).month
+        this = next((m for m in self.months if m.month == month), None)
+        return None if this is None or this.is_gap else this
 
     def position_of(self, month: WorkMonth) -> JobPosition | None:
         return None if month.is_gap else self.companies[month.company].positions[month.position]
@@ -77,13 +82,15 @@ def _salary_rows(snapshot: Snapshot, start: int) -> DataFrame:
     """
     The salaries of the work history, as CSV rows indexed from `start` down: the gross
     salary of each month split equally between its weeks (see weeks.Week), as a SALARY
-    movement on the Monday of each one, from the first date of the ledger on, each
+    movement on the Monday of each one, from the first date of the ledger on up to this
+    week (never in a later one, even if later months are listed), each
     followed by the deductions of that week, split the same way, crediting the account
     the salary went to (see _deduction_bases). Their comment names the company first,
     so that Wo, the debit of the SALARY, owes them to it (see DebtAccount.creditor_in).
     """
     salary = snapshot.base_movements.get(SALARY)
     bases = _deduction_bases(snapshot, salary)
+    this_week = Week.of(snapshot.today)
     new_rows = []
     for month in snapshot.work.months:
         if month.is_gap:
@@ -93,7 +100,7 @@ def _salary_rows(snapshot: Snapshot, start: int) -> DataFrame:
             n: [amount for _, amount in prorate_by_week(month.month, d)] for n, d in month.deductions.items()
         }
         for i, (week, amount) in enumerate(weeks, 1):
-            if week.start.isoformat() < snapshot.start_date or (
+            if week > this_week or week.start.isoformat() < snapshot.start_date or (
                 snapshot.previous_month and week.month <= snapshot.previous_month
             ):
                 continue

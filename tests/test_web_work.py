@@ -37,7 +37,8 @@ class TestWork:
     def text(self, settings):
         return settings.work_path.read_text(encoding="utf-8")
 
-    def test_load(self, store):
+    def test_load(self, store, monkeypatch):
+        monkeypatch.setattr("pledger.web.store.common.today", lambda: dt.date(2026, 1, 14))
         work = store.load_work()
         assert [m.month for m in work.months] == ["2025-10", "2025-11", "2025-12", "2026-01"]
         assert work.months[2].is_gap
@@ -45,9 +46,29 @@ class TestWork:
         assert work.current.position == "GX Dev"
         assert work.position_of(work.months[1]).name == "Acme Sr"
 
-    def test_no_current_job_after_a_gap(self, store, settings):
+    def test_no_current_job_after_a_gap(self, store, settings, monkeypatch):
+        monkeypatch.setattr("pledger.web.store.common.today", lambda: dt.date(2026, 2, 11))
         settings.work_path.write_text(WORK_CSV + "\n2026-02;;;;", encoding="utf-8")
         assert store.load_work().current is None
+
+    @pytest.mark.parametrize(
+        ("today", "position"),
+        [
+            (dt.date(2026, 1, 14), "GX Dev"),
+            # Thursday 2026-01-01 makes the week from Monday 2025-12-29 one of 2026-01...
+            (dt.date(2025, 12, 31), "GX Dev"),
+            # ...and Thursday 2025-11-27 the week up to Sunday 2025-11-30 one of 2025-11, at Acme
+            (dt.date(2025, 11, 30), "Acme Sr"),
+            (dt.date(2025, 12, 1), None),  # a gap
+            (dt.date(2026, 3, 4), None),  # not listed yet
+        ],
+    )
+    def test_current_job_is_the_one_of_the_month_of_this_week(self, store, settings, monkeypatch, today, position):
+        # A new job listed for later months is not the current one yet
+        settings.work_path.write_text(WORK_CSV + "\n2026-02;Acme;Acme Sr;1;0", encoding="utf-8")
+        monkeypatch.setattr("pledger.web.store.common.today", lambda: today)
+        current = store.load_work().current
+        assert (current.position if current else None) == position
 
     @pytest.mark.parametrize(
         ("line", "error"),
@@ -144,7 +165,8 @@ class TestWork:
         store.delete_month(0, work_fingerprint(rows.iloc[0]))
         assert [m.month for m in store.load_work().months] == ["2025-11", "2025-12"]
 
-    def test_page(self, client):
+    def test_page(self, client, monkeypatch):
+        monkeypatch.setattr("pledger.web.store.common.today", lambda: dt.date(2026, 1, 14))
         r = client.get("/work")
         assert r.status_code == 200
         assert 'href="/work" aria-current="page"' in r.text
@@ -339,6 +361,13 @@ class TestSalaries:
             )
             for row in ((day, "Work - Salary Main", salary), (day, "Tax", tax))
         ]
+
+    def test_never_after_this_week(self, settings, monkeypatch):
+        # On Wednesday 2026-01-14, the salaries of 2026-01 are up to this week's, from
+        # Monday 2026-01-12, and none of 2026-02, though it is listed
+        monkeypatch.setattr("pledger.web.store.common.today", lambda: dt.date(2026, 1, 14))
+        settings.work_path.write_text(WORK_CSV + "\n2026-02;Globex;GX Dev;1000.00;200.00", encoding="utf-8")
+        assert sorted({r[0] for r in self.salaries(settings)}) == ["2026-01-05", "2026-01-12"]
 
     def test_are_in_the_ledger_and_owed_by_the_company(self, settings):
         snapshot = LedgerStore(settings).load()

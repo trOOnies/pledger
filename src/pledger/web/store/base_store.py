@@ -23,6 +23,7 @@ from pledger.web.store.common import (
     LedgerDataError,
     StaleRowError,
     _atomic_write,
+    _check_not_after_this_week,
     _CsvFile,
     _existing,
     _load_movements,
@@ -285,6 +286,7 @@ class StoreBase:
         Replace the values of `new_row` in the line of a row of the CSV of a Snapshot
         `field`, keeping its id and other columns.
         """
+        _check_not_after_this_week([new_row])
         csv_file = self._read_file(len(getattr(snapshot, field)), self._csv_of(field)[1])
         line = csv_file.row_lines[index]
         csv_file.lines[line] = self._replaced_line(csv_file.lines[0], csv_file.lines[line], new_row)
@@ -340,8 +342,9 @@ class StoreBase:
         """
         A CSV of movements with its ids frozen (see freeze_ids) and this row (or these
         rows, in order) appended with the next ids, ready to write. A missing or empty
-        CSV is a new one with this header and the ID_COLUMN.
+        CSV is a new one with this header and the ID_COLUMN. None is after this week.
         """
+        _check_not_after_this_week([row] if isinstance(row, dict) else row)
         if _existing(path) and path.read_bytes().strip():
             self._freeze_file(path, prefix)
             rows = read_csv(path, sep=";", dtype=str, keep_default_na=False, encoding="utf-8-sig")
