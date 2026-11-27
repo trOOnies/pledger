@@ -87,6 +87,40 @@ def static_version(path: str) -> int:
 
 
 templates.env.globals["static_version"] = static_version
+
+
+# The tabs, in the order and sections of the top bar: each section's name (None for the tabs
+# always in sight, the Dashboard first, as the pledger logo) and its tabs, each with the id of
+# its page in "The tabs" section of the Help tab, its emoji, title and path
+NAV = (
+    (None, (("dashboard", "🏠", "Dashboard", "/"),)),
+    ("Info", (
+        ("accounts", "🏦", "Accounts", "/accounts"),
+        ("currencies", "💱", "Currencies", "/currencies"),
+        ("results", "📊", "Results", "/results"),
+    )),
+    ("Revenue", (
+        ("work", "💼", "Work", "/work"),
+        ("investments", "📈", "Investments", "/investments"),
+    )),
+    ("Debt", (
+        ("people", "👥", "People", "/debt"),
+        ("services", "🧾", "Services", "/services"),
+        ("credit-cards", "💳", "Credit Cards", "/credit-cards"),
+    )),
+    ("Other", (
+        ("cart", "🛒", "Cart", "/cart"),
+        ("trip", "✈️", "Trip", "/trip"),
+        ("split", "🧾", "Split", "/split"),
+    )),
+    (None, (
+        ("audit", "🔍", "Audit", "/audit"),
+        ("budget", "🎯", "Budget", "/budget"),
+        ("ledger", "📋", "Ledger", "/ledger"),
+        ("data", "📦", "Data", "/data"),
+    )),
+)
+templates.env.globals["nav"] = NAV
 templates.env.globals["movement_sources"] = MOVEMENT_SOURCES
 templates.env.globals["row_anchor"] = row_anchor
 templates.env.globals["ledger_link"] = ledger_link

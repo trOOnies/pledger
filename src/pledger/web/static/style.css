@@ -170,6 +170,9 @@ main { padding: 1rem 1.5rem 2rem; max-width: 1840px; width: 100%; margin: 0 auto
 /* The subsections of the section being read, unrolled under it, with their emojis for markers */
 .help-toc ol.help-toc-sub { margin: .3rem 0 .2rem; padding-left: .25rem; list-style: none; font-size: .9rem; gap: .2rem; }
 .help-toc .help-toc-sub a:not([aria-current]) { color: var(--muted); }
+/* A section of the top bar among the tabs, its tabs under it */
+.help-toc .help-toc-group > span { font-size: .75rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.help-toc .help-toc-group > ol.help-toc-sub { margin: .15rem 0 .1rem; padding-left: .75rem; }
 /* Its own page, or the start of a section, to go back up */
 .help-crumb { margin: 0 0 .25rem; }
 .help-crumb a { text-decoration: none; }

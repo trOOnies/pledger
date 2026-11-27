@@ -21,9 +21,17 @@
       {% for id, emoji, title, subsections in sections %}
       <li><a href="/help/{{ id }}"{% if page.path == id %} aria-current="page"{% endif %}><span aria-hidden="true">{{ emoji }}</span> {{ title }}</a>
         {% if subsections and page.section == id %}
-        <ol class="help-toc-sub">
-          {% for sub, sub_emoji, sub_title in subsections %}
+        {% macro sub_links(subs) %}{% for sub, sub_emoji, sub_title in subs %}
           <li><a href="/help/{{ id }}/{{ sub }}"{% if page.path == id ~ '/' ~ sub %} aria-current="page"{% endif %}><span aria-hidden="true">{{ sub_emoji }}</span> {{ sub_title }}</a></li>
+        {% endfor %}{% endmacro %}
+        {# Grouped like the top bar for the tabs, each group under its name #}
+        <ol class="help-toc-sub">
+          {% for group, subs in toc_groups %}
+          {% if group %}
+          <li class="help-toc-group"><span>{{ group }}</span>
+            <ol class="help-toc-sub">{{ sub_links(subs) }}</ol>
+          </li>
+          {% else %}{{ sub_links(subs) }}{% endif %}
           {% endfor %}
         </ol>
         {% endif %}

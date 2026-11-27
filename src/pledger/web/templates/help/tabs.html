@@ -5,7 +5,7 @@
   <strong>Other</strong> unroll when you point at them, and the rest are always in sight. The Dashboard is the
   pledger logo, at the left.</p>
 
-{# One line about each tab, by the id of its page (see HELP_TABS in routers/pages.py) #}
+{# One line about each tab, by the id of its page (see NAV in templating.py) #}
 {% set summaries = {
   "dashboard": "The home page: cards and plots of your choice, and a button for each kind of new movement.",
   "ledger": "Every movement, with the form to add gains, losses and transfers.",
@@ -25,11 +25,13 @@
   "data": "Export, import and back up your data.",
 } %}
 <div class="help-tab-groups">
-  {% for group in ["Home", "Info", "Revenue", "Debt", "Other", "Tools"] %}
-  <section aria-labelledby="group-{{ group | lower }}">
-    <h3 class="help-group" id="group-{{ group | lower }}">{{ group if group != "Tools" else "Always in sight" }}</h3>
+  {# In the order and sections of the top bar (see NAV in templating.py) #}
+  {% for group, group_tabs in nav %}
+  {% set name = group or ("The logo" if loop.first else "Always in sight") %}
+  <section aria-labelledby="group-{{ loop.index }}">
+    <h3 class="help-group" id="group-{{ loop.index }}">{{ name }}</h3>
     <ul class="help-tab-cards">
-      {% for id, emoji, title, href, tab_group in tabs if tab_group == group %}
+      {% for id, emoji, title, href in group_tabs %}
       <li><a href="/help/tabs/{{ id }}"><strong><span aria-hidden="true">{{ emoji }}</span> {{ title }}</strong><span>{{ summaries[id] }}</span></a></li>
       {% endfor %}
     </ul>

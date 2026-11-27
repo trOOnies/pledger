@@ -28,21 +28,19 @@
     {% set path = request.url.path %}
     {% macro tab(href, label) %}<a href="{{ href }}" {% if path == href %}aria-current="page"{% endif %}>{{ label }}</a>{% endmacro %}
     <nav>
-      {% for section, tabs in (
-        ("Info", (("/accounts", "Accounts"), ("/currencies", "Currencies"), ("/results", "Results"))),
-        ("Revenue", (("/work", "Work"), ("/investments", "Investments"))),
-        ("Debt", (("/debt", "People"), ("/services", "Services"), ("/credit-cards", "Credit Cards"))),
-        ("Other", (("/cart", "Cart"), ("/trip", "Trip"), ("/split", "Split"))),
-      ) %}
-      <div class="nav-section {{ 'current' if tabs | selectattr(0, 'equalto', path) | list }}">
+      {# See NAV in templating.py, which the Help tab follows too #}
+      {% for section, tabs in nav %}
+      {% if section %}
+      <div class="nav-section {{ 'current' if tabs | selectattr(3, 'equalto', path) | list }}">
         <button type="button" class="nav-label" aria-haspopup="true">{{ section }}</button>
-        <div class="nav-menu">{% for href, label in tabs %}{{ tab(href, label | safe) }}{% endfor %}</div>
+        <div class="nav-menu">{% for _, _, label, href in tabs %}{{ tab(href, label) }}{% endfor %}</div>
       </div>
+      {% else %}
+      {% for _, _, label, href in tabs if href != "/" %}
+      {{ tab(href, label) }}
       {% endfor %}
-      {{ tab("/audit", "Audit") }}
-      {{ tab("/budget", "Budget") }}
-      {{ tab("/ledger", "Ledger") }}
-      {{ tab("/data", "Data") }}
+      {% endif %}
+      {% endfor %}
       <a href="/help" {% if path.startswith('/help') %}aria-current="page"{% endif %}>Help</a>
       <a href="/docs" target="_blank" rel="noopener">API</a>
     </nav>

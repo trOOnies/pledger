@@ -28,6 +28,7 @@ from pledger.web.templating import (
     render_prices_form,
     render_service_form,
     render_service_payment_form,
+    NAV,
     templates,
 )
 from pledger.web.views import (
@@ -223,26 +224,9 @@ def audit(request: Request, store: StoreDep):
 
 
 # The tabs, each with a page of its own in "The tabs" section of the Help tab, in the order of the
-# top bar (the Ledger right after the Dashboard, as everything else builds on it): the id of its
-# page and template, its emoji, title, path and the group of the top bar it is in
-HELP_TABS = [
-    ("dashboard", "🏠", "Dashboard", "/", "Home"),
-    ("ledger", "📋", "Ledger", "/ledger", "Home"),
-    ("accounts", "🏦", "Accounts", "/accounts", "Info"),
-    ("currencies", "💱", "Currencies", "/currencies", "Info"),
-    ("results", "📊", "Results", "/results", "Info"),
-    ("work", "💼", "Work", "/work", "Revenue"),
-    ("investments", "📈", "Investments", "/investments", "Revenue"),
-    ("people", "👥", "People", "/debt", "Debt"),
-    ("services", "🧾", "Services", "/services", "Debt"),
-    ("credit-cards", "💳", "Credit Cards", "/credit-cards", "Debt"),
-    ("cart", "🛒", "Cart", "/cart", "Other"),
-    ("trip", "✈️", "Trip", "/trip", "Other"),
-    ("split", "🧾", "Split", "/split", "Other"),
-    ("audit", "🔍", "Audit", "/audit", "Tools"),
-    ("budget", "🎯", "Budget", "/budget", "Tools"),
-    ("data", "📦", "Data", "/data", "Tools"),
-]
+# top bar (see NAV): the id of its page and template, its emoji, title, path and the section of the
+# top bar it is in (None for the tabs always in sight)
+HELP_TABS = [(*tab, section) for section, tabs in NAV for tab in tabs]
 
 # The sections of the Help tab, in reading order: the id of its page and template, its emoji,
 # title and subsections (each a page of its own, in help/<section>/<subsection>.html)
@@ -290,6 +274,11 @@ def help_page(request: Request, store: StoreDep, path: str = HELP_PAGES[0].path)
         "settings": store.settings, "sections": HELP_SECTIONS, "page": page,
         "parent": HELP_PAGES[HELP_INDEX[page.section]] if page.path != page.section else None,
         "help_tab": next((t for t in HELP_TABS if f"tabs/{t[0]}" == page.path), None), "tabs": HELP_TABS,
+        # The subsections of the index, the tabs in the sections of the top bar
+        "toc_groups": (
+            [(section, [tab[:3] for tab in tabs]) for section, tabs in NAV] if page.section == "tabs"
+            else [(None, next(subs for id_, _, _, subs in HELP_SECTIONS if id_ == page.section))]
+        ),
         "previous": HELP_PAGES[i - 1] if i > 0 else None,
         "next": HELP_PAGES[i + 1] if i + 1 < len(HELP_PAGES) else None,
     })

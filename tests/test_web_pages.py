@@ -310,9 +310,24 @@ class TestPages:
     def test_help_tabs(self, client):
         # The tabs section has a page for each tab, numbered under it, with a link to the tab itself
         overview = client.get("/help/tabs").text
-        toc = overview.split('class="help-toc-sub"')[1].split("</ol>")[0]
+        toc = overview.split('class="panel help-toc"')[1].split("</nav>")[0]
         tabs = re.findall(r'href="/help/tabs/([\w-]+)".*?</span> (.+?)</a>', toc)
-        assert len(tabs) == 16 and tabs[:2] == [("dashboard", "Dashboard"), ("ledger", "Ledger")]
+        # In the order of the top bar, its sections nesting their tabs, the others loose
+        assert [tab for tab, _ in tabs] == [
+            "dashboard", "accounts", "currencies", "results", "work", "investments", "people", "services",
+            "credit-cards", "cart", "trip", "split", "audit", "budget", "ledger", "data",
+        ]
+        groups = re.findall(r'<li class="help-toc-group"><span>(\w+)</span>\s*<ol class="help-toc-sub">(.*?)</ol>', toc, re.S)
+        assert [(name, re.findall(r'href="/help/tabs/([\w-]+)"', subs)) for name, subs in groups] == [
+            ("Info", ["accounts", "currencies", "results"]),
+            ("Revenue", ["work", "investments"]),
+            ("Debt", ["people", "services", "credit-cards"]),
+            ("Other", ["cart", "trip", "split"]),
+        ]
+        cards = overview.split('class="help-body"')[1]
+        assert re.findall(r'class="help-group"[^>]*>([^<]+)</h3>', cards) == [
+            "The logo", "Info", "Revenue", "Debt", "Other", "Always in sight",
+        ]
         assert all(f'href="/help/tabs/{tab}"' in overview.split('class="help-body"')[1] for tab, _ in tabs)  # its cards
         for m, (tab, title) in enumerate(tabs, start=1):
             r = client.get(f"/help/tabs/{tab}")
@@ -324,7 +339,7 @@ class TestPages:
         # Read in order: into the first tab from the overview, out of the last one into the next section
         assert 'href="/help/tabs/dashboard" rel="next">Dashboard →' in overview
         last = client.get("/help/tabs/data").text.split('class="help-pager"')[1].split("</nav>")[0]
-        assert 'href="/help/tabs/budget" rel="prev">← Budget' in last and 'href="/help/how-to" rel="next">' in last
+        assert 'href="/help/tabs/ledger" rel="prev">← Ledger' in last and 'href="/help/how-to" rel="next">' in last
         assert client.get("/help/tabs/nope").status_code == 404 and client.get("/help/start/ledger").status_code == 404
 
     def test_help_links(self, client):
