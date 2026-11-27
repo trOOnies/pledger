@@ -386,7 +386,7 @@ class TestSalaries:
         ]
         r = TestClient(create_app(settings)).get("/ledger")
         # Each links to the row of its month in the Work tab
-        assert r.text.count('href="/work#month-2026-01" title="Generated each week from the salary of the Work tab" aria-label="Generated each week from the salary of the Work tab">🟠</a>') == 8
+        assert r.text.count('href="/work#month-2026-01" title="Generated each week from the salary of the Work tab" aria-label="Generated each week from the salary of the Work tab">💼</a>') == 8
         assert '<tr id="month-2026-01">' in TestClient(create_app(settings)).get("/work").text
         assert r.text.count('aria-label="Delete movement"') == 4  # only the CSV rows
 

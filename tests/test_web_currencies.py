@@ -292,7 +292,7 @@ class TestConversions:
         assert movement_ids(currencies.split('data-sortable="conversions"')[1]) == ["C-1"]
         ledger = conv_client.get("/ledger", params={"initial": True}).text
         assert "C-1" in movement_ids(ledger)
-        # The circles link to the same row, or to the row they are generated from
+        # The emojis link to the same row, or to the row they are generated from
         assert 'href="/currencies#movement-C-1"' in ledger and '<tr id="movement-C-1">' in currencies
         assert 'href="/currencies#account-Bk"' in ledger and '<tr id="account-Bk">' in currencies
         assert 'href="/accounts#account-Bk"' in ledger and '<tr id="account-Bk">' in conv_client.get("/accounts").text
@@ -486,7 +486,7 @@ class TestConversions:
     def test_ledger_tab_links_them_to_the_currencies_tab(self, conv_client):
         r = conv_client.get("/ledger")
         assert '<a class="source" href="/currencies" title="Added, edited and deleted from the Currencies tab"' in r.text
-        assert "🔵</a>" in r.text
+        assert "💱</a>" in r.text
         assert r.text.count('hx-post="/movements/') == 4  # only the CSV rows
         assert "Foreign currency (G)" in r.text  # built-in: not deletable either
         (moved,) = [m for m in conv_client.get("/api/movements").json() if m["conversion"]]

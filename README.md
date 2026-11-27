@@ -102,7 +102,7 @@ A few things are shared across tabs:
 - 🌙 The **theme button**, next to it, switches between dark (a moon) and light (a sun) mode.
   Until clicked it follows the system's theme; then the browser remembers the choice.
 - 🔗 The **ID** of a movement links to its other face: from the Ledger tab to its row in the tab
-  that handles it (like its colored circle), and from the Investments, Currencies, Debt and
+  that handles it (like the emoji of that tab), and from the Investments, Currencies, Debt and
   Credit Cards tabs back to the Ledger tab.
 - ↕️ The bars of Accounts, Results, Investments and Debt have an **Expand all / Collapse all**
   toggle.
@@ -320,7 +320,7 @@ built_in:
           Correction (L): Money correction against oneself
 ```
 
-The Ledger tab shows them with a 🟣 linking to their account, and can delete them.
+The Ledger tab shows them with a 🔍 linking to their account, and can delete them.
 
 ### Budget
 
@@ -360,7 +360,7 @@ move_date;base_movement;acc_debit;amount;acc_credit;comment;id;installments;cart
 - Saving a cart adds or replaces all of its movements together, or none of them, and leaves the rest of
   the file as it was. Editing it keeps the line and ID of each product kept, appends the new ones and
   deletes those removed; deleting it deletes all of its movements.
-- Its movements are only edited and deleted from the Cart tab: the Ledger tab shows them with a 🟤
+- Its movements are only edited and deleted from the Cart tab: the Ledger tab shows them with a 🛒
   linking there. The tab warns about a movement whose date or account differs from its cart's (e.g.
   edited by hand), until the cart is saved again.
 
@@ -849,7 +849,7 @@ picking one of them in two steps (Debt, then Incurred or Paid; Loan, then Given 
 only the debt accounts of the people on the side of its debt account and never a debt or loan
 account on the other one (see *Exchanges and currency changes* below). Its form asks who of its account the movement
 is about (so never an expected debtor for a debt, or an expected creditor for a loan). The Ledger tab
-shows them with a 🟡 linking there. The services are paid from the [Services](#services) tab (`Debt -
+shows them with a 👥 linking there. The services are paid from the [Services](#services) tab (`Debt -
 Paid` in `SeD`, `Loan - Given` in `SeL`), and the salaries received from the [Work](#work) tab (`Loan -
 Collected` from `Wo`): each tab lists the movements of its accounts and deletes them, and the Ledger tab
 links them there.
@@ -933,7 +933,7 @@ built_in:
 ```
 
 A Difference can't be edited, and is deleted from the People or Ledger tabs, on its own: deleting the
-movement it came with leaves it there. The Ledger tab shows the ones of the debt accounts with a 🟡 linking to the People tab. `/api/debt/movements` takes it as `remaining_as_difference`, and
+movement it came with leaves it there. The Ledger tab shows the ones of the debt accounts with a 👥 linking to the People tab. `/api/debt/movements` takes it as `remaining_as_difference`, and
 answers with the `difference` added.
 
 Like Accounts, the People tab shows everyone as of the end of the month picked, only the people
@@ -1024,7 +1024,7 @@ built_in:
 
 They are added, edited and deleted from the Credit Cards tab only (or
 `/api/credit-cards/payments`), picking the base movement, the card and the other account. The Ledger tab
-shows them with a 🔴 linking there. The **Credit card** filter, next to the month one, shows the whole tab for one card (all but the statement closing dates).
+shows them with a 💳 linking there. The **Credit card** filter, next to the month one, shows the whole tab for one card (all but the statement closing dates).
 
 **Installments.** A movement of the Ledger tab crediting a credit card can be in **installments**
 (1 by default, up to 120), kept in an optional `installments` column of `ledger.csv`, added with the
@@ -1074,7 +1074,7 @@ month;Rent;Gas
 Each one is a generated movement of its service's base movement, from equity crediting its account, its
 comment naming the service first, so it adds to what we owe the service. They are owed **up to today** (none dated after it, so future months
 can be filled in ahead), never before the first date of the ledger or in the previous month, and
-can't be edited by hand: the Ledger tab shows them with a 🟡 linking to the Services tab. Pay a
+can't be edited by hand: the Ledger tab shows them with a 🧾 linking to the Services tab. Pay a
 service with the *New service payment* form of the Services tab, a `Debt - Paid` in `SeD` (in
 advance, a `Loan - Given` in `SeL`): pick the service and month, and the account it was paid from (in
 the base currency, not a debt account). A known value of the month fills in the amount; paying
@@ -1091,7 +1091,7 @@ service; each month's ✎ button loads it into the form. `PUT /api/services` set
 New months go in month order, and a column missing from the file is added with its first value. It
 also lists the movements of `SeD` and `SeL`, the values owed and the payments, filtered by service
 (or the ones naming none), each with what we owe that service after it; the payments are deleted
-there (× of their row), and the Ledger tab links them there with a 🟡. It warns about the movements
+there (× of their row), and the Ledger tab links them there with a 🧾. It warns about the movements
 of `SeD` and `SeL` naming no service. The file is created with the first month.
 
 ### Work
@@ -1153,7 +1153,7 @@ the generated salaries and deductions, each with what its company owes after it.
 received* form adds a company's payment: a `Loan - Collected` crediting `Wo` (see [Debt](#debt)),
 into an account in the base currency that isn't a debt account, filled in with what the company
 picked (the current job's, by default) owes. The payments are deleted with the × of their row, and
-the Ledger tab links them there with a 🟠.
+the Ledger tab links them there with a 💼.
 
 ---
 

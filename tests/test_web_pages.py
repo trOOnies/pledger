@@ -849,10 +849,10 @@ class TestEditMovements:
 
 
 class TestIdLinks:
-    def test_ledger_ids_link_like_their_circles(self, client, settings):
+    def test_ledger_ids_link_like_their_emojis(self, client, settings):
         LedgerStore(settings).freeze_ids()
         r = client.get("/ledger", params={"initial": "true"})
-        # The initial movement of Bk links to its account, by its circle and its ID
+        # The initial movement of Bk links to its account, by its emoji and its ID
         assert r.text.count('href="/accounts#account-Bk"') == 2
         assert '<a class="id-link" href="/accounts#account-Bk"' in r.text
         # Rows deletable here have no link, but an anchor to come back to

@@ -19,23 +19,23 @@ from pledger.models import (
 from pledger.web.store import Snapshot, cart_of, row_fingerprint
 
 # The tab where each kind of movement that can't be deleted from the Ledger tab is
-# handled: its colored circle there and its tooltip. The circle links to its row in
-# that tab (see source_link).
+# handled: its emoji there (the one of that tab, or of the Audit tab for the corrections)
+# and its tooltip. The emoji links to its row in that tab (see source_link).
 MOVEMENT_SOURCES = {
-    "investments": ("🟢", "Added, edited and deleted from the Investments tab"),
-    "prices": ("🟢", "Generated from the prices of the investments and the ones bought and sold, in the Investments tab"),
-    "currencies": ("🔵", "Added, edited and deleted from the Currencies tab"),
-    "revaluation": ("🔵", "Generated from the values of the Currencies tab"),
-    "work": ("🟠", "Generated each week from the salary of the Work tab"),
-    "accounts": ("🟣", "Generated from the initial amount of the account, in the Accounts tab"),
-    "corrections": ("🟣", "A balance correction, added from the Audit tab; it can be deleted here"),
-    "debt": ("🟡", "Added, edited and deleted from the People tab"),
-    "differences": ("🟡", "A Difference added with a debt movement, in the People tab; it can be deleted here"),
-    "services": ("🟡", "Generated from the monthly value of the service, in the Services tab"),
-    "service-payments": ("🟡", "A movement of a service, added and deleted from the Services tab"),
-    "work-loan": ("🟠", "A movement of a company, added and deleted from the Work tab"),
-    "credit-cards": ("🔴", "Added, edited and deleted from the Credit Cards tab"),
-    "cart": ("🟤", "A product of a cart, added, edited and deleted from the Cart tab"),
+    "investments": ("📈", "Added, edited and deleted from the Investments tab"),
+    "prices": ("📈", "Generated from the prices of the investments and the ones bought and sold, in the Investments tab"),
+    "currencies": ("💱", "Added, edited and deleted from the Currencies tab"),
+    "revaluation": ("💱", "Generated from the values of the Currencies tab"),
+    "work": ("💼", "Generated each week from the salary of the Work tab"),
+    "accounts": ("🏦", "Generated from the initial amount of the account, in the Accounts tab"),
+    "corrections": ("🔍", "A balance correction, added from the Audit tab; it can be deleted here"),
+    "debt": ("👥", "Added, edited and deleted from the People tab"),
+    "differences": ("👥", "A Difference added with a debt movement, in the People tab; it can be deleted here"),
+    "services": ("🧾", "Generated from the monthly value of the service, in the Services tab"),
+    "service-payments": ("🧾", "A movement of a service, added and deleted from the Services tab"),
+    "work-loan": ("💼", "A movement of a company, added and deleted from the Work tab"),
+    "credit-cards": ("💳", "Added, edited and deleted from the Credit Cards tab"),
+    "cart": ("🛒", "A product of a cart, added, edited and deleted from the Cart tab"),
 }
 
 

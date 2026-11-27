@@ -434,9 +434,9 @@ form.stack > h2 { margin: 0; }
 /* The ID of a movement linking to it in another tab */
 a.id-link { color: inherit; text-decoration: underline dotted; text-underline-offset: 2px; }
 a.id-link:hover { color: var(--accent); }
-/* The colored circle of a movement handled in another tab, linking to it. */
+/* The emoji of a movement handled in another tab, linking to it. */
 .source { padding: 0 .4rem; font-size: .8rem; line-height: 1; text-decoration: none; }
-/* The row a colored circle links to: clear of the sticky table header, and highlighted. */
+/* The row such an emoji links to: clear of the sticky table header, and highlighted. */
 tr[id] { scroll-margin-top: 2.5rem; }
 tr:target > td { background: color-mix(in srgb, var(--accent) 18%, transparent); }
 

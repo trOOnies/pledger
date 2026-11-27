@@ -442,7 +442,7 @@ class TestInvestMovements:
         assert r.text.count('aria-label="Delete movement"') == 1  # never the generated ones
         # The ledger shows them with a lock that leads to the Investments tab
         index = client.get("/ledger").text
-        assert 'href="/investments#movement-I-1" title="Added, edited and deleted from the Investments tab" aria-label="Added, edited and deleted from the Investments tab">🟢</a>' in index
+        assert 'href="/investments#movement-I-1" title="Added, edited and deleted from the Investments tab" aria-label="Added, edited and deleted from the Investments tab">📈</a>' in index
         assert 'href="/investments#movement-P-Br-T-2026-01-05" title="Generated from the prices' in index
         assert '<tr id="movement-I-1">' in client.get("/investments").text
         assert index.count('aria-label="Delete movement"') == 4
